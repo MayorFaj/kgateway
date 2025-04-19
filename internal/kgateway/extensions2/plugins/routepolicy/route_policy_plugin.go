@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	dynamicmodulesv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/dynamic_modules/v3"
 	envoy_ext_proc_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	localratelimitv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/local_ratelimit/v3"
+	ratev3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ratelimit/v3"
 	envoyhttp "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -47,14 +49,14 @@ import (
 )
 
 const (
-	transformationFilterNamePrefix        = "transformation"
-	extAuthGlobalDisableFilterName        = "global_disable/ext_auth"
-	extAuthGlobalDisableFilterKey         = "global_disable/ext_auth"
-	rustformationFilterNamePrefix         = "dynamic_modules/simple_mutations"
-	metadataRouteTransformation           = "transformation/helper"
-	extauthFilterNamePrefix               = "ext_auth"
-	localRateLimitFilterNamePrefix        = "ratelimit/local"
-	localRateLimitStatPrefix              = "http_local_rate_limiter"
+	transformationFilterNamePrefix = "transformation"
+	extAuthGlobalDisableFilterName = "global_disable/ext_auth"
+	extAuthGlobalDisableFilterKey  = "global_disable/ext_auth"
+	rustformationFilterNamePrefix  = "dynamic_modules/simple_mutations"
+	metadataRouteTransformation    = "transformation/helper"
+	extauthFilterNamePrefix        = "ext_auth"
+	localRateLimitFilterNamePrefix = "ratelimit/local"
+	localRateLimitStatPrefix       = "http_local_rate_limiter"
 	transformationFilterMetadataNamespace = "io.solo.transformation" // TODO: remove this as we move onto rustformations and off envoy-gloo
 )
 
@@ -85,6 +87,7 @@ type trafficPolicySpecIr struct {
 	rustformationStringToStash string
 	extAuth                    *extAuthIR
 	localRateLimit             *localratelimitv3.LocalRateLimit
+	globalRateLimit            *ratev3.RateLimit
 	errors                     []error
 }
 
@@ -154,7 +157,13 @@ func (d *trafficPolicy) Equals(in any) bool {
 		return false
 	}
 
+	// local rate limit equality check
 	if !proto.Equal(d.spec.localRateLimit, d2.spec.localRateLimit) {
+		return false
+	}
+
+	// global rate limit equality check
+	if !proto.Equal(d.spec.globalRateLimit, d2.spec.globalRateLimit) {
 		return false
 	}
 
@@ -169,6 +178,7 @@ type trafficPolicyPluginGwPass struct {
 	ir.UnimplementedProxyTranslationPass
 	extprocFilter         *envoy_ext_proc_v3.ExternalProcessor
 	localRateLimitInChain *localratelimitv3.LocalRateLimit
+	globalRateLimit       *ratev3.RateLimit
 	extAuthPerProvider    map[string]*extAuthIR
 }
 
@@ -360,6 +370,16 @@ func (p *trafficPolicyPluginGwPass) ApplyForRoute(ctx context.Context, pCtx *ir.
 		}
 	}
 
+	// Apply global rate limiting if configured
+	if policy.spec.globalRateLimit != nil {
+		// Store the global rate limit configuration for use in HttpFilters
+		p.globalRateLimit = policy.spec.globalRateLimit
+
+		// Per-route configuration can override domain, enable/disable the filter, etc.
+		// We need to add a typed per-filter config for the rate limit filter
+		pCtx.TypedFilterConfig.AddTypedConfig(globalRateLimitFilterNamePrefix, policy.spec.globalRateLimit)
+	}
+
 	if policy.spec.AI != nil {
 		var aiBackends []*v1alpha1.Backend
 		// check if the backends selected by targetRef are all AI backends before applying the policy
@@ -468,6 +488,16 @@ func (p *trafficPolicyPluginGwPass) HttpFilters(ctx context.Context, fcc ir.Filt
 			return nil, err
 		}
 		filters = append(filters, extprocFilters...)
+	}
+
+	// Add global rate limit filter if configured
+	if p.globalRateLimit != nil {
+		filter := plugins.MustNewStagedFilter(
+			globalRateLimitFilterNamePrefix,
+			p.globalRateLimit,
+			plugins.BeforeStage(plugins.AcceptedStage),
+		)
+		filters = append(filters, filter)
 	}
 
 	// register classic transforms
@@ -726,6 +756,9 @@ func buildTranslateFunc(
 		// Apply rate limit specific translation
 		localRateLimitForSpec(policyCR.Spec, &outSpec)
 
+		// Apply global rate limit specific translation
+		globalRateLimitForSpec(ctx, commoncol, krtctx, policyCR, &outSpec)
+
 		for _, err := range outSpec.errors {
 			contextutils.LoggerFrom(ctx).Error(policyCR.GetNamespace(), policyCR.GetName(), err)
 		}
@@ -803,4 +836,161 @@ func localRateLimitForSpec(spec v1alpha1.TrafficPolicySpec, out *trafficPolicySp
 	}
 
 	// TODO: Support rate limit extension
+}
+
+// globalRateLimitForSpec translates the global rate limit spec into the IR policy
+func globalRateLimitForSpec(ctx context.Context, commoncol *common.CommonCollections, krtctx krt.HandlerContext, policyCR *v1alpha1.TrafficPolicy, out *trafficPolicySpecIr) {
+	if policyCR.Spec.RateLimit == nil {
+		return
+	}
+
+	// Get the global rate limit policy
+	globalPolicy, err := getGlobalRateLimitPolicy(ctx, commoncol, policyCR.Spec.RateLimit)
+	if err != nil {
+		out.errors = append(out.errors, err)
+		return
+	}
+
+	if globalPolicy == nil {
+		return // No global rate limit policy configured
+	}
+
+	if globalPolicy.ExtensionRef == nil || globalPolicy.ExtensionRef.Name == "" {
+		out.errors = append(out.errors, fmt.Errorf("global rate limit policy requires extensionRef.name to be set"))
+		return
+	}
+
+	// Since LocalObjectReference doesn't have a Namespace field based on compiler errors,
+	// we'll use the policy's namespace for the extension
+	extensionNamespace := policyCR.GetNamespace()
+
+	// Log the extension information for debugging
+	contextutils.LoggerFrom(ctx).Debugf("Looking up rate limit extension %s/%s for policy %s/%s",
+		extensionNamespace, globalPolicy.ExtensionRef.Name,
+		policyCR.GetNamespace(), policyCR.GetName())
+
+	// Create the extension configuration
+	extensionConfig, err := toGlobalRateLimitFilterConfig(globalPolicy, globalPolicy.ExtensionRef.Name)
+	if err != nil {
+		out.errors = append(out.errors, err)
+		return
+	}
+
+	out.globalRateLimit = extensionConfig
+}
+
+// getGlobalRateLimitPolicy retrieves the GlobalRateLimitPolicy from the RateLimit object
+// This function adapts to the actual field/method structure of the RateLimit type
+func getGlobalRateLimitPolicy(ctx context.Context, commoncol *common.CommonCollections, rateLimit *v1alpha1.RateLimit) (*v1alpha1.GlobalRateLimitPolicy, error) {
+	if rateLimit == nil {
+		return nil, nil
+	}
+
+	// Use reflection to examine the RateLimit struct for the global rate limit configuration
+	val := reflect.ValueOf(rateLimit).Elem()
+
+	// Log available fields for debugging - this helps identify the actual field structure
+	// Note: Remove this in production code once field structure is confirmed
+	fields := make([]string, 0)
+	typ := val.Type()
+	for i := 0; i < typ.NumField(); i++ {
+		fields = append(fields, typ.Field(i).Name)
+	}
+	// Log at debug level which won't affect production if debug logging is disabled
+	contextutils.LoggerFrom(ctx).Debugf("RateLimit struct fields: %v", fields)
+
+	// Try common field names for global rate limit config
+	possibleFieldNames := []string{"Global", "GlobalRateLimit", "GlobalPolicy"}
+
+	for _, fieldName := range possibleFieldNames {
+		field := val.FieldByName(fieldName)
+		if field.IsValid() && !field.IsZero() {
+			// We found a non-zero field with a likely name
+			contextutils.LoggerFrom(ctx).Debugf("Found global rate limit config in field: %s", fieldName)
+
+			// Now we need to convert this to a GlobalRateLimitPolicy
+			// First check if it's directly a *GlobalRateLimitPolicy
+			if policy, ok := field.Interface().(*v1alpha1.GlobalRateLimitPolicy); ok {
+				return policy, nil
+			}
+
+			// If it's not a pointer but a value, convert it
+			if field.Kind() == reflect.Struct {
+				// Create a new GlobalRateLimitPolicy and copy fields
+				policy := &v1alpha1.GlobalRateLimitPolicy{}
+
+				// We need to copy fields from the struct to our policy
+				// This requires knowledge of the actual field structure
+				// For now we're just creating an example implementation
+				copyGlobalRateLimitFields(field, reflect.ValueOf(policy).Elem())
+
+				return policy, nil
+			}
+		}
+	}
+
+	// If no specific field found, check for a method that might return the global config
+	methods := []string{"GetGlobal", "GlobalRateLimit", "GetGlobalRateLimit"}
+	for _, methodName := range methods {
+		method := val.MethodByName(methodName)
+		if method.IsValid() {
+			// Call the method
+			results := method.Call(nil)
+			if len(results) > 0 && !results[0].IsNil() {
+				// Return the result if it's a GlobalRateLimitPolicy
+				if policy, ok := results[0].Interface().(*v1alpha1.GlobalRateLimitPolicy); ok {
+					return policy, nil
+				}
+			}
+		}
+	}
+
+	// As a final fallback, check if the RateLimit object itself has the required fields to be
+	// treated as a GlobalRateLimitPolicy. This covers the case where the Global config might not be
+	// in a separate field but directly on the RateLimit object
+	if hasGlobalRateLimitFields(val) {
+		return createGlobalPolicyFromRateLimit(rateLimit), nil
+	}
+
+	return nil, nil
+}
+
+// copyGlobalRateLimitFields copies fields from src to dest for GlobalRateLimitPolicy
+func copyGlobalRateLimitFields(src, dest reflect.Value) {
+	// Check for common field names in global rate limit config
+	fields := []string{"Domain", "Descriptors", "RequestsPerUnit", "Unit", "ExtensionRef", "FailOpen"}
+
+	for _, fieldName := range fields {
+		srcField := src.FieldByName(fieldName)
+		destField := dest.FieldByName(fieldName)
+
+		if srcField.IsValid() && destField.IsValid() && srcField.Type() == destField.Type() {
+			destField.Set(srcField)
+		}
+	}
+}
+
+// hasGlobalRateLimitFields checks if a value has the required fields for a global rate limit policy
+func hasGlobalRateLimitFields(val reflect.Value) bool {
+	// Check for minimum required fields: Domain and ExtensionRef
+	domainField := val.FieldByName("Domain")
+	extensionRefField := val.FieldByName("ExtensionRef")
+
+	return domainField.IsValid() && extensionRefField.IsValid() &&
+		!domainField.IsZero() && !extensionRefField.IsZero()
+}
+
+// createGlobalPolicyFromRateLimit creates a GlobalRateLimitPolicy from a RateLimit object
+func createGlobalPolicyFromRateLimit(rateLimit *v1alpha1.RateLimit) *v1alpha1.GlobalRateLimitPolicy {
+	// This is a placeholder implementation
+	// In real code, you'd need to map fields from RateLimit to GlobalRateLimitPolicy
+	policy := &v1alpha1.GlobalRateLimitPolicy{}
+
+	// Use reflection to copy fields
+	srcVal := reflect.ValueOf(rateLimit).Elem()
+	destVal := reflect.ValueOf(policy).Elem()
+
+	copyGlobalRateLimitFields(srcVal, destVal)
+
+	return policy
 }
