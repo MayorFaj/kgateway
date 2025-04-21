@@ -49,14 +49,14 @@ import (
 )
 
 const (
-	transformationFilterNamePrefix = "transformation"
-	extAuthGlobalDisableFilterName = "global_disable/ext_auth"
-	extAuthGlobalDisableFilterKey  = "global_disable/ext_auth"
-	rustformationFilterNamePrefix  = "dynamic_modules/simple_mutations"
-	metadataRouteTransformation    = "transformation/helper"
-	extauthFilterNamePrefix        = "ext_auth"
-	localRateLimitFilterNamePrefix = "ratelimit/local"
-	localRateLimitStatPrefix       = "http_local_rate_limiter"
+	transformationFilterNamePrefix        = "transformation"
+	extAuthGlobalDisableFilterName        = "global_disable/ext_auth"
+	extAuthGlobalDisableFilterKey         = "global_disable/ext_auth"
+	rustformationFilterNamePrefix         = "dynamic_modules/simple_mutations"
+	metadataRouteTransformation           = "transformation/helper"
+	extauthFilterNamePrefix               = "ext_auth"
+	localRateLimitFilterNamePrefix        = "ratelimit/local"
+	localRateLimitStatPrefix              = "http_local_rate_limiter"
 	transformationFilterMetadataNamespace = "io.solo.transformation" // TODO: remove this as we move onto rustformations and off envoy-gloo
 )
 

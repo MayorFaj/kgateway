@@ -382,6 +382,55 @@ spec:
                 type: object
               rateLimit:
                 properties:
+                  global:
+                    properties:
+                      descriptors:
+                        items:
+                          properties:
+                            key:
+                              type: string
+                            value:
+                              type: string
+                            valueFrom:
+                              properties:
+                                header:
+                                  type: string
+                                path:
+                                  type: boolean
+                                remoteAddress:
+                                  type: boolean
+                              type: object
+                          required:
+                          - key
+                          type: object
+                        type: array
+                      domain:
+                        type: string
+                      extensionRef:
+                        properties:
+                          name:
+                            default: ""
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      failOpen:
+                        default: false
+                        type: boolean
+                      requestsPerUnit:
+                        format: int32
+                        minimum: 1
+                        type: integer
+                      unit:
+                        enum:
+                        - second
+                        - minute
+                        - hour
+                        - day
+                        type: string
+                    required:
+                    - domain
+                    - extensionRef
+                    type: object
                   local:
                     properties:
                       tokenBucket:
@@ -401,71 +450,6 @@ spec:
                         - fillInterval
                         - maxTokens
                         type: object
-                    type: object
-                  global:
-                    properties:
-                      domain:
-                        description: "Domain identifies a rate limiting configuration. Multiple domains can be independently configured."
-                        type: string
-                      descriptors:
-                        description: "Descriptors define the dimensions for rate limiting."
-                        type: array
-                        items:
-                          properties:
-                            key:
-                              description: "Key for the descriptor entry."
-                              type: string
-                            value:
-                              description: "Value for the descriptor entry."
-                              type: string
-                            valueFrom:
-                              description: "Extract value from request attributes."
-                              properties:
-                                header:
-                                  description: "Extract value from a request header."
-                                  type: string
-                                remoteAddress:
-                                  description: "Use the remote address as the value."
-                                  type: boolean
-                                path:
-                                  description: "Use the request path as the value."
-                                  type: boolean
-                              type: object
-                          required:
-                          - key
-                          type: object
-                        minItems: 1
-                      requestsPerUnit:
-                        description: "Maximum number of requests per time unit."
-                        type: integer
-                        minimum: 1
-                      unit:
-                        description: "Time unit for the rate limit."
-                        type: string
-                        enum:
-                        - second
-                        - minute
-                        - hour
-                        - day
-                      extensionRef:
-                        description: "Reference to a GatewayExtension that provides the global rate limit service."
-                        properties:
-                          name:
-                            description: "Name of the GatewayExtension."
-                            type: string
-                          namespace:
-                            description: "Namespace of the GatewayExtension. If unspecified, defaults to the namespace of the parent TrafficPolicy."
-                            type: string
-                        required:
-                        - name
-                        type: object
-                      failOpen:
-                        description: "When true, requests are not limited if the rate limit service is unavailable."
-                        type: boolean
-                        default: false
-                    required:
-                    - domain
-                    - extensionRef
                     type: object
                 type: object
               targetRefs:

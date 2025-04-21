@@ -253,8 +253,12 @@ type BufferSettings struct {
 // RateLimit defines a rate limiting policy.
 type RateLimit struct {
 	// Local defines a local rate limiting policy.
-	// +required
-	Local *LocalRateLimitPolicy `json:"local"`
+	// +optional
+	Local *LocalRateLimitPolicy `json:"local,omitempty"`
+
+	// Global defines a global rate limiting policy using an external service.
+	// +optional
+	GlobalRateLimit *GlobalRateLimitPolicy `json:"global,omitempty"`
 }
 
 // LocalRateLimitPolicy represents a policy for local rate limiting.
@@ -264,6 +268,68 @@ type LocalRateLimitPolicy struct {
 	// It defines the parameters for controlling the rate at which requests are allowed.
 	// +optional
 	TokenBucket *TokenBucket `json:"tokenBucket"`
+}
+
+// GlobalRateLimitPolicy defines configuration for global rate limiting using an external service.
+type GlobalRateLimitPolicy struct {
+	// Domain identifies a rate limiting configuration.
+	// Multiple domains can be independently configured.
+	// +required
+	Domain string `json:"domain"`
+
+	// Descriptors define the dimensions for rate limiting.
+	// +optional
+	Descriptors []RateLimitDescriptor `json:"descriptors,omitempty"`
+
+	// RequestsPerUnit specifies maximum number of requests per time unit.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	RequestsPerUnit int32 `json:"requestsPerUnit,omitempty"`
+
+	// Unit specifies the time unit for the rate limit.
+	// +optional
+	// +kubebuilder:validation:Enum=second;minute;hour;day
+	Unit string `json:"unit,omitempty"`
+
+	// ExtensionRef references a GatewayExtension that provides the global rate limit service.
+	// +required
+	ExtensionRef *corev1.LocalObjectReference `json:"extensionRef"`
+
+	// FailOpen determines if requests are limited when the rate limit service is unavailable.
+	// When true, requests are not limited if the rate limit service is unavailable.
+	// +optional
+	// +kubebuilder:default=false
+	FailOpen bool `json:"failOpen,omitempty"`
+}
+
+// RateLimitDescriptor defines a descriptor for rate limiting.
+type RateLimitDescriptor struct {
+	// Key for the descriptor entry.
+	// +required
+	Key string `json:"key"`
+
+	// Value for the descriptor entry.
+	// +optional
+	Value string `json:"value,omitempty"`
+
+	// ValueFrom extracts value from request attributes.
+	// +optional
+	ValueFrom *RateLimitValueSource `json:"valueFrom,omitempty"`
+}
+
+// RateLimitValueSource defines sources for extracting values for rate limiting.
+type RateLimitValueSource struct {
+	// Header extracts value from a request header.
+	// +optional
+	Header string `json:"header,omitempty"`
+
+	// RemoteAddress uses the client's IP address as the value.
+	// +optional
+	RemoteAddress bool `json:"remoteAddress,omitempty"`
+
+	// Path uses the request path as the value.
+	// +optional
+	Path bool `json:"path,omitempty"`
 }
 
 // TokenBucket defines the configuration for a token bucket rate-limiting mechanism.

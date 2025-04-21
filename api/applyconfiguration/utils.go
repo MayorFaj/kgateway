@@ -97,6 +97,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.GatewayParametersSpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("GeminiConfig"):
 		return &apiv1alpha1.GeminiConfigApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("GlobalRateLimitPolicy"):
+		return &apiv1alpha1.GlobalRateLimitPolicyApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("GracefulShutdownSpec"):
 		return &apiv1alpha1.GracefulShutdownSpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("GrpcService"):
@@ -151,6 +153,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.ProxyDeploymentApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("RateLimit"):
 		return &apiv1alpha1.RateLimitApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("RateLimitDescriptor"):
+		return &apiv1alpha1.RateLimitDescriptorApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("RateLimitValueSource"):
+		return &apiv1alpha1.RateLimitValueSourceApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("Regex"):
 		return &apiv1alpha1.RegexApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("RegexMatch"):

@@ -656,6 +656,31 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: string
       default: ""
+- name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.GlobalRateLimitPolicy
+  map:
+    fields:
+    - name: descriptors
+      type:
+        list:
+          elementType:
+            namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.RateLimitDescriptor
+          elementRelationship: atomic
+    - name: domain
+      type:
+        scalar: string
+      default: ""
+    - name: extensionRef
+      type:
+        namedType: io.k8s.api.core.v1.LocalObjectReference
+    - name: failOpen
+      type:
+        scalar: boolean
+    - name: requestsPerUnit
+      type:
+        scalar: numeric
+    - name: unit
+      type:
+        scalar: string
 - name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.GracefulShutdownSpec
   map:
     fields:
@@ -1043,9 +1068,37 @@ var schemaYAML = typed.YAMLObject(`types:
 - name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.RateLimit
   map:
     fields:
+    - name: global
+      type:
+        namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.GlobalRateLimitPolicy
     - name: local
       type:
         namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.LocalRateLimitPolicy
+- name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.RateLimitDescriptor
+  map:
+    fields:
+    - name: key
+      type:
+        scalar: string
+      default: ""
+    - name: value
+      type:
+        scalar: string
+    - name: valueFrom
+      type:
+        namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.RateLimitValueSource
+- name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.RateLimitValueSource
+  map:
+    fields:
+    - name: header
+      type:
+        scalar: string
+    - name: path
+      type:
+        scalar: boolean
+    - name: remoteAddress
+      type:
+        scalar: boolean
 - name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.Regex
   map:
     fields:
