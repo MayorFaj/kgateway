@@ -10,8 +10,11 @@ import (
 	routeconfv3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	ratev3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ratelimit/v3"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"istio.io/istio/pkg/kube/krt"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
+	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/pluginutils"
+	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/ir"
 )
 
 const (
@@ -21,36 +24,69 @@ const (
 )
 
 // toGlobalRateLimitFilterConfig translates a GlobalRateLimitPolicy to Envoy rate limit configuration.
-func toGlobalRateLimitFilterConfig(policy *v1alpha1.GlobalRateLimitPolicy, extensionName string) (*ratev3.RateLimit, error) {
-	if policy == nil {
+func toGlobalRateLimitFilterConfig(policy *v1alpha1.GlobalRateLimitPolicy, gweCollection krt.Collection[ir.GatewayExtension], kctx krt.HandlerContext) (*ratev3.RateLimit, error) {
+	if policy == nil || policy.ExtensionRef == nil {
 		return nil, nil
 	}
 
-	// Create a timeout based on the time unit if specified, otherwise use a default
-	timeout := durationpb.New(time.Second * 2) // Default timeout
-
-	// Set appropriate timeout based on unit if specified
-	if policy.Unit != "" {
-		switch policy.Unit {
-		case "second":
-			timeout = durationpb.New(time.Millisecond * 500) // Shorter timeout for per-second limits
-		case "minute":
-			timeout = durationpb.New(time.Second * 2) // Standard timeout for per-minute limits
-		case "hour", "day":
-			timeout = durationpb.New(time.Second * 5) // Longer timeout for less frequent limits
-		default:
-			return nil, fmt.Errorf("unsupported time unit: %s", policy.Unit) // Explicitly handle unsupported units
-		}
+	// Get the referenced GatewayExtension
+	gwExt, err := pluginutils.GetGatewayExtension(
+		gweCollection,
+		kctx,
+		policy.ExtensionRef.Name,
+		policy.Domain, // Use the domain from the policy as fallback namespace
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get referenced GatewayExtension %s: %w", policy.ExtensionRef.Name, err)
 	}
 
-	// Construct cluster name from extension name
-	clusterName := fmt.Sprintf("ext.%s", extensionName)
+	// Verify it's the correct type
+	if gwExt.Type != v1alpha1.GatewayExtensionTypeRateLimit {
+		return nil, pluginutils.ErrInvalidExtensionType(v1alpha1.GatewayExtensionTypeRateLimit, gwExt.Type)
+	}
+
+	// Check if GlobalRateLimit provider is configured
+	if gwExt.GlobalRateLimit == nil {
+		return nil, fmt.Errorf("GlobalRateLimit configuration is missing in GatewayExtension %s", policy.ExtensionRef.Name)
+	}
+
+	// Create a timeout based on the time unit if specified, otherwise use the default from the extension
+	var timeout *durationpb.Duration
+
+	// Use timeout from extension if specified
+	if gwExt.GlobalRateLimit.Timeout != "" {
+		duration, err := time.ParseDuration(gwExt.GlobalRateLimit.Timeout)
+		if err != nil {
+			return nil, fmt.Errorf("invalid timeout in GatewayExtension %s: %w", policy.ExtensionRef.Name, err)
+		}
+		timeout = durationpb.New(duration)
+	} else {
+		// Default timeout if not specified in extension
+		timeout = durationpb.New(time.Second * 2)
+	}
+
+	// Get domain from extension or use the one from the policy if not specified
+	domain := policy.Domain
+	if gwExt.GlobalRateLimit.Domain != "" {
+		domain = gwExt.GlobalRateLimit.Domain
+	}
+
+	// Construct cluster name from the backendRef
+	clusterName := ""
+	if gwExt.GlobalRateLimit.GrpcService != nil && gwExt.GlobalRateLimit.GrpcService.BackendRef != nil {
+		clusterName = fmt.Sprintf("outbound|%d||%s.%s.svc.cluster.local",
+			gwExt.GlobalRateLimit.GrpcService.BackendRef.Port,
+			gwExt.GlobalRateLimit.GrpcService.BackendRef.Name,
+			gwExt.Domain)
+	} else {
+		return nil, fmt.Errorf("GrpcService BackendRef not specified in GatewayExtension %s", policy.ExtensionRef.Name)
+	}
 
 	// Create a rate limit configuration
 	rl := &ratev3.RateLimit{
-		Domain:          policy.Domain,
+		Domain:          domain,
 		Timeout:         timeout,
-		FailureModeDeny: !policy.FailOpen,
+		FailureModeDeny: !gwExt.GlobalRateLimit.FailOpen,
 		RateLimitService: &ratelimitv3.RateLimitServiceConfig{
 			GrpcService: &corev3.GrpcService{
 				TargetSpecifier: &corev3.GrpcService_EnvoyGrpc_{
