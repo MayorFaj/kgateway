@@ -584,6 +584,9 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: extProc
       type:
         namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.ExtProcProvider
+    - name: rateLimit
+      type:
+        namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.RateLimitProvider
     - name: type
       type:
         scalar: string
@@ -1087,6 +1090,22 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: valueFrom
       type:
         namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.RateLimitValueSource
+- name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.RateLimitProvider
+  map:
+    fields:
+    - name: domain
+      type:
+        scalar: string
+      default: ""
+    - name: failOpen
+      type:
+        scalar: boolean
+    - name: grpcService
+      type:
+        namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.ExtGrpcService
+    - name: timeout
+      type:
+        scalar: string
 - name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.RateLimitValueSource
   map:
     fields:

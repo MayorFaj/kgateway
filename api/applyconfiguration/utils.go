@@ -155,6 +155,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.RateLimitApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("RateLimitDescriptor"):
 		return &apiv1alpha1.RateLimitDescriptorApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("RateLimitProvider"):
+		return &apiv1alpha1.RateLimitProviderApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("RateLimitValueSource"):
 		return &apiv1alpha1.RateLimitValueSourceApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("Regex"):

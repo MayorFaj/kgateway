@@ -95,6 +95,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.ProxyDeployment":            schema_kgateway_v2_api_v1alpha1_ProxyDeployment(ref),
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimit":                  schema_kgateway_v2_api_v1alpha1_RateLimit(ref),
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitDescriptor":        schema_kgateway_v2_api_v1alpha1_RateLimitDescriptor(ref),
+		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitProvider":          schema_kgateway_v2_api_v1alpha1_RateLimitProvider(ref),
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitValueSource":       schema_kgateway_v2_api_v1alpha1_RateLimitValueSource(ref),
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.Regex":                      schema_kgateway_v2_api_v1alpha1_Regex(ref),
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RegexMatch":                 schema_kgateway_v2_api_v1alpha1_RegexMatch(ref),
@@ -2104,12 +2105,18 @@ func schema_kgateway_v2_api_v1alpha1_GatewayExtensionSpec(ref common.ReferenceCa
 							Ref:         ref("github.com/kgateway-dev/kgateway/v2/api/v1alpha1.ExtProcProvider"),
 						},
 					},
+					"rateLimit": {
+						SchemaProps: spec.SchemaProps{
+							Description: "RateLimit configuration for RateLimit extension type.",
+							Ref:         ref("github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitProvider"),
+						},
+					},
 				},
 				Required: []string{"type"},
 			},
 		},
 		Dependencies: []string{
-			"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.ExtAuthProvider", "github.com/kgateway-dev/kgateway/v2/api/v1alpha1.ExtProcProvider"},
+			"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.ExtAuthProvider", "github.com/kgateway-dev/kgateway/v2/api/v1alpha1.ExtProcProvider", "github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitProvider"},
 	}
 }
 
@@ -3641,6 +3648,50 @@ func schema_kgateway_v2_api_v1alpha1_RateLimitDescriptor(ref common.ReferenceCal
 		},
 		Dependencies: []string{
 			"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitValueSource"},
+	}
+}
+
+func schema_kgateway_v2_api_v1alpha1_RateLimitProvider(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "RateLimitProvider defines the configuration for a RateLimit service provider.",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"grpcService": {
+						SchemaProps: spec.SchemaProps{
+							Description: "GrpcService is the GRPC service that will handle the rate limiting.",
+							Ref:         ref("github.com/kgateway-dev/kgateway/v2/api/v1alpha1.ExtGrpcService"),
+						},
+					},
+					"domain": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Domain identifies a rate limiting configuration. Multiple domains can be independently configured.",
+							Default:     "",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"failOpen": {
+						SchemaProps: spec.SchemaProps{
+							Description: "FailOpen determines if requests are limited when the rate limit service is unavailable. When true, requests are not limited if the rate limit service is unavailable.",
+							Type:        []string{"boolean"},
+							Format:      "",
+						},
+					},
+					"timeout": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Timeout for requests to the rate limit service.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+				Required: []string{"grpcService", "domain"},
+			},
+		},
+		Dependencies: []string{
+			"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.ExtGrpcService"},
 	}
 }
 
