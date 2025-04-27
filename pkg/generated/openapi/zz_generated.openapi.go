@@ -63,7 +63,6 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.GatewayParametersSpec":      schema_kgateway_v2_api_v1alpha1_GatewayParametersSpec(ref),
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.GatewayParametersStatus":    schema_kgateway_v2_api_v1alpha1_GatewayParametersStatus(ref),
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.GeminiConfig":               schema_kgateway_v2_api_v1alpha1_GeminiConfig(ref),
-		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.GlobalRateLimitPolicy":      schema_kgateway_v2_api_v1alpha1_GlobalRateLimitPolicy(ref),
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.GracefulShutdownSpec":       schema_kgateway_v2_api_v1alpha1_GracefulShutdownSpec(ref),
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.GrpcService":                schema_kgateway_v2_api_v1alpha1_GrpcService(ref),
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.GrpcStatusFilter":           schema_kgateway_v2_api_v1alpha1_GrpcStatusFilter(ref),
@@ -95,6 +94,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.ProxyDeployment":            schema_kgateway_v2_api_v1alpha1_ProxyDeployment(ref),
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimit":                  schema_kgateway_v2_api_v1alpha1_RateLimit(ref),
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitDescriptor":        schema_kgateway_v2_api_v1alpha1_RateLimitDescriptor(ref),
+		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitPolicy":            schema_kgateway_v2_api_v1alpha1_RateLimitPolicy(ref),
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitProvider":          schema_kgateway_v2_api_v1alpha1_RateLimitProvider(ref),
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitValueSource":       schema_kgateway_v2_api_v1alpha1_RateLimitValueSource(ref),
 		"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.Regex":                      schema_kgateway_v2_api_v1alpha1_Regex(ref),
@@ -2329,71 +2329,6 @@ func schema_kgateway_v2_api_v1alpha1_GeminiConfig(ref common.ReferenceCallback) 
 	}
 }
 
-func schema_kgateway_v2_api_v1alpha1_GlobalRateLimitPolicy(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Description: "GlobalRateLimitPolicy defines configuration for global rate limiting using an external service.",
-				Type:        []string{"object"},
-				Properties: map[string]spec.Schema{
-					"domain": {
-						SchemaProps: spec.SchemaProps{
-							Description: "Domain identifies a rate limiting configuration. Multiple domains can be independently configured.",
-							Default:     "",
-							Type:        []string{"string"},
-							Format:      "",
-						},
-					},
-					"descriptors": {
-						SchemaProps: spec.SchemaProps{
-							Description: "Descriptors define the dimensions for rate limiting.",
-							Type:        []string{"array"},
-							Items: &spec.SchemaOrArray{
-								Schema: &spec.Schema{
-									SchemaProps: spec.SchemaProps{
-										Default: map[string]interface{}{},
-										Ref:     ref("github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitDescriptor"),
-									},
-								},
-							},
-						},
-					},
-					"requestsPerUnit": {
-						SchemaProps: spec.SchemaProps{
-							Description: "RequestsPerUnit specifies maximum number of requests per time unit.",
-							Type:        []string{"integer"},
-							Format:      "int32",
-						},
-					},
-					"unit": {
-						SchemaProps: spec.SchemaProps{
-							Description: "Unit specifies the time unit for the rate limit.",
-							Type:        []string{"string"},
-							Format:      "",
-						},
-					},
-					"extensionRef": {
-						SchemaProps: spec.SchemaProps{
-							Description: "ExtensionRef references a GatewayExtension that provides the global rate limit service.",
-							Ref:         ref("k8s.io/api/core/v1.LocalObjectReference"),
-						},
-					},
-					"failOpen": {
-						SchemaProps: spec.SchemaProps{
-							Description: "FailOpen determines if requests are limited when the rate limit service is unavailable. When true, requests are not limited if the rate limit service is unavailable.",
-							Type:        []string{"boolean"},
-							Format:      "",
-						},
-					},
-				},
-				Required: []string{"domain", "extensionRef"},
-			},
-		},
-		Dependencies: []string{
-			"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitDescriptor", "k8s.io/api/core/v1.LocalObjectReference"},
-	}
-}
-
 func schema_kgateway_v2_api_v1alpha1_GracefulShutdownSpec(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -3610,14 +3545,14 @@ func schema_kgateway_v2_api_v1alpha1_RateLimit(ref common.ReferenceCallback) com
 					"global": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Global defines a global rate limiting policy using an external service.",
-							Ref:         ref("github.com/kgateway-dev/kgateway/v2/api/v1alpha1.GlobalRateLimitPolicy"),
+							Ref:         ref("github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitPolicy"),
 						},
 					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.GlobalRateLimitPolicy", "github.com/kgateway-dev/kgateway/v2/api/v1alpha1.LocalRateLimitPolicy"},
+			"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.LocalRateLimitPolicy", "github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitPolicy"},
 	}
 }
 
@@ -3638,14 +3573,14 @@ func schema_kgateway_v2_api_v1alpha1_RateLimitDescriptor(ref common.ReferenceCal
 					},
 					"value": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Value for the descriptor entry.",
+							Description: "Value for the descriptor entry. If both Value and ValueFrom are not specified, the descriptor will be invalid. If both Value and ValueFrom are specified, Value takes precedence.",
 							Type:        []string{"string"},
 							Format:      "",
 						},
 					},
 					"valueFrom": {
 						SchemaProps: spec.SchemaProps{
-							Description: "ValueFrom extracts value from request attributes.",
+							Description: "ValueFrom extracts value from request attributes. If both Value and ValueFrom are not specified, the descriptor will be invalid. If both Value and ValueFrom are specified, Value takes precedence.",
 							Ref:         ref("github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitValueSource"),
 						},
 					},
@@ -3655,6 +3590,57 @@ func schema_kgateway_v2_api_v1alpha1_RateLimitDescriptor(ref common.ReferenceCal
 		},
 		Dependencies: []string{
 			"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitValueSource"},
+	}
+}
+
+func schema_kgateway_v2_api_v1alpha1_RateLimitPolicy(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "RateLimitPolicy defines configuration for global rate limiting using an external service. It follows the Envoy rate limiting protocol where descriptors are sent to an external rate limit service which applies configured limits.",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"domain": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Domain identifies a rate limiting configuration. The external rate limit service uses this domain to look up the appropriate rate limits.",
+							Default:     "",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"descriptors": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Descriptors define the dimensions for rate limiting. These values are passed to the rate limit service which applies configured limits based on them.",
+							Type:        []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Default: map[string]interface{}{},
+										Ref:     ref("github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitDescriptor"),
+									},
+								},
+							},
+						},
+					},
+					"extensionRef": {
+						SchemaProps: spec.SchemaProps{
+							Description: "ExtensionRef references a GatewayExtension that provides the global rate limit service.",
+							Ref:         ref("k8s.io/api/core/v1.LocalObjectReference"),
+						},
+					},
+					"failOpen": {
+						SchemaProps: spec.SchemaProps{
+							Description: "FailOpen determines if requests are limited when the rate limit service is unavailable. When true, requests are not limited if the rate limit service is unavailable. This setting overrides the FailOpen setting in the referenced GatewayExtension's RateLimitProvider.",
+							Type:        []string{"boolean"},
+							Format:      "",
+						},
+					},
+				},
+				Required: []string{"domain", "descriptors", "extensionRef"},
+			},
+		},
+		Dependencies: []string{
+			"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.RateLimitDescriptor", "k8s.io/api/core/v1.LocalObjectReference"},
 	}
 }
 
@@ -3673,7 +3659,7 @@ func schema_kgateway_v2_api_v1alpha1_RateLimitProvider(ref common.ReferenceCallb
 					},
 					"domain": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Domain identifies a rate limiting configuration. Multiple domains can be independently configured.",
+							Description: "Domain identifies a rate limiting configuration for the rate limit service. All rate limit requests must specify a domain, which enables the configuration to be per application without fear of overlap (e.g., \"api\", \"web\", \"admin\").",
 							Default:     "",
 							Type:        []string{"string"},
 							Format:      "",
@@ -3706,7 +3692,7 @@ func schema_kgateway_v2_api_v1alpha1_RateLimitValueSource(ref common.ReferenceCa
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "RateLimitValueSource defines sources for extracting values for rate limiting.",
+				Description: "RateLimitValueSource defines sources for extracting values for rate limiting. Only one value source should be specified. If multiple sources are specified, they will be evaluated in the following order of precedence: Header, RemoteAddress, Path. This is implemented according to the Envoy rate limit descriptor value source:",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"header": {

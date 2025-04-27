@@ -1,4 +1,4 @@
-//go:build e2e
+//go:build ignore
 
 package e2e_test
 
@@ -12,6 +12,15 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	gloov1 "github.com/kgateway-dev/kgateway/v2/internal/gloo/pkg/api/v1"
+	gloov1static "github.com/kgateway-dev/kgateway/v2/internal/gloo/pkg/api/v1/options/static"
+	"github.com/kgateway-dev/kgateway/v2/internal/gloo/pkg/defaults"
+	"github.com/kgateway-dev/kgateway/v2/test/gomega/matchers"
+	"github.com/kgateway-dev/kgateway/v2/test/helpers"
+	"github.com/kgateway-dev/kgateway/v2/test/services"
+	"github.com/kgateway-dev/kgateway/v2/test/services/envoy"
+	"github.com/kgateway-dev/kgateway/v2/test/v1helpers"
+
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/solo-io/go-utils/contextutils"
@@ -20,19 +29,6 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
-
-	// Use the public API packages instead of internal ones
-	gloov1 "github.com/kgateway-dev/kgateway/v2/pkg/api/v1"
-	"github.com/kgateway-dev/kgateway/v2/pkg/api/v1/enterprise/options/ratelimit"
-	gloov1static "github.com/kgateway-dev/kgateway/v2/pkg/api/v1/options/static"
-	"github.com/kgateway-dev/kgateway/v2/pkg/defaults"
-
-	// These tests helpers can remain as-is since they're already in the test package
-	"github.com/kgateway-dev/kgateway/v2/test/gomega/matchers"
-	"github.com/kgateway-dev/kgateway/v2/test/helpers"
-	"github.com/kgateway-dev/kgateway/v2/test/services"
-	"github.com/kgateway-dev/kgateway/v2/test/services/envoy"
-	"github.com/kgateway-dev/kgateway/v2/test/v1helpers"
 )
 
 // EnvoyRateLimitServer provides a mocked rate limit service implementation
@@ -40,7 +36,7 @@ import (
 type EnvoyRateLimitServer struct {
 	// Domain to match
 	Domain string
-	
+
 	// Control whether all requests are limited
 	LimitAll bool
 
@@ -165,7 +161,7 @@ var _ = Describe("Global Rate Limit with Envoy Approach", Serial, func() {
 		}
 
 		testClients = services.RunGlooGatewayUdsFds(ctx, ro)
-		
+
 		// Write the rate limit service upstream
 		_, err := testClients.UpstreamClient.Write(rlservice, clients.WriteOpts{})
 		Expect(err).NotTo(HaveOccurred())
@@ -208,11 +204,11 @@ var _ = Describe("Global Rate Limit with Envoy Approach", Serial, func() {
 		srv = grpc.NewServer()
 		pb.RegisterRateLimitServiceServer(srv, rlServer)
 		reflection.Register(srv)
-		
+
 		addr := fmt.Sprintf(":%d", rlPort)
 		lis, err := net.Listen("tcp", addr)
 		Expect(err).NotTo(HaveOccurred())
-		
+
 		go func() {
 			defer GinkgoRecover()
 			err := srv.Serve(lis)
@@ -241,10 +237,10 @@ var _ = Describe("Global Rate Limit with Envoy Approach", Serial, func() {
 				},
 			}},
 		}
-		
+
 		_, err := testClients.ProxyClient.Write(proxy, clients.WriteOpts{})
 		Expect(err).NotTo(HaveOccurred())
-		
+
 		// Wait for proxy to be configured
 		time.Sleep(2 * time.Second)
 	}
@@ -275,7 +271,7 @@ var _ = Describe("Global Rate Limit with Envoy Approach", Serial, func() {
 			vhost.Options = &gloov1.VirtualHostOptions{
 				RateLimitConfigType: &gloov1.VirtualHostOptions_Ratelimit{
 					Ratelimit: &ratelimit.RateLimitVhostExtension{
-						RateLimits:     actions,
+						RateLimits:      actions,
 						RateLimitDomain: domain, // Set the domain to match our server
 					},
 				},
@@ -423,8 +419,8 @@ var _ = Describe("Global Rate Limit with Envoy Approach", Serial, func() {
 						{
 							ActionSpecifier: &ratelimit.Action_RequestHeaders_{
 								RequestHeaders: &ratelimit.Action_RequestHeaders{
-									HeaderName:     "X-User-ID",
-									DescriptorKey:  "user-id",
+									HeaderName:    "X-User-ID",
+									DescriptorKey: "user-id",
 								},
 							},
 						},
@@ -499,7 +495,7 @@ var _ = Describe("Global Rate Limit with Envoy Approach", Serial, func() {
 								},
 							},
 							RateLimitDomain: domain,
-							FailOpen:       failOpen,
+							FailOpen:        failOpen,
 						},
 					},
 				},

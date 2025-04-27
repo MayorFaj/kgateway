@@ -97,8 +97,6 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.GatewayParametersSpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("GeminiConfig"):
 		return &apiv1alpha1.GeminiConfigApplyConfiguration{}
-	case v1alpha1.SchemeGroupVersion.WithKind("GlobalRateLimitPolicy"):
-		return &apiv1alpha1.GlobalRateLimitPolicyApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("GracefulShutdownSpec"):
 		return &apiv1alpha1.GracefulShutdownSpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("GrpcService"):
@@ -155,6 +153,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.RateLimitApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("RateLimitDescriptor"):
 		return &apiv1alpha1.RateLimitDescriptorApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("RateLimitPolicy"):
+		return &apiv1alpha1.RateLimitPolicyApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("RateLimitProvider"):
 		return &apiv1alpha1.RateLimitProviderApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("RateLimitValueSource"):

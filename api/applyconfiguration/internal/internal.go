@@ -659,31 +659,6 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: string
       default: ""
-- name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.GlobalRateLimitPolicy
-  map:
-    fields:
-    - name: descriptors
-      type:
-        list:
-          elementType:
-            namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.RateLimitDescriptor
-          elementRelationship: atomic
-    - name: domain
-      type:
-        scalar: string
-      default: ""
-    - name: extensionRef
-      type:
-        namedType: io.k8s.api.core.v1.LocalObjectReference
-    - name: failOpen
-      type:
-        scalar: boolean
-    - name: requestsPerUnit
-      type:
-        scalar: numeric
-    - name: unit
-      type:
-        scalar: string
 - name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.GracefulShutdownSpec
   map:
     fields:
@@ -1076,7 +1051,7 @@ var schemaYAML = typed.YAMLObject(`types:
     fields:
     - name: global
       type:
-        namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.GlobalRateLimitPolicy
+        namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.RateLimitPolicy
     - name: local
       type:
         namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.LocalRateLimitPolicy
@@ -1093,6 +1068,25 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: valueFrom
       type:
         namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.RateLimitValueSource
+- name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.RateLimitPolicy
+  map:
+    fields:
+    - name: descriptors
+      type:
+        list:
+          elementType:
+            namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.RateLimitDescriptor
+          elementRelationship: atomic
+    - name: domain
+      type:
+        scalar: string
+      default: ""
+    - name: extensionRef
+      type:
+        namedType: io.k8s.api.core.v1.LocalObjectReference
+    - name: failOpen
+      type:
+        scalar: boolean
 - name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.RateLimitProvider
   map:
     fields:

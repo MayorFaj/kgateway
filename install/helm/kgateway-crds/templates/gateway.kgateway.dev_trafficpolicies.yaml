@@ -407,6 +407,7 @@ spec:
                           required:
                           - key
                           type: object
+                        minItems: 1
                         type: array
                       domain:
                         type: string
@@ -420,18 +421,8 @@ spec:
                       failOpen:
                         default: false
                         type: boolean
-                      requestsPerUnit:
-                        format: int32
-                        minimum: 1
-                        type: integer
-                      unit:
-                        enum:
-                        - second
-                        - minute
-                        - hour
-                        - day
-                        type: string
                     required:
+                    - descriptors
                     - domain
                     - extensionRef
                     type: object
