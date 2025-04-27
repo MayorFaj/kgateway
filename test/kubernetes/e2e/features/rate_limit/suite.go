@@ -168,7 +168,7 @@ func (s *testingSuite) TestGlobalRateLimitFailOpen() {
 	s.assertConsistentResponse("/path1", http.StatusTooManyRequests)
 
 	// Scale down the rate limit service to simulate failure
-	err := s.testInstallation.Actions.Kubectl().Scale(s.ctx, "deployment", "ratelimit", rateLimitDeployment.GetNamespace(), 0)
+	err := s.testInstallation.Actions.Kubectl().Scale(s.ctx, "deployment", "ratelimit", 0)
 	s.Require().NoError(err, "can scale down ratelimit deployment")
 	s.testInstallation.Assertions.EventuallyPodsNotExist(s.ctx, rateLimitDeployment.GetNamespace(), metav1.ListOptions{
 		LabelSelector: "app=ratelimit",
@@ -178,7 +178,7 @@ func (s *testingSuite) TestGlobalRateLimitFailOpen() {
 	s.assertConsistentResponse("/path1", http.StatusOK)
 
 	// Scale back up the rate limit service
-	err = s.testInstallation.Actions.Kubectl().Scale(s.ctx, "deployment", "ratelimit", rateLimitDeployment.GetNamespace(), 1)
+	err = s.testInstallation.Actions.Kubectl().Scale(s.ctx, "deployment", "ratelimit", 1)
 	s.Require().NoError(err, "can scale up ratelimit deployment")
 	s.testInstallation.Assertions.EventuallyPodsRunning(s.ctx, rateLimitDeployment.GetNamespace(), metav1.ListOptions{
 		LabelSelector: "app=ratelimit",

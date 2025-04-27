@@ -6,11 +6,9 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	v1alpha1 "github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
-	testutils "github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/utils"
 )
 
 const (
@@ -142,5 +140,5 @@ var (
 )
 
 func testdata(filename string) string {
-	return filepath.Join(testutils.ResolveFile("."), "testdata", filename)
+	return filepath.Join(".", "testdata", filename)
 }
