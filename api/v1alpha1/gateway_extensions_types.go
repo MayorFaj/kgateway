@@ -67,8 +67,9 @@ type RateLimitProvider struct {
 	// +kubebuilder:validation:Required
 	GrpcService *ExtGrpcService `json:"grpcService"`
 
-	// Domain identifies a rate limiting configuration.
-	// Multiple domains can be independently configured.
+	// Domain identifies a rate limiting configuration for the rate limit service.
+	// All rate limit requests must specify a domain, which enables the configuration
+	// to be per application without fear of overlap (e.g., "api", "web", "admin").
 	// +kubebuilder:validation:Required
 	Domain string `json:"domain"`
 

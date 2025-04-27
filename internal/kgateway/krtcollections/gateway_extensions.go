@@ -37,20 +37,20 @@ func NewGatewayExtensionsCollection(
 
 	rawGwExts := krt.WrapClient(kclient.New[*v1alpha1.GatewayExtension](client), krtOpts.ToOptions("GatewayExtension")...)
 	gwExtCol := krt.NewCollection(rawGwExts, func(krtctx krt.HandlerContext, cr *v1alpha1.GatewayExtension) *ir.GatewayExtension {
-		gwExt := &ir.GatewayExtension{
-			ObjectSource: ir.ObjectSource{
-				Group:     wellknown.GatewayExtensionGVK.GroupKind().Group,
-				Kind:      wellknown.GatewayExtensionGVK.GroupKind().Kind,
-				Namespace: cr.Namespace,
-				Name:      cr.Name,
-			},
-			Type:            cr.Spec.Type,
-			ExtAuth:         cr.Spec.ExtAuth,
-			ExtProc:         cr.Spec.ExtProc,
-			GlobalRateLimit: cr.Spec.RateLimit,
-			Domain:          cr.Namespace,
+		objSrc := ir.ObjectSource{
+			Group:     wellknown.GatewayExtensionGVK.GroupKind().Group,
+			Kind:      wellknown.GatewayExtensionGVK.GroupKind().Kind,
+			Namespace: cr.Namespace,
+			Name:      cr.Name,
 		}
-		return gwExt
+		extension := &ir.GatewayExtension{
+			ObjectSource: objSrc,
+			Type:         cr.Spec.Type,
+			ExtAuth:      cr.Spec.ExtAuth,
+			ExtProc:      cr.Spec.ExtProc,
+			RateLimit:    cr.Spec.RateLimit,
+		}
+		return extension
 	})
 	return gwExtCol
 }

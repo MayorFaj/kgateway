@@ -57,6 +57,7 @@ const (
 	localRateLimitFilterNamePrefix        = "ratelimit/local"
 	localRateLimitStatPrefix              = "http_local_rate_limiter"
 	transformationFilterMetadataNamespace = "io.solo.transformation" // TODO: remove this as we move onto rustformations and off envoy-gloo
+	rateLimitFilterNamePrefix             = "ratelimit/global"
 )
 
 func extAuthFilterName(name string) string {
@@ -86,7 +87,7 @@ type trafficPolicySpecIr struct {
 	rustformationStringToStash string
 	extAuth                    *extAuthIR
 	localRateLimit             *localratelimitv3.LocalRateLimit
-	globalRateLimit            *ratev3.RateLimit
+	rateLimit                  *ratev3.RateLimit
 	errors                     []error
 }
 
@@ -162,7 +163,7 @@ func (d *trafficPolicy) Equals(in any) bool {
 	}
 
 	// global rate limit equality check
-	if !proto.Equal(d.spec.globalRateLimit, d2.spec.globalRateLimit) {
+	if !proto.Equal(d.spec.rateLimit, d2.spec.rateLimit) {
 		return false
 	}
 
@@ -177,7 +178,7 @@ type trafficPolicyPluginGwPass struct {
 	ir.UnimplementedProxyTranslationPass
 	extprocFilter         *envoy_ext_proc_v3.ExternalProcessor
 	localRateLimitInChain *localratelimitv3.LocalRateLimit
-	globalRateLimit       *ratev3.RateLimit
+	rateLimit             *ratev3.RateLimit
 	extAuthPerProvider    map[string]*extAuthIR
 }
 
@@ -370,13 +371,13 @@ func (p *trafficPolicyPluginGwPass) ApplyForRoute(ctx context.Context, pCtx *ir.
 	}
 
 	// Apply global rate limiting if configured
-	if policy.spec.globalRateLimit != nil {
-		// Store the global rate limit configuration for use in HttpFilters
-		p.globalRateLimit = policy.spec.globalRateLimit
+	if policy.spec.rateLimit != nil {
+		// Store the rate limit configuration for use in HttpFilters
+		p.rateLimit = policy.spec.rateLimit
 
 		// Per-route configuration can override domain, enable/disable the filter, etc.
 		// We need to add a typed per-filter config for the rate limit filter
-		pCtx.TypedFilterConfig.AddTypedConfig(globalRateLimitFilterNamePrefix, policy.spec.globalRateLimit)
+		pCtx.TypedFilterConfig.AddTypedConfig(rateLimitFilterNamePrefix, policy.spec.rateLimit)
 	}
 
 	if policy.spec.AI != nil {
@@ -489,11 +490,11 @@ func (p *trafficPolicyPluginGwPass) HttpFilters(ctx context.Context, fcc ir.Filt
 		filters = append(filters, extprocFilters...)
 	}
 
-	// Add global rate limit filter if configured
-	if p.globalRateLimit != nil {
+	// Add rate limit filter if configured
+	if p.rateLimit != nil {
 		filter := plugins.MustNewStagedFilter(
-			globalRateLimitFilterNamePrefix,
-			p.globalRateLimit,
+			rateLimitFilterNamePrefix,
+			p.rateLimit,
 			plugins.BeforeStage(plugins.AcceptedStage),
 		)
 		filters = append(filters, filter)
@@ -756,7 +757,7 @@ func buildTranslateFunc(
 		localRateLimitForSpec(policyCR.Spec, &outSpec)
 
 		// Apply global rate limit specific translation
-		globalRateLimitForSpec(ctx, commoncol, krtctx, policyCR, &outSpec)
+		RateLimitForSpec(ctx, commoncol, krtctx, policyCR, &outSpec)
 
 		for _, err := range outSpec.errors {
 			contextutils.LoggerFrom(ctx).Error(policyCR.GetNamespace(), policyCR.GetName(), err)
@@ -837,9 +838,9 @@ func localRateLimitForSpec(spec v1alpha1.TrafficPolicySpec, out *trafficPolicySp
 	// TODO: Support rate limit extension
 }
 
-// globalRateLimitForSpec translates the global rate limit spec into the IR policy
-func globalRateLimitForSpec(ctx context.Context, commoncol *common.CommonCollections, krtctx krt.HandlerContext, policyCR *v1alpha1.TrafficPolicy, out *trafficPolicySpecIr) {
-	if policyCR.Spec.RateLimit == nil || policyCR.Spec.RateLimit.GlobalRateLimit == nil {
+// RateLimitForSpec translates the global rate limit spec into the IR policy
+func RateLimitForSpec(ctx context.Context, commoncol *common.CommonCollections, krtctx krt.HandlerContext, policyCR *v1alpha1.TrafficPolicy, out *trafficPolicySpecIr) {
+	if policyCR.Spec.RateLimit == nil || policyCR.Spec.RateLimit.Global == nil {
 		return
 	}
 
@@ -851,14 +852,14 @@ func globalRateLimitForSpec(ctx context.Context, commoncol *common.CommonCollect
 		commoncol.KrtOpts,
 	)
 
-	globalPolicy := policyCR.Spec.RateLimit.GlobalRateLimit
+	rateLimit := policyCR.Spec.RateLimit.Global
 
 	// Create the extension configuration
-	extensionConfig, err := toGlobalRateLimitFilterConfig(globalPolicy, gwExtsCollection, krtctx)
+	extensionConfig, err := toRateLimitFilterConfig(rateLimit, gwExtsCollection, krtctx, policyCR)
 	if err != nil {
 		out.errors = append(out.errors, err)
 		return
 	}
 
-	out.globalRateLimit = extensionConfig
+	out.rateLimit = extensionConfig
 }

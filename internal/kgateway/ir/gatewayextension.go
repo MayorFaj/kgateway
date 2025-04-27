@@ -22,12 +22,9 @@ type GatewayExtension struct {
 	// ExtProc configuration for ExtProc extension type.
 	ExtProc *v1alpha1.ExtProcProvider
 
-	// GlobalRateLimit configuration for RateLimit extension type.
+	// RateLimit configuration for RateLimit extension type.
 	// This is specifically for global rate limiting that communicates with an external rate limit service.
-	GlobalRateLimit *v1alpha1.RateLimitProvider
-
-	// Domain is the namespace to use when generating cluster names for rate limiting.
-	Domain string
+	RateLimit *v1alpha1.RateLimitProvider
 }
 
 var (
@@ -50,10 +47,7 @@ func (e GatewayExtension) Equals(other GatewayExtension) bool {
 	if !reflect.DeepEqual(e.ExtProc, other.ExtProc) {
 		return false
 	}
-	if !reflect.DeepEqual(e.GlobalRateLimit, other.GlobalRateLimit) {
-		return false
-	}
-	if e.Domain != other.Domain {
+	if !reflect.DeepEqual(e.RateLimit, other.RateLimit) {
 		return false
 	}
 	return true

@@ -258,7 +258,7 @@ type RateLimit struct {
 
 	// Global defines a global rate limiting policy using an external service.
 	// +optional
-	GlobalRateLimit *GlobalRateLimitPolicy `json:"global,omitempty"`
+	Global *RateLimitPolicy `json:"global,omitempty"`
 }
 
 // LocalRateLimitPolicy represents a policy for local rate limiting.
@@ -270,26 +270,20 @@ type LocalRateLimitPolicy struct {
 	TokenBucket *TokenBucket `json:"tokenBucket"`
 }
 
-// GlobalRateLimitPolicy defines configuration for global rate limiting using an external service.
-type GlobalRateLimitPolicy struct {
+// RateLimitPolicy defines configuration for global rate limiting using an external service.
+// It follows the Envoy rate limiting protocol where descriptors are sent to an external
+// rate limit service which applies configured limits.
+type RateLimitPolicy struct {
 	// Domain identifies a rate limiting configuration.
-	// Multiple domains can be independently configured.
+	// The external rate limit service uses this domain to look up the appropriate rate limits.
 	// +required
 	Domain string `json:"domain"`
 
 	// Descriptors define the dimensions for rate limiting.
-	// +optional
-	Descriptors []RateLimitDescriptor `json:"descriptors,omitempty"`
-
-	// RequestsPerUnit specifies maximum number of requests per time unit.
-	// +optional
-	// +kubebuilder:validation:Minimum=1
-	RequestsPerUnit int32 `json:"requestsPerUnit,omitempty"`
-
-	// Unit specifies the time unit for the rate limit.
-	// +optional
-	// +kubebuilder:validation:Enum=second;minute;hour;day
-	Unit string `json:"unit,omitempty"`
+	// These values are passed to the rate limit service which applies configured limits based on them.
+	// +required
+	// +kubebuilder:validation:MinItems=1
+	Descriptors []RateLimitDescriptor `json:"descriptors"`
 
 	// ExtensionRef references a GatewayExtension that provides the global rate limit service.
 	// +required
@@ -297,6 +291,7 @@ type GlobalRateLimitPolicy struct {
 
 	// FailOpen determines if requests are limited when the rate limit service is unavailable.
 	// When true, requests are not limited if the rate limit service is unavailable.
+	// This setting overrides the FailOpen setting in the referenced GatewayExtension's RateLimitProvider.
 	// +optional
 	// +kubebuilder:default=false
 	FailOpen bool `json:"failOpen,omitempty"`
@@ -309,15 +304,22 @@ type RateLimitDescriptor struct {
 	Key string `json:"key"`
 
 	// Value for the descriptor entry.
+	// If both Value and ValueFrom are not specified, the descriptor will be invalid.
+	// If both Value and ValueFrom are specified, Value takes precedence.
 	// +optional
 	Value string `json:"value,omitempty"`
 
 	// ValueFrom extracts value from request attributes.
+	// If both Value and ValueFrom are not specified, the descriptor will be invalid.
+	// If both Value and ValueFrom are specified, Value takes precedence.
 	// +optional
 	ValueFrom *RateLimitValueSource `json:"valueFrom,omitempty"`
 }
 
 // RateLimitValueSource defines sources for extracting values for rate limiting.
+// Only one value source should be specified. If multiple sources are specified,
+// they will be evaluated in the following order of precedence: Header, RemoteAddress, Path.
+// This is implemented according to the Envoy rate limit descriptor value source:
 type RateLimitValueSource struct {
 	// Header extracts value from a request header.
 	// +optional

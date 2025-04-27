@@ -18,26 +18,37 @@ import (
 )
 
 const (
-	globalRateLimitFilterName       = "envoy.filters.http.ratelimit"
-	globalRateLimitFilterNamePrefix = "ratelimit/global"
-	globalRateLimitStatPrefix       = "http_global_rate_limit"
+	rateLimitFilterName     = "envoy.filters.http.ratelimit"
+	rateLimitStatPrefix     = "http_rate_limit"
+	defaultRateLimitTimeout = 2 * time.Second
 )
 
-// toGlobalRateLimitFilterConfig translates a GlobalRateLimitPolicy to Envoy rate limit configuration.
-func toGlobalRateLimitFilterConfig(policy *v1alpha1.GlobalRateLimitPolicy, gweCollection krt.Collection[ir.GatewayExtension], kctx krt.HandlerContext) (*ratev3.RateLimit, error) {
+// toRateLimitFilterConfig translates a RateLimitPolicy to Envoy rate limit configuration.
+func toRateLimitFilterConfig(policy *v1alpha1.RateLimitPolicy, gweCollection krt.Collection[ir.GatewayExtension], kctx krt.HandlerContext, trafficpolicy *v1alpha1.TrafficPolicy) (*ratev3.RateLimit, error) {
 	if policy == nil || policy.ExtensionRef == nil {
 		return nil, nil
 	}
 
-	// Get the referenced GatewayExtension
+	// Get the extension name
+	extensionName := string(policy.ExtensionRef.Name)
+
+	// Use the namespace from the TrafficPolicy object, with fallback to "default"
+	extensionNamespace := trafficpolicy.GetNamespace()
+	if extensionNamespace == "" {
+		// Use "default" namespace when none is specified
+		extensionNamespace = "default"
+	}
+
+	// Get the GatewayExtension referenced by the policy
 	gwExt, err := pluginutils.GetGatewayExtension(
 		gweCollection,
 		kctx,
-		policy.ExtensionRef.Name,
-		policy.Domain, // Use the domain from the policy as fallback namespace
+		extensionName,
+		extensionNamespace,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get referenced GatewayExtension %s: %w", policy.ExtensionRef.Name, err)
+		return nil, fmt.Errorf("failed to get referenced GatewayExtension %s/%s: %w",
+			extensionNamespace, extensionName, err)
 	}
 
 	// Verify it's the correct type
@@ -45,48 +56,53 @@ func toGlobalRateLimitFilterConfig(policy *v1alpha1.GlobalRateLimitPolicy, gweCo
 		return nil, pluginutils.ErrInvalidExtensionType(v1alpha1.GatewayExtensionTypeRateLimit, gwExt.Type)
 	}
 
-	// Check if GlobalRateLimit provider is configured
-	if gwExt.GlobalRateLimit == nil {
-		return nil, fmt.Errorf("GlobalRateLimit configuration is missing in GatewayExtension %s", policy.ExtensionRef.Name)
+	// Get the extension's spec
+	extension, err := getExtensionSpec(gwExt)
+	if err != nil {
+		return nil, err
 	}
 
 	// Create a timeout based on the time unit if specified, otherwise use the default from the extension
 	var timeout *durationpb.Duration
 
 	// Use timeout from extension if specified
-	if gwExt.GlobalRateLimit.Timeout != "" {
-		duration, err := time.ParseDuration(gwExt.GlobalRateLimit.Timeout)
+	if extension.Timeout != "" {
+		duration, err := time.ParseDuration(extension.Timeout)
 		if err != nil {
-			return nil, fmt.Errorf("invalid timeout in GatewayExtension %s: %w", policy.ExtensionRef.Name, err)
+			return nil, fmt.Errorf("invalid timeout in GatewayExtension %s: %w", extensionName, err)
 		}
 		timeout = durationpb.New(duration)
 	} else {
 		// Default timeout if not specified in extension
-		timeout = durationpb.New(time.Second * 2)
+		timeout = durationpb.New(defaultRateLimitTimeout)
 	}
 
-	// Get domain from extension or use the one from the policy if not specified
+	// Domain precedence: We prioritize the policy domain to allow specifying domain per policy.
+	// If policy domain is not specified, then fall back to the extension domain.
+	// This ensures each policy can have its own rate limit domain when needed.
 	domain := policy.Domain
-	if gwExt.GlobalRateLimit.Domain != "" {
-		domain = gwExt.GlobalRateLimit.Domain
+	if domain == "" && extension.Domain != "" {
+		domain = extension.Domain
 	}
 
 	// Construct cluster name from the backendRef
 	clusterName := ""
-	if gwExt.GlobalRateLimit.GrpcService != nil && gwExt.GlobalRateLimit.GrpcService.BackendRef != nil {
+	if extension.GrpcService != nil && extension.GrpcService.BackendRef != nil {
+		// Format: outbound|<port>||<service>.<namespace>.svc.cluster.local
 		clusterName = fmt.Sprintf("outbound|%d||%s.%s.svc.cluster.local",
-			gwExt.GlobalRateLimit.GrpcService.BackendRef.Port,
-			gwExt.GlobalRateLimit.GrpcService.BackendRef.Name,
-			gwExt.Domain)
+			extension.GrpcService.BackendRef.Port,
+			extension.GrpcService.BackendRef.Name,
+			gwExt.Namespace)
 	} else {
-		return nil, fmt.Errorf("GrpcService BackendRef not specified in GatewayExtension %s", policy.ExtensionRef.Name)
+		return nil, fmt.Errorf("GrpcService BackendRef not specified in GatewayExtension %s/%s",
+			extensionNamespace, extensionName)
 	}
 
 	// Create a rate limit configuration
 	rl := &ratev3.RateLimit{
 		Domain:          domain,
 		Timeout:         timeout,
-		FailureModeDeny: !gwExt.GlobalRateLimit.FailOpen,
+		FailureModeDeny: !extension.FailOpen,
 		RateLimitService: &ratelimitv3.RateLimitServiceConfig{
 			GrpcService: &corev3.GrpcService{
 				TargetSpecifier: &corev3.GrpcService_EnvoyGrpc_{
@@ -100,21 +116,20 @@ func toGlobalRateLimitFilterConfig(policy *v1alpha1.GlobalRateLimitPolicy, gweCo
 		Stage:                   0,                                 // Default stage
 		EnableXRatelimitHeaders: ratev3.RateLimit_DRAFT_VERSION_03, // Use latest RFC draft
 		RequestType:             "both",                            // Apply to both internal and external
-		StatPrefix:              globalRateLimitStatPrefix,
-	}
-
-	// Add descriptors if defined
-	if len(policy.Descriptors) > 0 {
-		// Just log that we've processed descriptors, but we don't use them directly in the rl object
-		// since the ConfigType field doesn't exist
-		_, err := createRateLimitActions(policy.Descriptors)
-		if err != nil {
-			return nil, err
-		}
-		// Domain is already set above, no need to set it through a non-existent ConfigType field
+		StatPrefix:              rateLimitStatPrefix,
 	}
 
 	return rl, nil
+}
+
+// getExtensionSpec extracts the RateLimitProvider from a GatewayExtension
+func getExtensionSpec(gwExt *ir.GatewayExtension) (*v1alpha1.RateLimitProvider, error) {
+	// Check if RateLimit field exists
+	if gwExt.RateLimit == nil {
+		return nil, fmt.Errorf("RateLimit configuration is missing in GatewayExtension")
+	}
+
+	return gwExt.RateLimit, nil
 }
 
 // createRateLimitActions translates the API descriptors to Envoy route config rate limit actions
