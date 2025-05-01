@@ -301,6 +301,18 @@ func mergeProxyReports(
 			// into the merged report
 			maps.Copy(merged.TLSRoutes[rnn].Parents, rr.Parents)
 		}
+
+		for key, report := range p.reports.Policies {
+			// if we haven't encountered this policy, just copy it over completely
+			old := merged.Policies[key]
+			if old == nil {
+				merged.Policies[key] = report
+				continue
+			}
+			// else, let's merge our parentRefs into the existing map
+			// obsGen will stay as-is...
+			maps.Copy(merged.Policies[key].Ancestors, report.Ancestors)
+		}
 	}
 
 	return merged
