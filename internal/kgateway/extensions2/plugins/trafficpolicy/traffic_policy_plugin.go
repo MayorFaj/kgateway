@@ -1156,7 +1156,7 @@ func buildTranslateFunc(
 			errors = append(errors, err)
 		}
 
-		for _, err := range outSpec.errors {
+		for _, err := range errors {
 			contextutils.LoggerFrom(ctx).Error(policyCR.GetNamespace(), policyCR.GetName(), err)
 		}
 		policyIr.spec = outSpec
