@@ -30,6 +30,7 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/ir"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/krtcollections"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/plugins"
+	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/reports"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
 	"github.com/kgateway-dev/kgateway/v2/pkg/client/clientset/versioned"
@@ -244,17 +245,17 @@ func getAISecretRef(llm v1alpha1.SupportedLLMProvider) *corev1.LocalObjectRefere
 	return secretRef
 }
 
-func processBackend(ctx context.Context, in ir.BackendObjectIR, out *envoy_config_cluster_v3.Cluster) {
+func processBackend(ctx context.Context, in ir.BackendObjectIR, out *envoy_config_cluster_v3.Cluster) *ir.EndpointsForBackend {
 	log := contextutils.LoggerFrom(ctx)
 	up, ok := in.Obj.(*v1alpha1.Backend)
 	if !ok {
 		log.DPanic("failed to cast backend object")
-		return
+		return nil
 	}
 	ir, ok := in.ObjIr.(*BackendIr)
 	if !ok {
 		log.DPanic("failed to cast backend ir")
-		return
+		return nil
 	}
 
 	// TODO(tim): Bubble up error to Backend status once https://github.com/kgateway-dev/kgateway/issues/10555
@@ -279,6 +280,7 @@ func processBackend(ctx context.Context, in ir.BackendObjectIR, out *envoy_confi
 			log.Error(err)
 		}
 	}
+	return nil
 }
 
 // hostname returns the hostname for the backend. Only static backends are supported.
@@ -308,7 +310,7 @@ type backendPlugin struct {
 	aiGatewayEnabled map[string]bool
 }
 
-func newPlug(ctx context.Context, tctx ir.GwTranslationCtx) ir.ProxyTranslationPass {
+func newPlug(ctx context.Context, tctx ir.GwTranslationCtx, reporter reports.Reporter) ir.ProxyTranslationPass {
 	return &backendPlugin{}
 }
 
