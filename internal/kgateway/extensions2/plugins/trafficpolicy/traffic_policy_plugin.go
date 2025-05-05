@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"time"
 
-	ratelimitv3 "github.com/envoyproxy/go-control-plane/envoy/config/ratelimit/v3"
 	envoy_core_v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoy_config_listener_v3 "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
+	ratelimitv3 "github.com/envoyproxy/go-control-plane/envoy/config/ratelimit/v3"
 	routev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	exteniondynamicmodulev3 "github.com/envoyproxy/go-control-plane/envoy/extensions/dynamic_modules/v3"
 	dynamicmodulesv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/dynamic_modules/v3"
@@ -219,9 +219,8 @@ func (r *RateLimitIR) Equals(other *RateLimitIR) bool {
 }
 
 type trafficPolicyGatewayExtensionIR struct {
-	name    string
-	extType v1alpha1.GatewayExtensionType
-
+	name      string
+	extType   v1alpha1.GatewayExtensionType
 	extAuth   *envoy_ext_authz_v3.ExtAuthz
 	extProc   *envoy_ext_proc_v3.ExternalProcessor
 	rateLimit *ratev3.RateLimit
