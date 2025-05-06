@@ -671,6 +671,8 @@ func (p *trafficPolicyPluginGwPass) ApplyForRoute(ctx context.Context, pCtx *ir.
 		route := outputRoute.GetRoute()
 		if route != nil {
 			route.RateLimits = append(route.GetRateLimits(), policy.spec.rateLimit.rateLimitActions...)
+			// Also call handleRateLimit here to ensure proper setup in rateLimitPerProvider
+			p.handleRateLimit(&pCtx.TypedFilterConfig, policy.spec.rateLimit)
 		}
 	}
 
