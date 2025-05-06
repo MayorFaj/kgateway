@@ -53,10 +53,15 @@ descriptors:
     rate_limit:
       unit: minute
       requests_per_unit: 1
-  - key: user_id
+  - key: X-User-ID
     rate_limit:
       unit: minute
       requests_per_unit: 1
+  - key: service
+    value: premium-api
+    rate_limit:
+      unit: minute
+      requests_per_unit: 2
 ```
 
 ### 3. Create a GatewayExtension
@@ -79,7 +84,7 @@ spec:
         port: 8081
     domain: "api-gateway"
     timeout: "100ms"  # Optional timeout for rate limit service calls
-    failOpen: false   # When true, requests are not limited if the service is unavailable
+    failOpen: false   # Optional: when true, requests proceed if the rate limit service is unavailable
 ```
 
 ### 4. Create TrafficPolicies with Global Rate Limiting
@@ -115,6 +120,15 @@ spec:
 | descriptors | Define the dimensions for rate limiting | Yes |
 | extensionRef | Reference to a GatewayExtension for the rate limit service | Yes |
 
+### GatewayExtension.spec.rateLimit
+
+| Field | Description | Required |
+|-------|-------------|----------|
+| grpcService | Configuration for connecting to the gRPC rate limit service | Yes |
+| domain | Domain identity for the rate limit service | Yes |
+| timeout | Timeout for rate limit service calls (e.g., "100ms") | No |
+| failOpen | When true, requests continue if the rate limit service is unavailable | No (defaults to false) |
+
 ### Rate Limit Descriptors
 
 Descriptors define the dimensions for rate limiting. Each descriptor consists of one or more entries that help categorize and count requests:
@@ -129,7 +143,7 @@ descriptors:
       value: "custom_value"
 - entries:
   - type: Header
-    header: "user-id"
+    header: "X-User-ID"
   - type: Path
 ```
 
@@ -141,6 +155,19 @@ descriptors:
 | Path | Uses the request path as the descriptor value | None |
 | Header | Extracts the descriptor value from a request header | `header`: The name of the header to extract |
 | Generic | Uses a static key-value pair | `generic.key`: The descriptor key<br>`generic.value`: The static value |
+
+## Rate Limit Response Headers
+
+When rate limiting is enabled, kgateway adds the following headers to responses:
+
+| Header | Description | Example |
+|--------|-------------|---------|
+| x-ratelimit-limit | The rate limit ceiling for the given request | `10, 10;w=60` (10 requests per 60 seconds) |
+| x-ratelimit-remaining | The number of requests left for the time window | `5` (5 requests remaining) |
+| x-ratelimit-reset | The time in seconds until the rate limit resets | `30` (rate limit resets in 30 seconds) |
+| x-envoy-ratelimited | Present when the request is rate limited | `true` |
+
+These headers help clients understand their current rate limit status and adapt their behavior accordingly.
 
 ## Examples
 
@@ -188,7 +215,7 @@ spec:
       descriptors:
       - entries:
         - type: Header
-          header: "user-id"
+          header: "X-User-ID"
       extensionRef:
         name: global-ratelimit
 ```
@@ -215,6 +242,38 @@ spec:
         - type: Path
         - type: Header
           header: "user-id"
+      extensionRef:
+        name: global-ratelimit
+```
+
+## Combining Local and Global Rate Limiting
+
+kgateway allows you to use both local and global rate limiting in the same TrafficPolicy:
+
+```yaml
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: combined-rate-limit
+  namespace: kgateway-system
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: test-route-1
+  rateLimit:
+    local:
+      tokenBucket:
+        maxTokens: 5
+        tokensPerFill: 1
+        fillInterval: "1s"
+    global:
+      descriptors:
+      - entries:
+        - type: Generic
+          generic:
+            key: "service"
+            value: "premium-api"
       extensionRef:
         name: global-ratelimit
 ```
