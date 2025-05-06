@@ -19,7 +19,7 @@ type TrafficPolicy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   TrafficPolicySpec `json:"spec,omitempty"`
+	Spec TrafficPolicySpec `json:"spec,omitempty"`
 
 	Status gwv1alpha2.PolicyStatus `json:"status,omitempty"`
 	// TODO: embed this into a typed Status field when
