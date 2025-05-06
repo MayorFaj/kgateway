@@ -1149,7 +1149,7 @@ func buildTranslateFunc(
 		if err != nil {
 			errors = append(errors, err)
 		}
-		
+
 		// Apply global rate limit specific translation
 		rateLimitForSpec(commoncol, krtctx, policyCR, &outSpec, gatewayExtensions)
 
