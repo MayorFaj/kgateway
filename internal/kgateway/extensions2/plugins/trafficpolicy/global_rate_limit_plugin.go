@@ -5,16 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	ratelimitv3 "github.com/envoyproxy/go-control-plane/envoy/config/ratelimit/v3"
 	routeconfv3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
-	ratev3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ratelimit/v3"
-	"google.golang.org/protobuf/types/known/durationpb"
-	"istio.io/istio/pkg/kube/krt"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
-	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/pluginutils"
-	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/ir"
 )
 
 const (
@@ -27,110 +20,6 @@ const (
 type RateLimitIR struct {
 	provider         *trafficPolicyGatewayExtensionIR
 	rateLimitActions []*routeconfv3.RateLimit
-}
-
-// toRateLimitFilterConfig translates a RateLimitPolicy to Envoy rate limit configuration.
-func toRateLimitFilterConfig(policy *v1alpha1.RateLimitPolicy, gweCollection krt.Collection[ir.GatewayExtension], kctx krt.HandlerContext, trafficpolicy *v1alpha1.TrafficPolicy) (*ratev3.RateLimit, error) {
-	if policy == nil || policy.ExtensionRef == nil {
-		return nil, nil
-	}
-
-	// Get the extension name
-	extensionName := string(policy.ExtensionRef.Name)
-
-	// Use the namespace from the TrafficPolicy object, with fallback to "default"
-	extensionNamespace := trafficpolicy.GetNamespace()
-	if extensionNamespace == "" {
-		// Use "default" namespace when none is specified
-		extensionNamespace = "default"
-	}
-
-	// Get the GatewayExtension referenced by the policy
-	gwExt, err := pluginutils.GetGatewayExtension(
-		gweCollection,
-		kctx,
-		extensionName,
-		extensionNamespace,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get referenced GatewayExtension %s/%s: %w",
-			extensionNamespace, extensionName, err)
-	}
-
-	// Verify it's the correct type
-	if gwExt.Type != v1alpha1.GatewayExtensionTypeRateLimit {
-		return nil, pluginutils.ErrInvalidExtensionType(v1alpha1.GatewayExtensionTypeRateLimit, gwExt.Type)
-	}
-
-	// Get the extension's spec
-	extension, err := getExtensionSpec(gwExt)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create a timeout based on the time unit if specified, otherwise use the default from the extension
-	var timeout *durationpb.Duration
-
-	// Use timeout from extension if specified
-	if extension.Timeout != "" {
-		duration, err := time.ParseDuration(extension.Timeout)
-		if err != nil {
-			return nil, fmt.Errorf("invalid timeout in GatewayExtension %s: %w", extensionName, err)
-		}
-		timeout = durationpb.New(duration)
-	} else {
-		// Default timeout if not specified in extension
-		timeout = durationpb.New(defaultRateLimitTimeout)
-	}
-
-	// Use the domain from the extension.
-	// Domain and FailOpen are listener level settings that come from the RateLimitProvider.
-	domain := extension.Domain
-
-	// Construct cluster name from the backendRef
-	clusterName := ""
-	if extension.GrpcService != nil && extension.GrpcService.BackendRef != nil {
-		clusterName = fmt.Sprintf("%s.%s.svc.cluster.local:%d",
-			extension.GrpcService.BackendRef.Name,
-			gwExt.Namespace,
-			extension.GrpcService.BackendRef.Port)
-	} else {
-		return nil, fmt.Errorf("GrpcService BackendRef not specified in GatewayExtension %s/%s",
-			extensionNamespace, extensionName)
-	}
-
-	// Create a rate limit configuration
-	rl := &ratev3.RateLimit{
-		Domain:          domain,
-		Timeout:         timeout,
-		FailureModeDeny: !extension.FailOpen,
-		RateLimitService: &ratelimitv3.RateLimitServiceConfig{
-			GrpcService: &corev3.GrpcService{
-				TargetSpecifier: &corev3.GrpcService_EnvoyGrpc_{
-					EnvoyGrpc: &corev3.GrpcService_EnvoyGrpc{
-						ClusterName: clusterName,
-					},
-				},
-			},
-			TransportApiVersion: corev3.ApiVersion_V3,
-		},
-		Stage:                   0,                                 // Default stage
-		EnableXRatelimitHeaders: ratev3.RateLimit_DRAFT_VERSION_03, // Use latest RFC draft
-		RequestType:             "both",                            // Apply to both internal and external
-		StatPrefix:              rateLimitStatPrefix,
-	}
-
-	return rl, nil
-}
-
-// getExtensionSpec extracts the RateLimitProvider from a GatewayExtension
-func getExtensionSpec(gwExt *ir.GatewayExtension) (*v1alpha1.RateLimitProvider, error) {
-	// Check if RateLimit field exists
-	if gwExt.RateLimit == nil {
-		return nil, fmt.Errorf("RateLimit configuration is missing in GatewayExtension")
-	}
-
-	return gwExt.RateLimit, nil
 }
 
 // createRateLimitActions translates the API descriptors to Envoy route config rate limit actions
