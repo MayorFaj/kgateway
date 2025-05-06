@@ -745,7 +745,6 @@ func (p *trafficPolicyPluginGwPass) handleRateLimit(pCtxTypedFilterConfig *ir.Ty
 		RateLimits:   rateLimit.rateLimitActions,
 	}
 	pCtxTypedFilterConfig.AddTypedConfig(getRateLimitFilterName(providerName), rateLimitPerRoute)
-
 }
 
 func (p *trafficPolicyPluginGwPass) ApplyForBackend(
