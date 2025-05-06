@@ -38,11 +38,11 @@ data:
         rate_limit:
           unit: minute
           requests_per_unit: 2
-      - key: user_id
+      - key: X-User-ID
         rate_limit:
           unit: minute
           requests_per_unit: 1
-      - key: user_id
+      - key: X-User-ID
         value: user1
         rate_limit:
           unit: minute
