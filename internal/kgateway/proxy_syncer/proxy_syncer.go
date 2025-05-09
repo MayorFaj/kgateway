@@ -63,6 +63,7 @@ type ProxySyncer struct {
 	backendPolicyReport     krt.Singleton[report]
 	mostXdsSnapshots        krt.Collection[GatewayXdsResources]
 	perclientSnapCollection krt.Collection[XdsSnapWrapper]
+	unattachedPolicyHandler UnattachedPolicyHandler
 
 	waitForSync []cache.InformerSynced
 	ready       atomic.Bool
@@ -138,14 +139,15 @@ func NewProxySyncer(
 	xdsCache envoycache.SnapshotCache,
 ) *ProxySyncer {
 	return &ProxySyncer{
-		controllerName:  controllerName,
-		commonCols:      commonCols,
-		mgr:             mgr,
-		istioClient:     client,
-		proxyTranslator: NewProxyTranslator(xdsCache),
-		uniqueClients:   uniqueClients,
-		translator:      translator.NewCombinedTranslator(ctx, mergedPlugins, commonCols),
-		plugins:         mergedPlugins,
+		controllerName:          controllerName,
+		commonCols:              commonCols,
+		mgr:                     mgr,
+		istioClient:             client,
+		proxyTranslator:         NewProxyTranslator(xdsCache),
+		uniqueClients:           uniqueClients,
+		translator:              translator.NewCombinedTranslator(ctx, mergedPlugins, commonCols),
+		plugins:                 mergedPlugins,
+		unattachedPolicyHandler: NewTrafficPolicyUnattachedHandler(mgr.GetClient(), controllerName),
 	}
 }
 
@@ -587,11 +589,21 @@ func (s *ProxySyncer) syncGatewayStatus(ctx context.Context, rm reports.ReportMa
 }
 
 func (s *ProxySyncer) syncPolicyStatus(ctx context.Context, rm reports.ReportMap) {
-	ctx = contextutils.WithLogger(ctx, "routeStatusSyncer")
+	ctx = contextutils.WithLogger(ctx, "policyStatusSyncer")
 	logger := contextutils.LoggerFrom(ctx)
-	stopwatch := utils.NewTranslatorStopWatch("RouteStatusSyncer")
+	stopwatch := utils.NewTranslatorStopWatch("PolicyStatusSyncer")
 	stopwatch.Start()
 	defer stopwatch.Stop(ctx)
+
+	// Check for unattached policies (policies with non-existent targetRefs)
+	// and create appropriate status reports for them
+	if s.unattachedPolicyHandler != nil {
+		var err error
+		rm, err = s.unattachedPolicyHandler.HandleUnattachedPolicies(ctx, rm)
+		if err != nil {
+			logger.Warnw("error handling unattached policies", "error", err)
+		}
+	}
 
 	// Sync Policy statuses
 	for key := range rm.Policies {

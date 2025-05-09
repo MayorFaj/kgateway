@@ -214,3 +214,42 @@ func addMissingAncestorRefConditions(report *AncestorRefReport) {
 		})
 	}
 }
+
+// MergeReportMaps combines two ReportMaps into a single ReportMap
+// keeping all policy reports from both maps
+func MergeReportMaps(a, b ReportMap) ReportMap {
+	merged := NewReportMap()
+
+	// Copy all policies from the first report map
+	for key, policyReport := range a.Policies {
+		merged.Policies[key] = policyReport
+	}
+
+	// Merge in policies from the second report map
+	for key, policyReport := range b.Policies {
+		// If the policy already exists in the merged map, merge the ancestor reports
+		if existing, exists := merged.Policies[key]; exists {
+			// Copy ancestor reports from the second map
+			for ancestorKey, ancestorReport := range policyReport.Ancestors {
+				// If the ancestor doesn't exist in the existing report, add it
+				if existing.Ancestors == nil {
+					existing.Ancestors = make(map[ParentRefKey]*AncestorRefReport)
+				}
+
+				if _, ancestorExists := existing.Ancestors[ancestorKey]; !ancestorExists {
+					existing.Ancestors[ancestorKey] = ancestorReport
+				} else {
+					// Merge conditions from both ancestor reports
+					for _, condition := range ancestorReport.Conditions {
+						meta.SetStatusCondition(&existing.Ancestors[ancestorKey].Conditions, condition)
+					}
+				}
+			}
+		} else {
+			// If the policy doesn't exist in the merged map, add it
+			merged.Policies[key] = policyReport
+		}
+	}
+
+	return merged
+}

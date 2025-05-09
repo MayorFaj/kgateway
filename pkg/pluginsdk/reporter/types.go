@@ -10,6 +10,16 @@ const (
 	PolicyAcceptedMsg = "Policy accepted"
 
 	PolicyAcceptedAndAttachedMsg = "Policy accepted and attached"
+
+	PolicyTargetNotFoundMsg = "Policy target reference not found"
+)
+
+// PolicyConditionReason defines a set of reasons used in policy conditions.
+type PolicyConditionReason string
+
+const (
+	// TargetNotFound indicates that the policy's target reference doesn't exist.
+	PolicyReasonTargetNotFound PolicyConditionReason = "TargetNotFound"
 )
 
 type PolicyCondition struct {
