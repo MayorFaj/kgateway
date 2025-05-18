@@ -86,4 +86,3 @@ type UnattachedPolicyHandler interface {
 	// and returns a new or updated reports map that includes status for unattached policies.
 	HandleUnattachedPolicies(ctx context.Context, resourcesReportMap reports.ReportMap) (reports.ReportMap, error)
 }
-
