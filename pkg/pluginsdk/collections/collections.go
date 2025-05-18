@@ -158,3 +158,8 @@ func (c *CommonCollections) InitPlugins(ctx context.Context, mergedPlugins exten
 	c.Endpoints = endpointIRs
 	c.GatewayIndex = gateways
 }
+
+// GetControllerName returns the controller name for this collection
+func (c *CommonCollections) GetControllerName() string {
+	return c.controllerName
+}

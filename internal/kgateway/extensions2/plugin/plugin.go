@@ -21,3 +21,18 @@ const (
 	GatewayAttachmentPoint = pluginsdk.GatewayAttachmentPoint
 	RouteAttachmentPoint   = pluginsdk.RouteAttachmentPoint
 )
+
+// GetProxySyncer returns the proxy syncer instance.
+// It's used by plugins to register their custom unattached policy handlers.
+func GetProxySyncer() interface{} {
+	return proxySyncerInstance
+}
+
+// SetProxySyncer is used to store the proxy syncer instance
+// so that plugins can access it during initialization.
+func SetProxySyncer(ps interface{}) {
+	proxySyncerInstance = ps
+}
+
+// proxySyncerInstance stores the singleton ProxySyncer instance
+var proxySyncerInstance interface{}

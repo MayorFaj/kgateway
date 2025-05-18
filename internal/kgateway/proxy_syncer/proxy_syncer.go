@@ -42,6 +42,13 @@ import (
 	plug "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk"
 )
 
+// ProxySyncerInterface defines the methods that plugins can use to interact
+// with the ProxySyncer without requiring direct dependencies on its implementation.
+type ProxySyncerInterface interface {
+	// RegisterUnattachedPolicyHandler registers a handler for checking unattached policies
+	RegisterUnattachedPolicyHandler(handler UnattachedPolicyHandler)
+}
+
 // ProxySyncer orchestrates the translation of K8s Gateway CRs to xDS
 // and setting the output xDS snapshot in the envoy snapshot cache,
 // resulting in each connected proxy getting the correct configuration.
@@ -59,15 +66,18 @@ type ProxySyncer struct {
 
 	uniqueClients krt.Collection[ir.UniqlyConnectedClient]
 
-	statusReport            krt.Singleton[report]
-	backendPolicyReport     krt.Singleton[report]
-	mostXdsSnapshots        krt.Collection[GatewayXdsResources]
-	perclientSnapCollection krt.Collection[XdsSnapWrapper]
-	unattachedPolicyHandler UnattachedPolicyHandler
+	statusReport             krt.Singleton[report]
+	backendPolicyReport      krt.Singleton[report]
+	mostXdsSnapshots         krt.Collection[GatewayXdsResources]
+	perclientSnapCollection  krt.Collection[XdsSnapWrapper]
+	unattachedPolicyHandlers map[schema.GroupKind]UnattachedPolicyHandler
 
 	waitForSync []cache.InformerSynced
 	ready       atomic.Bool
 }
+
+// Ensure ProxySyncer implements ProxySyncerInterface
+var _ ProxySyncerInterface = (*ProxySyncer)(nil)
 
 type GatewayXdsResources struct {
 	types.NamespacedName
@@ -139,15 +149,15 @@ func NewProxySyncer(
 	xdsCache envoycache.SnapshotCache,
 ) *ProxySyncer {
 	return &ProxySyncer{
-		controllerName:          controllerName,
-		commonCols:              commonCols,
-		mgr:                     mgr,
-		istioClient:             client,
-		proxyTranslator:         NewProxyTranslator(xdsCache),
-		uniqueClients:           uniqueClients,
-		translator:              translator.NewCombinedTranslator(ctx, mergedPlugins, commonCols),
-		plugins:                 mergedPlugins,
-		unattachedPolicyHandler: NewTrafficPolicyUnattachedHandler(mgr.GetClient(), controllerName),
+		controllerName:           controllerName,
+		commonCols:               commonCols,
+		mgr:                      mgr,
+		istioClient:              client,
+		proxyTranslator:          NewProxyTranslator(xdsCache),
+		uniqueClients:            uniqueClients,
+		translator:               translator.NewCombinedTranslator(ctx, mergedPlugins, commonCols),
+		plugins:                  mergedPlugins,
+		unattachedPolicyHandlers: make(map[schema.GroupKind]UnattachedPolicyHandler),
 	}
 }
 
@@ -597,12 +607,20 @@ func (s *ProxySyncer) syncPolicyStatus(ctx context.Context, rm reports.ReportMap
 
 	// Check for unattached policies (policies with non-existent targetRefs)
 	// and create appropriate status reports for them
-	if s.unattachedPolicyHandler != nil {
+	if len(s.unattachedPolicyHandlers) > 0 {
+		var processedRM reports.ReportMap = rm
 		var err error
-		rm, err = s.unattachedPolicyHandler.HandleUnattachedPolicies(ctx, rm)
-		if err != nil {
-			logger.Warnw("error handling unattached policies", "error", err)
+
+		// Process each handler registered for different policy types
+		for gk, handler := range s.unattachedPolicyHandlers {
+			processedRM, err = handler.HandleUnattachedPolicies(ctx, processedRM)
+			if err != nil {
+				logger.Warnw("error handling unattached policies", "error", err, "groupKind", gk)
+			}
 		}
+
+		// Use the processed report map for status updates
+		rm = processedRM
 	}
 
 	// Sync Policy statuses
@@ -644,6 +662,14 @@ func (s *ProxySyncer) syncPolicyStatus(ctx context.Context, rm reports.ReportMap
 			logger.Errorw("error updating policy status", "error", err, "groupKind", gk, "policy", nsName)
 		}
 	}
+}
+
+func (s *ProxySyncer) RegisterUnattachedPolicyHandler(handler UnattachedPolicyHandler) {
+	gk := handler.GroupKind()
+	if _, exists := s.unattachedPolicyHandlers[gk]; exists {
+		contextutils.LoggerFrom(context.Background()).Warnw("Handler for GroupKind already exists, overwriting", "GroupKind", gk)
+	}
+	s.unattachedPolicyHandlers[gk] = handler
 }
 
 var opts = cmp.Options{

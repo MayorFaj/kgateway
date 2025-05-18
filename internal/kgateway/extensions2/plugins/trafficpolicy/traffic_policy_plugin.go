@@ -45,11 +45,17 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/krtcollections"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/plugins"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/policy"
+	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/proxy_syncer"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/reports"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
 	"github.com/kgateway-dev/kgateway/v2/pkg/client/clientset/versioned"
 )
+
+// ProxySyncerInterface defines the required method for handling unattached policies
+type ProxySyncerInterface interface {
+	RegisterUnattachedPolicyHandler(handler proxy_syncer.UnattachedPolicyHandler)
+}
 
 const (
 	transformationFilterNamePrefix              = "transformation"
@@ -397,7 +403,7 @@ func NewPlugin(ctx context.Context, commoncol *common.CommonCollections) extensi
 		return pol
 	})
 
-	return extensionsplug.Plugin{
+	plugin := extensionsplug.Plugin{
 		ContributesPolicies: map[schema.GroupKind]extensionsplug.PolicyPlugin{
 			wellknown.TrafficPolicyGVK.GroupKind(): {
 				// AttachmentPoints: []ir.AttachmentPoints{ir.HttpAttachmentPoint},
@@ -410,6 +416,23 @@ func NewPlugin(ctx context.Context, commoncol *common.CommonCollections) extensi
 		},
 		ExtraHasSynced: gatewayExtensions.HasSynced,
 	}
+
+	// Register a function for unattached policy handling
+	plugin.ContributesRegistration = map[schema.GroupKind]func(){
+		wellknown.TrafficPolicyGVK.GroupKind(): func() {
+			// Get the ProxySyncer instance from the plugin registry
+			if proxySyncer := extensionsplug.GetProxySyncer(); proxySyncer != nil {
+				// Cast the interface to the expected type
+				if ps, ok := proxySyncer.(ProxySyncerInterface); ok {
+					// Create and register the TrafficPolicy unattached handler
+					handler := NewTrafficPolicyUnattachedHandler(commoncol.CrudClient, commoncol.GetControllerName())
+					ps.RegisterUnattachedPolicyHandler(handler)
+				}
+			}
+		},
+	}
+
+	return plugin
 }
 
 func resolveExtGrpcService(krtctx krt.HandlerContext, commoncol *common.CommonCollections, objectSource ir.ObjectSource, grpcService *v1alpha1.ExtGrpcService) (*envoy_core_v3.GrpcService, error) {
