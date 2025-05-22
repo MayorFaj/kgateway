@@ -1,11 +1,9 @@
 package serviceentry
 
 import (
-	"context"
+	"log/slog"
 	"strings"
 
-	"github.com/solo-io/go-utils/contextutils"
-	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 	"istio.io/api/label"
 	"istio.io/istio/pkg/config/schema/gvr"
@@ -102,7 +100,7 @@ func (sw selectedWorkload) Equals(o selectedWorkload) bool {
 }
 
 type serviceEntryPlugin struct {
-	logger *zap.SugaredLogger
+	logger *slog.Logger
 
 	// core inputs
 	ServiceEntries  krt.Collection[*networkingclient.ServiceEntry]
@@ -119,19 +117,14 @@ type serviceEntryPlugin struct {
 }
 
 func initServiceEntryCollections(
-	ctx context.Context,
 	commonCols *common.CommonCollections,
 ) serviceEntryPlugin {
-	logger := contextutils.LoggerFrom(ctx).Named("serviceentry")
-
 	// setup input collections
-	defaultFilter := kclient.Filter{ObjectFilter: commonCols.Client.ObjectFilter()}
-
 	weInformer := kclient.NewDelayedInformer[*networkingclient.WorkloadEntry](
 		commonCols.Client,
 		gvr.WorkloadEntry,
 		kubetypes.StandardInformer,
-		defaultFilter,
+		kclient.Filter{ObjectFilter: commonCols.Client.ObjectFilter()},
 	)
 	WorkloadEntries := krt.WrapClient(weInformer, commonCols.KrtOpts.ToOptions("WorkloadEntries")...)
 
@@ -150,7 +143,7 @@ func initServiceEntryCollections(
 	Endpoints := endpointsCollection(Backends, SelectedWorkloads, selectedWorkloadsIndex, commonCols.KrtOpts)
 
 	return serviceEntryPlugin{
-		logger: contextutils.LoggerFrom(ctx),
+		logger: logger,
 
 		ServiceEntries:  commonCols.ServiceEntries,
 		WorkloadEntries: WorkloadEntries,
