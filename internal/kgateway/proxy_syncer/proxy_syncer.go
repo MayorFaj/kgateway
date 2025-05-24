@@ -30,6 +30,8 @@ import (
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gwv1a2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
+	"github.com/solo-io/go-utils/contextutils"
+
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/common"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/ir"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/reports"
@@ -614,7 +616,7 @@ func (s *ProxySyncer) syncPolicyStatus(ctx context.Context, rm reports.ReportMap
 		for gk, handler := range s.unattachedPolicyHandlers {
 			processedRM, err = handler.HandleUnattachedPolicies(ctx, processedRM)
 			if err != nil {
-				logger.Warnw("error handling unattached policies", "error", err, "groupKind", gk)
+				logger.Warn("error handling unattached policies", "error", err, "groupKind", gk)
 			}
 		}
 
@@ -666,7 +668,7 @@ func (s *ProxySyncer) syncPolicyStatus(ctx context.Context, rm reports.ReportMap
 func (s *ProxySyncer) RegisterUnattachedPolicyHandler(handler UnattachedPolicyHandler) {
 	gk := handler.GroupKind()
 	if _, exists := s.unattachedPolicyHandlers[gk]; exists {
-		contextutils.LoggerFrom(context.Background()).Warnw("Handler for GroupKind already exists, overwriting", "GroupKind", gk)
+		contextutils.LoggerFrom(context.Background()).Warn("Handler for GroupKind already exists, overwriting", "GroupKind", gk)
 	}
 	s.unattachedPolicyHandlers[gk] = handler
 }
