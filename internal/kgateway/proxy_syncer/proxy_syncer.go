@@ -611,7 +611,7 @@ func (s *ProxySyncer) syncPolicyStatus(ctx context.Context, rm reports.ReportMap
 			}
 
 			if len(unattachedPolicies) > 0 {
-				logger.Info("detected unattached policies", "groupKind", gk, "count", len(unattachedPolicies), "policies", unattachedPolicies)
+				logger.Info("detected unattached policies", "group_kind", gk, "count", len(unattachedPolicies), "policies", unattachedPolicies)
 
 				// Add unattached policies to the list that need status updates
 				for _, policyNN := range unattachedPolicies {
