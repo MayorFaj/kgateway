@@ -1,6 +1,6 @@
-# kgateway Diagnostics
+# kgateway Policy Diagnostics
 
-This document describes how to use the kgateway diagnostic capabilities in both development and production environments.
+This document describes how to use the kgateway policy diagnostic capabilities in both development and production environments.
 
 ## Development Usage
 
@@ -117,7 +117,7 @@ $ kubectl kgateway policy gw-policy -n kgateway-test
   ✅ No common issues detected
 ```
 
-### Scenario 3: Successfully Attached Policy
+### Scenario 3: Successfully Attached Policy with Target References
 
 ```bash
 $ kubectl kgateway policy gw-policy -n kgateway-test
@@ -137,6 +137,88 @@ $ kubectl kgateway policy gw-policy -n kgateway-test
 
 🔍 Common Issues Check:
   ✅ No common issues detected
+```
+
+### Scenario 4: Policy with Target Selectors (Mixed Results)
+
+```bash
+$ kubectl kgateway policy transform -n kgateway-test
+
+=== Diagnosing TrafficPolicy: kgateway-test/transform ===
+
+📊 Policy Status:
+  ✅ 1 ancestor(s) found - Policy is ATTACHED
+    1. Gateway kgateway-test/super-gateway
+
+🎯 Target Reference Analysis:
+
+🏷️ Target Selector Analysis:
+  Selector 1: HTTPRoute with labels map[route:simple-route]
+    ✅ Found 1 matching target(s)
+      1. simple-route
+    📍 HTTPRoute has 1 parent reference(s)
+      Parent 1: Gateway kgateway-test/super-gateway
+        ✅ Gateway exists
+  Selector 2: HTTPRoute with labels map[route:simple-route-non-existent]
+    ❌ No targets match selector
+    💡 Create resources with matching labels or check existing resources: kubectl get httproute -l route=simple-route-non-existent -n kgateway-test
+
+🔍 Common Issues Check:
+  ✅ No common issues detected
+```
+
+### Scenario 5: Policy with Both Target References and Selectors
+
+```bash
+$ kubectl kgateway policy hybrid-policy -n kgateway-test
+
+=== Diagnosing TrafficPolicy: kgateway-test/hybrid-policy ===
+
+📊 Policy Status:
+  ✅ 2 ancestor(s) found - Policy is ATTACHED
+    1. Gateway kgateway-test/super-gateway
+    2. Gateway kgateway-test/another-gateway
+
+🎯 Target Reference Analysis:
+  Target 1: HTTPRoute kgateway-test/specific-route
+    ✅ Target exists
+    📍 HTTPRoute has 1 parent reference(s)
+      Parent 1: Gateway kgateway-test/super-gateway
+        ✅ Gateway exists
+
+🏷️ Target Selector Analysis:
+  Selector 1: HTTPRoute with labels map[app:my-app version:v1]
+    ✅ Found 3 matching target(s)
+      1. app-route-v1
+      2. app-route-canary
+      3. app-route-fallback
+    📍 HTTPRoute has 1 parent reference(s)
+      Parent 1: Gateway kgateway-test/another-gateway
+        ✅ Gateway exists
+  Selector 2: Gateway with labels map[environment:production]
+    ✅ Found 1 matching target(s)
+      1. prod-gateway
+
+🔍 Common Issues Check:
+  ✅ No common issues detected
+```
+
+### Scenario 6: Policy with No Targets Specified
+
+```bash
+$ kubectl kgateway policy empty-policy -n kgateway-test
+
+=== Diagnosing TrafficPolicy: kgateway-test/empty-policy ===
+
+📊 Policy Status:
+  ❌ No ancestors found - Policy is UNATTACHED
+
+🎯 Target Reference Analysis:
+
+🏷️ Target Selector Analysis:
+
+🔍 Common Issues Check:
+  ⚠️  Policy has no targetRefs or targetSelectors specified
 ```
 
 ## Integration with CI/CD

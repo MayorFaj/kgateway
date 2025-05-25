@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
@@ -181,6 +182,18 @@ func diagnosePolicy(ctx context.Context, k8sClient client.Client, dynamicClient 
 		}
 	}
 
+	// Analyze target selectors
+	if len(policy.Spec.TargetSelectors) > 0 {
+		fmt.Println("\n🏷️ Target Selector Analysis:")
+		for i, targetSelector := range policy.Spec.TargetSelectors {
+			fmt.Printf("  Selector %d: %s with labels %v\n", i+1, targetSelector.Kind, targetSelector.MatchLabels)
+
+			if err := analyzeTargetSelector(ctx, k8sClient, dynamicClient, gvrResolver, policy, targetSelector); err != nil {
+				fmt.Printf("    ❌ Error analyzing target selector: %v\n", err)
+			}
+		}
+	}
+
 	// Check for common issues
 	fmt.Println("\n🔍 Common Issues Check:")
 	checkCommonIssues(policy)
@@ -192,7 +205,7 @@ func analyzeTargetRef(ctx context.Context, k8sClient client.Client, dynamicClien
 	targetNs := policy.Namespace
 
 	// Check if target exists
-	exists, err := checkTargetExists(ctx, k8sClient, dynamicClient, gvrResolver, targetRef, targetNs)
+	exists, err := checkTargetRefExists(ctx, k8sClient, dynamicClient, gvrResolver, targetRef, targetNs)
 	if err != nil {
 		return fmt.Errorf("failed to check target existence: %w", err)
 	}
@@ -262,7 +275,7 @@ func analyzeHTTPRouteTarget(ctx context.Context, k8sClient client.Client, routeN
 	return nil
 }
 
-func checkTargetExists(ctx context.Context, k8sClient client.Client, dynamicClient dynamic.Interface, gvrResolver *GVRResolver, targetRef v1alpha1.LocalPolicyTargetReferenceWithSectionName, namespace string) (bool, error) {
+func checkTargetRefExists(ctx context.Context, k8sClient client.Client, dynamicClient dynamic.Interface, gvrResolver *GVRResolver, targetRef v1alpha1.LocalPolicyTargetReferenceWithSectionName, namespace string) (bool, error) {
 	targetName := string(targetRef.Name)
 
 	switch targetRef.Kind {
@@ -308,9 +321,9 @@ func checkGatewayExists(ctx context.Context, k8sClient client.Client, name, name
 func checkCommonIssues(policy *v1alpha1.TrafficPolicy) {
 	issues := []string{}
 
-	// Check for empty target refs
-	if len(policy.Spec.TargetRefs) == 0 {
-		issues = append(issues, "Policy has no targetRefs specified")
+	// Check for empty target refs and selectors
+	if len(policy.Spec.TargetRefs) == 0 && len(policy.Spec.TargetSelectors) == 0 {
+		issues = append(issues, "Policy has no targetRefs or targetSelectors specified")
 	}
 
 	if len(issues) == 0 {
@@ -498,4 +511,114 @@ func getGVRForKind(kind string) (schema.GroupVersionResource, error) {
 		return schema.GroupVersionResource{}, fmt.Errorf("unknown kind: %s", kind)
 	}
 	return gvr, nil
+}
+
+func analyzeTargetSelector(ctx context.Context, k8sClient client.Client, dynamicClient dynamic.Interface, gvrResolver *GVRResolver, policy *v1alpha1.TrafficPolicy, targetSelector v1alpha1.LocalPolicyTargetSelector) error {
+	targetNs := policy.Namespace
+
+	// Check if any targets match the selector
+	hasMatches, matchingResources, err := checkTargetSelectorMatches(ctx, k8sClient, dynamicClient, gvrResolver, targetSelector, targetNs)
+	if err != nil {
+		return fmt.Errorf("failed to check target selector matches: %w", err)
+	}
+
+	if !hasMatches {
+		fmt.Printf("    ❌ No targets match selector\n")
+		fmt.Printf("    💡 Create resources with matching labels or check existing resources: kubectl get %s -l %s -n %s\n",
+			strings.ToLower(string(targetSelector.Kind)), formatLabels(targetSelector.MatchLabels), targetNs)
+		return nil
+	}
+
+	fmt.Printf("    ✅ Found %d matching target(s)\n", len(matchingResources))
+	for i, resource := range matchingResources {
+		fmt.Printf("      %d. %s\n", i+1, resource)
+
+		// For HTTPRoute targets, check if they attach to a Gateway
+		if targetSelector.Kind == "HTTPRoute" {
+			if err := analyzeHTTPRouteTarget(ctx, k8sClient, resource, targetNs); err != nil {
+				fmt.Printf("        ❌ Error analyzing HTTPRoute %s: %v\n", resource, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func checkTargetSelectorMatches(ctx context.Context, k8sClient client.Client, dynamicClient dynamic.Interface, gvrResolver *GVRResolver, targetSelector v1alpha1.LocalPolicyTargetSelector, namespace string) (bool, []string, error) {
+	// Import labels package for selector functionality
+	selector := labels.SelectorFromSet(targetSelector.MatchLabels)
+
+	switch targetSelector.Kind {
+	case "HTTPRoute":
+		var routes gwv1.HTTPRouteList
+		err := k8sClient.List(ctx, &routes,
+			client.InNamespace(namespace),
+			client.MatchingLabelsSelector{Selector: selector})
+		if err != nil {
+			return false, nil, client.IgnoreNotFound(err)
+		}
+
+		names := make([]string, len(routes.Items))
+		for i, route := range routes.Items {
+			names[i] = route.Name
+		}
+		return len(routes.Items) > 0, names, nil
+
+	case "Gateway":
+		var gateways gwv1.GatewayList
+		err := k8sClient.List(ctx, &gateways,
+			client.InNamespace(namespace),
+			client.MatchingLabelsSelector{Selector: selector})
+		if err != nil {
+			return false, nil, client.IgnoreNotFound(err)
+		}
+
+		names := make([]string, len(gateways.Items))
+		for i, gw := range gateways.Items {
+			names[i] = gw.Name
+		}
+		return len(gateways.Items) > 0, names, nil
+
+	default:
+		// Try dynamic discovery for other kinds
+		var gvr schema.GroupVersionResource
+		var err error
+
+		if gvrResolver != nil {
+			gvr, err = gvrResolver.GetGVRForKind(string(targetSelector.Kind))
+		} else {
+			gvr, err = getGVRForKind(string(targetSelector.Kind))
+		}
+
+		if err != nil {
+			fmt.Printf("        ⚠️  Unknown target selector kind '%s', assuming targets exist\n", targetSelector.Kind)
+			fmt.Printf("        💡 Verify manually: kubectl get %s -l %s -n %s\n",
+				strings.ToLower(string(targetSelector.Kind)), formatLabels(targetSelector.MatchLabels), namespace)
+			return true, []string{"<unknown>"}, nil
+		}
+
+		// Use dynamic client to list resources with label selector
+		listOptions := metav1.ListOptions{
+			LabelSelector: labels.FormatLabels(targetSelector.MatchLabels),
+		}
+
+		unstructuredList, err := dynamicClient.Resource(gvr).Namespace(namespace).List(ctx, listOptions)
+		if err != nil {
+			return false, nil, client.IgnoreNotFound(err)
+		}
+
+		names := make([]string, len(unstructuredList.Items))
+		for i, item := range unstructuredList.Items {
+			names[i] = item.GetName()
+		}
+		return len(unstructuredList.Items) > 0, names, nil
+	}
+}
+
+func formatLabels(labels map[string]string) string {
+	var parts []string
+	for k, v := range labels {
+		parts = append(parts, fmt.Sprintf("%s=%s", k, v))
+	}
+	return strings.Join(parts, ",")
 }
