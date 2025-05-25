@@ -37,7 +37,14 @@ helping to understand why policies might not be working as expected.`,
 	policyCmd := &cobra.Command{
 		Use:   "policy [policy-name]",
 		Short: "Diagnose a specific policy or all policies",
-		Long: `Diagnose policy attachment issues for TrafficPolicy resources.
+		Long: `
+██╗  ██╗ ██████╗ ██████╗      ██████╗██╗     ██╗
+██║ ██╔╝██╔════╝ ██╔══██╗    ██╔════╝██║     ██║
+█████╔╝ ██║  ███╗██████╔╝    ██║     ██║     ██║
+██╔═██╗ ██║   ██║██╔═══╝     ██║     ██║     ██║
+██║  ██╗╚██████╔╝██║         ╚██████╗███████╗██║
+╚═╝  ╚═╝ ╚═════╝ ╚═╝          ╚═════╝╚══════╝╚═╝
+Diagnose policy attachment issues for Policy resources.
 Provides detailed information about target references, attachment status, and potential issues.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return diagnosePolicies(cmd.Context(), kubeconfig, namespace, allNamespaces, args)
