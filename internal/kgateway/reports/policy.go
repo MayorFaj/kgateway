@@ -99,65 +99,70 @@ func (r *ReportMap) BuildPolicyStatus(
 	currentStatus gwv1alpha2.PolicyStatus,
 ) *gwv1alpha2.PolicyStatus {
 	report := r.policy(key)
-	if report == nil {
-		// no report for this policy
-		return nil
+	status := gwv1alpha2.PolicyStatus{
+		Ancestors: []gwv1alpha2.PolicyAncestorStatus{},
 	}
 
-	ancestorRefs := report.ancestorRefs()
-	status := gwv1alpha2.PolicyStatus{}
+	if report != nil {
+		ancestorRefs := report.ancestorRefs()
 
-	// Process the parent references to build the RouteParentStatus
-	for _, ancestorRef := range ancestorRefs {
-		parentStatusReport := report.getAncestorRefOrNil(&ancestorRef)
-		if parentStatusReport == nil {
-			// report doesn't have an entry for this parentRef, meaning we didn't translate it
-			// probably because it's a parent that we don't control (e.g. Gateway from diff. controller)
-			continue
-		}
-		addMissingAncestorRefConditions(parentStatusReport)
-
-		// Get the status of the current parentRef conditions if they exist
-		var currentParentRefConditions []metav1.Condition
-		currentParentRefIdx := slices.IndexFunc(currentStatus.Ancestors, func(s gwv1alpha2.PolicyAncestorStatus) bool {
-			return reflect.DeepEqual(s.AncestorRef, ancestorRef)
-		})
-		if currentParentRefIdx != -1 {
-			currentParentRefConditions = currentStatus.Ancestors[currentParentRefIdx].Conditions
-		}
-
-		finalConditions := make([]metav1.Condition, 0, len(parentStatusReport.Conditions))
-		for _, pCondition := range parentStatusReport.Conditions {
-			pCondition.ObservedGeneration = report.observedGeneration
-
-			// Copy old condition to preserve LastTransitionTime, if it exists
-			if cond := meta.FindStatusCondition(currentParentRefConditions, pCondition.Type); cond != nil {
-				finalConditions = append(finalConditions, *cond)
+		// Process the parent references to build the RouteParentStatus
+		for _, ancestorRef := range ancestorRefs {
+			parentStatusReport := report.getAncestorRefOrNil(&ancestorRef)
+			if parentStatusReport == nil {
+				// report doesn't have an entry for this parentRef, meaning we didn't translate it
+				// probably because it's a parent that we don't control (e.g. Gateway from diff. controller)
+				continue
 			}
-			meta.SetStatusCondition(&finalConditions, pCondition)
-		}
-		// If there are conditions on the route that are not owned by our reporter, include
-		// them in the final list of conditions to preseve conditions we do not own
-		for _, condition := range currentParentRefConditions {
-			if meta.FindStatusCondition(finalConditions, condition.Type) == nil {
-				finalConditions = append(finalConditions, condition)
-			}
-		}
+			addMissingAncestorRefConditions(parentStatusReport)
 
-		ancestorStatus := gwv1alpha2.PolicyAncestorStatus{
-			AncestorRef:    ancestorRef,
-			ControllerName: gwv1.GatewayController(controller),
-			Conditions:     finalConditions,
+			// Get the status of the current parentRef conditions if they exist
+			var currentParentRefConditions []metav1.Condition
+			currentParentRefIdx := slices.IndexFunc(currentStatus.Ancestors, func(s gwv1alpha2.PolicyAncestorStatus) bool {
+				return reflect.DeepEqual(s.AncestorRef, ancestorRef)
+			})
+			if currentParentRefIdx != -1 {
+				currentParentRefConditions = currentStatus.Ancestors[currentParentRefIdx].Conditions
+			}
+
+			finalConditions := make([]metav1.Condition, 0, len(parentStatusReport.Conditions))
+			for _, pCondition := range parentStatusReport.Conditions {
+				pCondition.ObservedGeneration = report.observedGeneration
+
+				// Copy old condition to preserve LastTransitionTime, if it exists
+				if cond := meta.FindStatusCondition(currentParentRefConditions, pCondition.Type); cond != nil {
+					finalConditions = append(finalConditions, *cond)
+				}
+				meta.SetStatusCondition(&finalConditions, pCondition)
+			}
+			// If there are conditions on the route that are not owned by our reporter, include
+			// them in the final list of conditions to preseve conditions we do not own
+			for _, condition := range currentParentRefConditions {
+				if meta.FindStatusCondition(finalConditions, condition.Type) == nil {
+					finalConditions = append(finalConditions, condition)
+				}
+			}
+
+			ancestorStatus := gwv1alpha2.PolicyAncestorStatus{
+				AncestorRef:    ancestorRef,
+				ControllerName: gwv1.GatewayController(controller),
+				Conditions:     finalConditions,
+			}
+			status.Ancestors = append(status.Ancestors, ancestorStatus)
 		}
-		status.Ancestors = append(status.Ancestors, ancestorStatus)
 	}
 
-	// now we have a status object reflecting the state of translation according to our reportMap
-	// let's add status from other controllers on the current object status
+	// Preserve status from other controllers (but not our own dangling references)
+	// This logic needs to run regardless of whether we have a report or not
+	// This fixes the dangling reference bug: we only include ancestors that are either:
+	// 1. From other controllers (not our responsibility)
+	// 2. Present in our current translation report (legitimate attachments)
 	for _, ancestor := range currentStatus.Ancestors {
 		if ancestor.ControllerName != gwv1.GatewayController(controller) {
 			status.Ancestors = append(status.Ancestors, ancestor)
 		}
+		// Note: We deliberately exclude stale ancestors from our own controller.
+		// If they were legitimate, they would be in our reportMap and processed above.
 	}
 
 	// sort all parents for consistency with Equals and for Update

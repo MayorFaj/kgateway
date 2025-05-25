@@ -22,7 +22,6 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/agentgatewaysyncer"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/deployer"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2"
-	extensionsplug "github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/plugin"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/plugins/inferenceextension/endpointpicker"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/registry"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/settings"
@@ -192,10 +191,6 @@ func NewControllerBuilder(ctx context.Context, cfg StartConfig) (*ControllerBuil
 		cfg.SetupOpts.Cache,
 	)
 	proxySyncer.Init(ctx, cfg.KrtOptions)
-
-	// Register the ProxySyncer with the plugin registry so plugins can access it during initialization
-	extensionsplug.SetProxySyncer(proxySyncer)
-  
 	if cfg.SetupOpts.GlobalSettings.EnableAgentGateway {
 		agentGatewaySyncer := agentgatewaysyncer.NewAgentGwSyncer(
 			ctx,

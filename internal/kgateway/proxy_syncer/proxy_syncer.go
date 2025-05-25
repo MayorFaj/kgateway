@@ -30,8 +30,6 @@ import (
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gwv1a2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
-	"github.com/solo-io/go-utils/contextutils"
-
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/common"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/ir"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/reports"
@@ -44,13 +42,6 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/pkg/logging"
 	plug "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk"
 )
-
-// ProxySyncerInterface defines the methods that plugins can use to interact
-// with the ProxySyncer without requiring direct dependencies on its implementation.
-type ProxySyncerInterface interface {
-	// RegisterUnattachedPolicyHandler registers a handler for checking unattached policies
-	RegisterUnattachedPolicyHandler(handler UnattachedPolicyHandler)
-}
 
 // ProxySyncer orchestrates the translation of K8s Gateway CRs to xDS
 // and setting the output xDS snapshot in the envoy snapshot cache,
@@ -69,18 +60,14 @@ type ProxySyncer struct {
 
 	uniqueClients krt.Collection[ir.UniqlyConnectedClient]
 
-	statusReport             krt.Singleton[report]
-	backendPolicyReport      krt.Singleton[report]
-	mostXdsSnapshots         krt.Collection[GatewayXdsResources]
-	perclientSnapCollection  krt.Collection[XdsSnapWrapper]
-	unattachedPolicyHandlers map[schema.GroupKind]UnattachedPolicyHandler
+	statusReport            krt.Singleton[report]
+	backendPolicyReport     krt.Singleton[report]
+	mostXdsSnapshots        krt.Collection[GatewayXdsResources]
+	perclientSnapCollection krt.Collection[XdsSnapWrapper]
 
 	waitForSync []cache.InformerSynced
 	ready       atomic.Bool
 }
-
-// Ensure ProxySyncer implements ProxySyncerInterface
-var _ ProxySyncerInterface = (*ProxySyncer)(nil)
 
 type GatewayXdsResources struct {
 	types.NamespacedName
@@ -152,15 +139,14 @@ func NewProxySyncer(
 	xdsCache envoycache.SnapshotCache,
 ) *ProxySyncer {
 	return &ProxySyncer{
-		controllerName:           controllerName,
-		commonCols:               commonCols,
-		mgr:                      mgr,
-		istioClient:              client,
-		proxyTranslator:          NewProxyTranslator(xdsCache),
-		uniqueClients:            uniqueClients,
-		translator:               translator.NewCombinedTranslator(ctx, mergedPlugins, commonCols),
-		plugins:                  mergedPlugins,
-		unattachedPolicyHandlers: make(map[schema.GroupKind]UnattachedPolicyHandler),
+		controllerName:  controllerName,
+		commonCols:      commonCols,
+		mgr:             mgr,
+		istioClient:     client,
+		proxyTranslator: NewProxyTranslator(xdsCache),
+		uniqueClients:   uniqueClients,
+		translator:      translator.NewCombinedTranslator(ctx, mergedPlugins, commonCols),
+		plugins:         mergedPlugins,
 	}
 }
 
@@ -602,30 +588,47 @@ func (s *ProxySyncer) syncGatewayStatus(ctx context.Context, logger *slog.Logger
 }
 
 func (s *ProxySyncer) syncPolicyStatus(ctx context.Context, rm reports.ReportMap) {
-	stopwatch := utils.NewTranslatorStopWatch("RouteStatusSyncer")
+	stopwatch := utils.NewTranslatorStopWatch("PolicyStatusSyncer")
 	stopwatch.Start()
 	defer stopwatch.Stop(ctx)
 
-	// Check for unattached policies (policies with non-existent targetRefs)
-	// and create appropriate status reports for them
-	if len(s.unattachedPolicyHandlers) > 0 {
-		var processedRM reports.ReportMap = rm
-		var err error
+	// Track all policies that need status updates (both attached and unattached)
+	allPoliciesNeedingStatusUpdate := make(map[reports.PolicyKey]bool)
 
-		// Process each handler registered for different policy types
-		for gk, handler := range s.unattachedPolicyHandlers {
-			processedRM, err = handler.HandleUnattachedPolicies(ctx, processedRM)
-			if err != nil {
-				logger.Warn("error handling unattached policies", "error", err, "groupKind", gk)
-			}
-		}
-
-		// Use the processed report map for status updates
-		rm = processedRM
+	// Add all policies from reportMap (attached policies)
+	for key := range rm.Policies {
+		allPoliciesNeedingStatusUpdate[key] = true
 	}
 
-	// Sync Policy statuses
-	for key := range rm.Policies {
+	// Check for unattached policies by querying plugins that implement UnattachedPolicyDetector
+	// plugins expose getters per GVK that ProxySyncer can invoke
+	for gk, plugin := range s.plugins.ContributesPolicies {
+		if plugin.UnattachedPolicyDetector != nil {
+			unattachedPolicies, err := plugin.UnattachedPolicyDetector.DetectUnattachedPolicies(ctx, gk)
+			if err != nil {
+				logger.Warn("error detecting unattached policies", "error", err, "groupKind", gk)
+				continue
+			}
+
+			if len(unattachedPolicies) > 0 {
+				logger.Info("detected unattached policies", "groupKind", gk, "count", len(unattachedPolicies), "policies", unattachedPolicies)
+
+				// Add unattached policies to the list that need status updates
+				for _, policyNN := range unattachedPolicies {
+					policyKey := reports.PolicyKey{
+						Group:     gk.Group,
+						Kind:      gk.Kind,
+						Namespace: policyNN.Namespace,
+						Name:      policyNN.Name,
+					}
+					allPoliciesNeedingStatusUpdate[policyKey] = true
+				}
+			}
+		}
+	}
+
+	// Sync Policy statuses for both attached and unattached policies
+	for key := range allPoliciesNeedingStatusUpdate {
 		gk := schema.GroupKind{Group: key.Group, Kind: key.Kind}
 		nsName := types.NamespacedName{Namespace: key.Namespace, Name: key.Name}
 
@@ -665,14 +668,6 @@ func (s *ProxySyncer) syncPolicyStatus(ctx context.Context, rm reports.ReportMap
 	}
 }
 
-func (s *ProxySyncer) RegisterUnattachedPolicyHandler(handler UnattachedPolicyHandler) {
-	gk := handler.GroupKind()
-	if _, exists := s.unattachedPolicyHandlers[gk]; exists {
-		contextutils.LoggerFrom(context.Background()).Warn("Handler for GroupKind already exists, overwriting", "GroupKind", gk)
-	}
-	s.unattachedPolicyHandlers[gk] = handler
-}
-
 var opts = cmp.Options{
 	cmpopts.IgnoreFields(metav1.Condition{}, "LastTransitionTime"),
 	cmpopts.IgnoreMapEntries(func(k string, _ any) bool {
@@ -692,5 +687,5 @@ func isRouteStatusEqual(objA, objB *gwv1.RouteStatus) bool {
 type resourcesStringer envoycache.Resources
 
 func (r resourcesStringer) String() string {
-	return fmt.Sprintf("len: %d, version %s", len(r.Items), r.Version)
+	return fmt.Sprintf("version=%s, items=%d", r.Version, len(r.Items))
 }

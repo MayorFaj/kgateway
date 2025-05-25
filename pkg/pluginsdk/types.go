@@ -57,6 +57,16 @@ type (
 	PatchPolicyStatusFn func(context.Context, types.NamespacedName, gwv1alpha2.PolicyStatus) error
 )
 
+// UnattachedPolicyDetector is an interface that plugins can implement
+// to provide information about policies with non-existent target references.
+// This allows ProxySyncer to query plugins for unattached policies without
+// plugins needing to know about ProxySyncer directly.
+type UnattachedPolicyDetector interface {
+	// DetectUnattachedPolicies returns a list of policy references that have
+	// non-existent target references for the given GroupKind.
+	DetectUnattachedPolicies(ctx context.Context, gk schema.GroupKind) ([]types.NamespacedName, error)
+}
+
 type PolicyPlugin struct {
 	Name                      string
 	NewGatewayTranslationPass func(ctx context.Context, tctx ir.GwTranslationCtx, reporter reports.Reporter) ir.ProxyTranslationPass
@@ -74,6 +84,10 @@ type PolicyPlugin struct {
 
 	GetPolicyStatus   GetPolicyStatusFn
 	PatchPolicyStatus PatchPolicyStatusFn
+
+	// UnattachedPolicyDetector can be optionally implemented by plugins
+	// to provide information about policies with dangling references
+	UnattachedPolicyDetector UnattachedPolicyDetector
 }
 
 type BackendPlugin struct {

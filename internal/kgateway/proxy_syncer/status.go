@@ -1,10 +1,7 @@
 package proxy_syncer
 
 import (
-	"context"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gwv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
@@ -72,17 +69,4 @@ func generatePolicyReport[T ObjWithAttachedPolicies](in []T) reports.ReportMap {
 	}
 
 	return merged
-}
-
-// UnattachedPolicyHandler defines an interface for handlers that check if policies
-// have any non-existent target references and creates appropriate status reports for them.
-// Plugins should implement this interface for their own policy types.
-type UnattachedPolicyHandler interface {
-	// GroupKind returns the GroupKind of policies this handler processes
-	GroupKind() schema.GroupKind
-
-	// HandleUnattachedPolicies processes policies that aren't attached to any objects
-	// because their targetRefs don't exist. It takes an existing reports map as input
-	// and returns a new or updated reports map that includes status for unattached policies.
-	HandleUnattachedPolicies(ctx context.Context, resourcesReportMap reports.ReportMap) (reports.ReportMap, error)
 }
