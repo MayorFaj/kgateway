@@ -34,7 +34,7 @@ func main() {
 	cmd.Flags().BoolVarP(&kgatewayVersion, "version", "v", false, "Print the version of kgateway")
 
 	cmd.AddCommand(diagnose.NewDiagnoseCommand())
-	
+
 	if err := cmd.Execute(); err != nil {
 		log.Fatal(err)
 	}
