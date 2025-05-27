@@ -191,6 +191,7 @@ func NewControllerBuilder(ctx context.Context, cfg StartConfig) (*ControllerBuil
 		cfg.SetupOpts.Cache,
 	)
 	proxySyncer.Init(ctx, cfg.KrtOptions)
+	
 	if cfg.SetupOpts.GlobalSettings.EnableAgentGateway {
 		agentGatewaySyncer := agentgatewaysyncer.NewAgentGwSyncer(
 			ctx,

@@ -20,24 +20,6 @@ builds:
     goarch:
       - amd64
       - arm64
-  - id: kubectl-plugin
-    main: ./cmd/kubectl-kgateway
-    binary: kubectl-kgateway-{{ .Os }}-{{ .Arch }}
-    gcflags: "{{ .Env.GCFLAGS }}"
-    ldflags: "{{ .Env.LDFLAGS }}"
-    env:
-    - CGO_ENABLED=0
-    - GO111MODULE=on
-    - GOARCH={{ .Arch }}
-    - GOOS={{ .Os }}
-    mod_timestamp: "{{ .CommitTimestamp }}"
-    goos:
-      - linux
-      - darwin
-      - windows
-    goarch:
-      - amd64
-      - arm64
   - id: sds
     main: ./cmd/sds
     binary: sds-linux-{{ .Arch }}
@@ -171,12 +153,6 @@ dockers:
     extra_files:
       - python/requirements.txt
       - python/ai_extension
-archives:
-  - id: kubectl-plugin-binaries
-    builds:
-      - kubectl-plugin
-    format: binary
-    name_template: "{{ .Binary }}"
 docker_manifests:
   - name_template: "{{ .Env.IMAGE_REGISTRY }}/{{ .Env.CONTROLLER_IMAGE_REPO }}:{{ .Env.VERSION }}"
     image_templates:
@@ -225,29 +201,6 @@ release:
     - {{ .Env.VANITY_REGISTRY }}/{{ .Env.CONTROLLER_IMAGE_REPO }}:{{ .Env.VERSION }}
     - {{ .Env.VANITY_REGISTRY }}/{{ .Env.SDS_IMAGE_REPO }}:{{ .Env.VERSION }}
     - {{ .Env.VANITY_REGISTRY }}/{{ .Env.ENVOYINIT_IMAGE_REPO }}:{{ .Env.VERSION }}
-
-    ### kubectl Plugin
-
-    Download the kubectl plugin for your platform:
-
-    **Linux:**
-    ```bash
-    curl -L -o kubectl-kgateway https://github.com/kgateway-dev/kgateway/releases/download/{{ .Env.VERSION }}/kubectl-kgateway-linux-amd64
-    chmod +x kubectl-kgateway && sudo mv kubectl-kgateway /usr/local/bin/
-    ```
-
-    **macOS:**
-    ```bash
-    curl -L -o kubectl-kgateway https://github.com/kgateway-dev/kgateway/releases/download/{{ .Env.VERSION }}/kubectl-kgateway-darwin-amd64
-    chmod +x kubectl-kgateway && sudo mv kubectl-kgateway /usr/local/bin/
-    ```
-
-    **Windows:**
-    ```powershell
-    curl -L -o kubectl-kgateway.exe https://github.com/kgateway-dev/kgateway/releases/download/{{ .Env.VERSION }}/kubectl-kgateway-windows-amd64.exe
-    ```
-
-    Then use: `kubectl kgateway policy --all-namespaces`
 
     ## Quickstart
 

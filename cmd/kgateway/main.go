@@ -8,7 +8,6 @@ import (
 
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/setup"
 	"github.com/kgateway-dev/kgateway/v2/internal/version"
-	"github.com/kgateway-dev/kgateway/v2/pkg/cli/diagnose"
 	"github.com/kgateway-dev/kgateway/v2/pkg/utils/probes"
 )
 
@@ -32,8 +31,6 @@ func main() {
 		},
 	}
 	cmd.Flags().BoolVarP(&kgatewayVersion, "version", "v", false, "Print the version of kgateway")
-
-	cmd.AddCommand(diagnose.NewDiagnoseCommand())
 
 	if err := cmd.Execute(); err != nil {
 		log.Fatal(err)

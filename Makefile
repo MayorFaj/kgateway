@@ -858,36 +858,3 @@ update-licenses: ## Update the licenses for the project
 # use `make print-MAKEFILE_VAR` to print the value of MAKEFILE_VAR
 
 print-%  : ; @echo $($*)
-#----------------------------------------------------------------------------------
-# CLI Commands
-#----------------------------------------------------------------------------------
-
-DIAGNOSE_ARGS ?= policy --all-namespaces
-.PHONY: diagnose
-diagnose: ## Run the kgateway diagnose command. Override with DIAGNOSE_ARGS="policy my-policy -n my-namespace"
-	go run ./cmd/kgateway diagnose $(DIAGNOSE_ARGS)
-
-#----------------------------------------------------------------------------------
-# kubectl Plugin
-#----------------------------------------------------------------------------------
-
-KUBECTL_PLUGIN_DIR=cmd/kubectl-kgateway
-KUBECTL_PLUGIN_SOURCES=$(call get_sources,$(KUBECTL_PLUGIN_DIR))
-KUBECTL_PLUGIN_OUTPUT_DIR=$(OUTPUT_DIR)/$(KUBECTL_PLUGIN_DIR)
-
-$(KUBECTL_PLUGIN_OUTPUT_DIR)/kubectl-kgateway-linux-$(GOARCH): $(KUBECTL_PLUGIN_SOURCES)
-	$(GO_BUILD_FLAGS) GOOS=linux go build -ldflags='$(LDFLAGS)' -gcflags='$(GCFLAGS)' -o $@ ./$(KUBECTL_PLUGIN_DIR)/...
-
-$(KUBECTL_PLUGIN_OUTPUT_DIR)/kubectl-kgateway-darwin-$(GOARCH): $(KUBECTL_PLUGIN_SOURCES)
-	$(GO_BUILD_FLAGS) GOOS=darwin go build -ldflags='$(LDFLAGS)' -gcflags='$(GCFLAGS)' -o $@ ./$(KUBECTL_PLUGIN_DIR)/...
-
-$(KUBECTL_PLUGIN_OUTPUT_DIR)/kubectl-kgateway-windows-$(GOARCH).exe: $(KUBECTL_PLUGIN_SOURCES)
-	$(GO_BUILD_FLAGS) GOOS=windows go build -ldflags='$(LDFLAGS)' -gcflags='$(GCFLAGS)' -o $@ ./$(KUBECTL_PLUGIN_DIR)/...
-
-.PHONY: kubectl-plugin
-kubectl-plugin: $(KUBECTL_PLUGIN_OUTPUT_DIR)/kubectl-kgateway-$(GOOS)-$(GOARCH) ## Build kubectl plugin for current OS
-
-.PHONY: kubectl-plugin-all
-kubectl-plugin-all: $(KUBECTL_PLUGIN_OUTPUT_DIR)/kubectl-kgateway-linux-$(GOARCH) ## Build kubectl plugin for all platforms
-kubectl-plugin-all: $(KUBECTL_PLUGIN_OUTPUT_DIR)/kubectl-kgateway-darwin-$(GOARCH)
-kubectl-plugin-all: $(KUBECTL_PLUGIN_OUTPUT_DIR)/kubectl-kgateway-windows-$(GOARCH).exe

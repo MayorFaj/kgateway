@@ -59,8 +59,6 @@ type (
 
 // UnattachedPolicyDetector is an interface that plugins can implement
 // to provide information about policies with non-existent target references.
-// This allows ProxySyncer to query plugins for unattached policies without
-// plugins needing to know about ProxySyncer directly.
 type UnattachedPolicyDetector interface {
 	// DetectUnattachedPolicies returns a list of policy references that have
 	// non-existent target references for the given GroupKind.
