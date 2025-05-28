@@ -2,10 +2,15 @@
 
 package v1alpha1
 
+import (
+	v1 "sigs.k8s.io/gateway-api/apis/v1"
+)
+
 // ExtProcProviderApplyConfiguration represents a declarative configuration of the ExtProcProvider type for use
 // with apply.
 type ExtProcProviderApplyConfiguration struct {
 	GrpcService *ExtGrpcServiceApplyConfiguration `json:"grpcService,omitempty"`
+	Timeout     *v1.Duration                      `json:"timeout,omitempty"`
 }
 
 // ExtProcProviderApplyConfiguration constructs a declarative configuration of the ExtProcProvider type for use with
@@ -19,5 +24,13 @@ func ExtProcProvider() *ExtProcProviderApplyConfiguration {
 // If called multiple times, the GrpcService field is set to the value of the last call.
 func (b *ExtProcProviderApplyConfiguration) WithGrpcService(value *ExtGrpcServiceApplyConfiguration) *ExtProcProviderApplyConfiguration {
 	b.GrpcService = value
+	return b
+}
+
+// WithTimeout sets the Timeout field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Timeout field is set to the value of the last call.
+func (b *ExtProcProviderApplyConfiguration) WithTimeout(value v1.Duration) *ExtProcProviderApplyConfiguration {
+	b.Timeout = &value
 	return b
 }
