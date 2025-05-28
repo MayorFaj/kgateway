@@ -41,6 +41,11 @@ type ExtAuthProvider struct {
 	// GrpcService is the GRPC service that will handle the authentication.
 	// +kubebuilder:validation:Required
 	GrpcService *ExtGrpcService `json:"grpcService"`
+
+	// Timeout for requests to the external authorization service.
+	// +optional
+	// +kubebuilder:default="200ms"
+	Timeout gwv1.Duration `json:"timeout,omitempty"`
 }
 
 // ExtProcProvider defines the configuration for an ExtProc provider.
@@ -48,6 +53,11 @@ type ExtProcProvider struct {
 	// GrpcService is the GRPC service that will handle the processing.
 	// +kubebuilder:validation:Required
 	GrpcService *ExtGrpcService `json:"grpcService"`
+
+	// Timeout for requests to the external processing service.
+	// +optional
+	// +kubebuilder:default="200ms"
+	Timeout gwv1.Duration `json:"timeout,omitempty"`
 }
 
 // ExtGrpcService defines the GRPC service that will handle the processing.

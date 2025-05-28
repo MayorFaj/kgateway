@@ -326,6 +326,16 @@ func TranslateGatewayExtensionBuilder(commoncol *common.CommonCollections) func(
 				return p
 			}
 
+			// Set timeout if specified
+			if gExt.ExtAuth.Timeout != "" {
+				if duration, err := time.ParseDuration(string(gExt.ExtAuth.Timeout)); err == nil {
+					envoyGrpcService.Timeout = durationpb.New(duration)
+				} else {
+					// CEL validation should catch this, so this should never happen. log it here just in case and don't error.
+					logger.Error("invalid timeout in ExtAuth provider", "error", err)
+				}
+			}
+
 			p.ExtAuth = &envoy_ext_authz_v3.ExtAuthz{
 				Services: &envoy_ext_authz_v3.ExtAuthz_GrpcService{
 					GrpcService: envoyGrpcService,
@@ -338,6 +348,16 @@ func TranslateGatewayExtensionBuilder(commoncol *common.CommonCollections) func(
 			if err != nil {
 				p.Err = fmt.Errorf("failed to resolve ExtProc backend: %w", err)
 				return p
+			}
+
+			// Set timeout if specified
+			if gExt.ExtProc.Timeout != "" {
+				if duration, err := time.ParseDuration(string(gExt.ExtProc.Timeout)); err == nil {
+					envoyGrpcService.Timeout = durationpb.New(duration)
+				} else {
+					// CEL validation should catch this, so this should never happen. log it here just in case and don't error.
+					logger.Error("invalid timeout in ExtProc provider", "error", err)
+				}
 			}
 
 			p.ExtProc = &envoy_ext_proc_v3.ExternalProcessor{
