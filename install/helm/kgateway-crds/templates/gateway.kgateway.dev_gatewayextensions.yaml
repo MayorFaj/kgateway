@@ -91,8 +91,12 @@ spec:
                     type: object
                   timeout:
                     default: 200ms
-                    pattern: ^([0-9]{1,5}(h|m|s|ms)){1,4}$
                     type: string
+                    x-kubernetes-validations:
+                    - message: timeout must be a valid duration string
+                      rule: duration(self) >= duration('0s')
+                    - message: timeout must be at least 1 millisecond
+                      rule: duration(self) >= duration('1ms')
                 required:
                 - grpcService
                 type: object
@@ -147,8 +151,12 @@ spec:
                     type: object
                   timeout:
                     default: 200ms
-                    pattern: ^([0-9]{1,5}(h|m|s|ms)){1,4}$
                     type: string
+                    x-kubernetes-validations:
+                    - message: timeout must be a valid duration string
+                      rule: duration(self) >= duration('0s')
+                    - message: timeout must be at least 1 millisecond
+                      rule: duration(self) >= duration('1ms')
                 required:
                 - grpcService
                 type: object
@@ -208,8 +216,12 @@ spec:
                     type: object
                   timeout:
                     default: 20ms
-                    pattern: ^([0-9]{1,5}(h|m|s|ms)){1,4}$
                     type: string
+                    x-kubernetes-validations:
+                    - message: timeout must be a valid duration string
+                      rule: duration(self) >= duration('0s')
+                    - message: timeout must be at least 1 millisecond
+                      rule: duration(self) >= duration('1ms')
                 required:
                 - domain
                 - grpcService

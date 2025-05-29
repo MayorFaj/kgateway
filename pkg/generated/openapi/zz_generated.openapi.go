@@ -1983,8 +1983,7 @@ func schema_kgateway_v2_api_v1alpha1_ExtAuthProvider(ref common.ReferenceCallbac
 					"timeout": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Timeout for requests to the external authorization service.",
-							Type:        []string{"string"},
-							Format:      "",
+							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.Duration"),
 						},
 					},
 				},
@@ -1992,7 +1991,7 @@ func schema_kgateway_v2_api_v1alpha1_ExtAuthProvider(ref common.ReferenceCallbac
 			},
 		},
 		Dependencies: []string{
-			"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.ExtGrpcService"},
+			"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.ExtGrpcService", "k8s.io/apimachinery/pkg/apis/meta/v1.Duration"},
 	}
 }
 
@@ -2069,8 +2068,7 @@ func schema_kgateway_v2_api_v1alpha1_ExtProcProvider(ref common.ReferenceCallbac
 					"timeout": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Timeout for requests to the external processing service.",
-							Type:        []string{"string"},
-							Format:      "",
+							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.Duration"),
 						},
 					},
 				},
@@ -2078,7 +2076,7 @@ func schema_kgateway_v2_api_v1alpha1_ExtProcProvider(ref common.ReferenceCallbac
 			},
 		},
 		Dependencies: []string{
-			"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.ExtGrpcService"},
+			"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.ExtGrpcService", "k8s.io/apimachinery/pkg/apis/meta/v1.Duration"},
 	}
 }
 
@@ -4097,8 +4095,7 @@ func schema_kgateway_v2_api_v1alpha1_RateLimitProvider(ref common.ReferenceCallb
 					"timeout": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Timeout for requests to the rate limit service.",
-							Type:        []string{"string"},
-							Format:      "",
+							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.Duration"),
 						},
 					},
 				},
@@ -4106,7 +4103,7 @@ func schema_kgateway_v2_api_v1alpha1_RateLimitProvider(ref common.ReferenceCallb
 			},
 		},
 		Dependencies: []string{
-			"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.ExtGrpcService"},
+			"github.com/kgateway-dev/kgateway/v2/api/v1alpha1.ExtGrpcService", "k8s.io/apimachinery/pkg/apis/meta/v1.Duration"},
 	}
 }
 
