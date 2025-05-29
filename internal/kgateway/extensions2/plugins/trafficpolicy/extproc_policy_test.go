@@ -2,11 +2,14 @@ package trafficpolicy
 
 import (
 	"testing"
+	"time"
 
 	envoy_ext_proc_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/ir"
@@ -108,4 +111,44 @@ func TestBuildEnvoyExtProc(t *testing.T) {
 			tt.validateResult(t, result)
 		})
 	}
+}
+
+func TestExtProcTimeout(t *testing.T) {
+	t.Run("configures timeout when specified", func(t *testing.T) {
+		// Setup
+		extension := &ir.GatewayExtension{
+			ExtProc: &v1alpha1.ExtProcProvider{
+				GrpcService: &v1alpha1.ExtGrpcService{
+					BackendRef: &gwv1.BackendRef{
+						BackendObjectReference: gwv1.BackendObjectReference{
+							Name: "test-service",
+						},
+					},
+				},
+				Timeout: metav1.Duration{Duration: 10 * time.Second},
+			},
+		}
+
+		// Verify
+		assert.Equal(t, 10*time.Second, extension.ExtProc.Timeout.Duration)
+	})
+
+	t.Run("uses default timeout when not specified", func(t *testing.T) {
+		// Setup
+		extension := &ir.GatewayExtension{
+			ExtProc: &v1alpha1.ExtProcProvider{
+				GrpcService: &v1alpha1.ExtGrpcService{
+					BackendRef: &gwv1.BackendRef{
+						BackendObjectReference: gwv1.BackendObjectReference{
+							Name: "test-service",
+						},
+					},
+				},
+				// No timeout specified
+			},
+		}
+
+		// Verify
+		assert.Equal(t, time.Duration(0), extension.ExtProc.Timeout.Duration)
+	})
 }
