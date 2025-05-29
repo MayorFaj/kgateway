@@ -642,19 +642,10 @@ func (s *ProxySyncer) syncPolicyStatus(ctx context.Context, rm reports.ReportMap
 	stopwatch.Start()
 	defer stopwatch.Stop(ctx)
 
-	// Track all policies that need status updates (both attached and unattached)
-	allPoliciesNeedingStatusUpdate := make(map[reports.PolicyKey]bool)
-
-	// Add all policies from reportMap (attached policies)
-	for key := range rm.Policies {
-		allPoliciesNeedingStatusUpdate[key] = true
-	}
-
-	// Check for unattached policies by querying plugins that implement UnattachedPolicyDetector
-	// plugins expose getters per GVK that ProxySyncer can invoke
+	// First, detect unattached policies and add them to the reportMap
 	for gk, plugin := range s.plugins.ContributesPolicies {
-		if plugin.UnattachedPolicyDetector != nil {
-			unattachedPolicies, err := plugin.UnattachedPolicyDetector.DetectUnattachedPolicies(ctx, gk)
+		if plugin.GetUnattachedPolicies != nil {
+			unattachedPolicies, err := plugin.GetUnattachedPolicies(ctx, gk)
 			if err != nil {
 				logger.Warn("error detecting unattached policies", "error", err, "groupKind", gk)
 				continue
@@ -663,7 +654,7 @@ func (s *ProxySyncer) syncPolicyStatus(ctx context.Context, rm reports.ReportMap
 			if len(unattachedPolicies) > 0 {
 				logger.Info("detected unattached policies", "group_kind", gk, "count", len(unattachedPolicies), "policies", unattachedPolicies)
 
-				// Add unattached policies to the list that need status updates
+				// Add unattached policies to the reportMap
 				for _, policyNN := range unattachedPolicies {
 					policyKey := reports.PolicyKey{
 						Group:     gk.Group,
@@ -671,14 +662,19 @@ func (s *ProxySyncer) syncPolicyStatus(ctx context.Context, rm reports.ReportMap
 						Namespace: policyNN.Namespace,
 						Name:      policyNN.Name,
 					}
-					allPoliciesNeedingStatusUpdate[policyKey] = true
+					// Add to reportMap if not already present (unattached policies have empty ancestor reports)
+					if _, exists := rm.Policies[policyKey]; !exists {
+						rm.Policies[policyKey] = &reports.PolicyReport{
+							Ancestors: make(map[reports.ParentRefKey]*reports.AncestorRefReport),
+						}
+					}
 				}
 			}
 		}
 	}
 
-	// Sync Policy statuses for both attached and unattached policies
-	for key := range allPoliciesNeedingStatusUpdate {
+	// Now sync status for all policies (both attached and unattached) in a single loop
+	for key := range rm.Policies {
 		gk := schema.GroupKind{Group: key.Group, Kind: key.Kind}
 		nsName := types.NamespacedName{Namespace: key.Namespace, Name: key.Name}
 

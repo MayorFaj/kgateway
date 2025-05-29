@@ -399,9 +399,6 @@ func NewPlugin(ctx context.Context, commoncol *common.CommonCollections) extensi
 		return pol
 	})
 
-	// Create the unattached policy detector
-	unattachedDetector := NewTrafficPolicyUnattachedDetector(commoncol.CrudClient)
-
 	plugin := extensionsplug.Plugin{
 		ContributesPolicies: map[schema.GroupKind]extensionsplug.PolicyPlugin{
 			wellknown.TrafficPolicyGVK.GroupKind(): {
@@ -411,7 +408,7 @@ func NewPlugin(ctx context.Context, commoncol *common.CommonCollections) extensi
 				MergePolicies:             mergePolicies,
 				GetPolicyStatus:           getPolicyStatusFn(commoncol.CrudClient),
 				PatchPolicyStatus:         patchPolicyStatusFn(commoncol.CrudClient),
-				UnattachedPolicyDetector:  unattachedDetector,
+				GetUnattachedPolicies:     getUnattachedPoliciesFn(commoncol.CrudClient),
 			},
 		},
 		ExtraHasSynced: translator.HasSynced,

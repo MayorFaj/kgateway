@@ -48,7 +48,7 @@ func NewErrorMockClient(delegate client.Client, errorMap map[types.NamespacedNam
 	}
 }
 
-func TestTrafficPolicyUnattachedDetector(t *testing.T) {
+func TestTrafficPolicyGetUnattachedPolicies(t *testing.T) {
 	// Create a scheme for the fake client
 	scheme := runtime.NewScheme()
 	require.NoError(t, v1alpha1.AddToScheme(scheme))
@@ -363,11 +363,9 @@ func TestTrafficPolicyUnattachedDetector(t *testing.T) {
 				k8sClient = NewErrorMockClient(k8sClient, tc.clientErrors)
 			}
 
-			// Create the detector
-			detector := NewTrafficPolicyUnattachedDetector(k8sClient)
-
-			// Call the detector
-			unattachedPolicies, err := detector.DetectUnattachedPolicies(context.Background(), tc.inputGroupKind)
+			// Test the function handler directly
+			getUnattachedFn := getUnattachedPoliciesFn(k8sClient)
+			unattachedPolicies, err := getUnattachedFn(context.Background(), tc.inputGroupKind)
 			require.NoError(t, err)
 
 			// Verify the count matches

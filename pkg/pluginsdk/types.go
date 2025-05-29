@@ -55,15 +55,9 @@ type (
 	GetPolicyStatusFn func(context.Context, types.NamespacedName) (gwv1alpha2.PolicyStatus, error)
 	// PatchPolicyStatusFn is a type that plugins can implement to patch the PolicyStatus for the given policy
 	PatchPolicyStatusFn func(context.Context, types.NamespacedName, gwv1alpha2.PolicyStatus) error
+	// GetUnattachedPoliciesFn is a type that plugins can implement to get unattached policies for the given GroupKind
+	GetUnattachedPoliciesFn func(context.Context, schema.GroupKind) ([]types.NamespacedName, error)
 )
-
-// UnattachedPolicyDetector is an interface that plugins can implement
-// to provide information about policies with non-existent target references.
-type UnattachedPolicyDetector interface {
-	// DetectUnattachedPolicies returns a list of policy references that have
-	// non-existent target references for the given GroupKind.
-	DetectUnattachedPolicies(ctx context.Context, gk schema.GroupKind) ([]types.NamespacedName, error)
-}
 
 type PolicyPlugin struct {
 	Name                      string
@@ -80,12 +74,9 @@ type PolicyPlugin struct {
 	PoliciesFetch func(n, ns string) ir.PolicyIR
 	MergePolicies func(pols []ir.PolicyAtt) ir.PolicyAtt
 
-	GetPolicyStatus   GetPolicyStatusFn
-	PatchPolicyStatus PatchPolicyStatusFn
-
-	// UnattachedPolicyDetector can be optionally implemented by plugins
-	// to provide information about policies with dangling references
-	UnattachedPolicyDetector UnattachedPolicyDetector
+	GetPolicyStatus       GetPolicyStatusFn
+	PatchPolicyStatus     PatchPolicyStatusFn
+	GetUnattachedPolicies GetUnattachedPoliciesFn
 }
 
 type BackendPlugin struct {
