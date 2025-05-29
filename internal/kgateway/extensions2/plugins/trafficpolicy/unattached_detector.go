@@ -14,11 +14,8 @@ import (
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
-	"github.com/kgateway-dev/kgateway/v2/pkg/logging"
 	pluginsdk "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk"
 )
-
-var detectorLogger = logging.New("plugin/trafficpolicy/unattached-detector")
 
 // TrafficPolicyUnattachedDetector implements the UnattachedPolicyDetector interface
 // for TrafficPolicy resources, detecting policies with non-existent target references.
@@ -57,7 +54,7 @@ func (d *TrafficPolicyUnattachedDetector) DetectUnattachedPolicies(ctx context.C
 		for _, targetRef := range policy.Spec.TargetRefs {
 			exists, err := d.targetRefExists(ctx, targetRef.LocalPolicyTargetReference, policy.Namespace)
 			if err != nil {
-				detectorLogger.Warn("error checking target reference existence",
+				logger.Warn("error checking target reference existence",
 					"policy", policy.Name,
 					"namespace", policy.Namespace,
 					"targetRef", targetRef,
@@ -66,7 +63,7 @@ func (d *TrafficPolicyUnattachedDetector) DetectUnattachedPolicies(ctx context.C
 			}
 			if !exists {
 				hasUnattachedTargets = true
-				detectorLogger.Debug("found unattached target reference",
+				logger.Debug("found unattached target reference",
 					"policy", policy.Name,
 					"namespace", policy.Namespace,
 					"targetRef", targetRef)
@@ -77,7 +74,7 @@ func (d *TrafficPolicyUnattachedDetector) DetectUnattachedPolicies(ctx context.C
 		for _, targetSelector := range policy.Spec.TargetSelectors {
 			hasMatchingTargets, err := d.targetSelectorHasMatches(ctx, targetSelector, policy.Namespace)
 			if err != nil {
-				detectorLogger.Warn("error checking target selector matches",
+				logger.Warn("error checking target selector matches",
 					"policy", policy.Name,
 					"namespace", policy.Namespace,
 					"targetSelector", targetSelector,
@@ -86,7 +83,7 @@ func (d *TrafficPolicyUnattachedDetector) DetectUnattachedPolicies(ctx context.C
 			}
 			if !hasMatchingTargets {
 				hasUnattachedTargets = true
-				detectorLogger.Debug("found target selector with no matches",
+				logger.Debug("found target selector with no matches",
 					"policy", policy.Name,
 					"namespace", policy.Namespace,
 					"targetSelector", targetSelector)
@@ -153,7 +150,7 @@ func (d *TrafficPolicyUnattachedDetector) targetRefExists(ctx context.Context, t
 		})
 		err := d.client.Get(ctx, targetKey, obj)
 		if err != nil {
-			detectorLogger.Debug("failed to find resource with discovered gvk",
+			logger.Debug("failed to find resource with discovered gvk",
 				"target", targetKey,
 				"error", err)
 			return false, client.IgnoreNotFound(err)
@@ -223,7 +220,7 @@ func (d *TrafficPolicyUnattachedDetector) targetSelectorHasMatches(ctx context.C
 			client.InNamespace(namespace),
 			client.MatchingLabelsSelector{Selector: selector})
 		if err != nil {
-			detectorLogger.Debug("failed to list resources with discovered gvk",
+			logger.Debug("failed to list resources with discovered gvk",
 				"namespace", namespace,
 				"selector", targetSelector.MatchLabels,
 				"error", err)
