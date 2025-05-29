@@ -327,13 +327,8 @@ func TranslateGatewayExtensionBuilder(commoncol *common.CommonCollections) func(
 			}
 
 			// Set timeout if specified
-			if gExt.ExtAuth.Timeout != "" {
-				if duration, err := time.ParseDuration(string(gExt.ExtAuth.Timeout)); err == nil {
-					envoyGrpcService.Timeout = durationpb.New(duration)
-				} else {
-					// CEL validation should catch this, so this should never happen. log it here just in case and don't error.
-					logger.Error("invalid timeout in ExtAuth provider", "error", err)
-				}
+			if gExt.ExtAuth.Timeout.Duration > 0 {
+				envoyGrpcService.Timeout = durationpb.New(gExt.ExtAuth.Timeout.Duration)
 			}
 
 			p.ExtAuth = &envoy_ext_authz_v3.ExtAuthz{
@@ -351,13 +346,8 @@ func TranslateGatewayExtensionBuilder(commoncol *common.CommonCollections) func(
 			}
 
 			// Set timeout if specified
-			if gExt.ExtProc.Timeout != "" {
-				if duration, err := time.ParseDuration(string(gExt.ExtProc.Timeout)); err == nil {
-					envoyGrpcService.Timeout = durationpb.New(duration)
-				} else {
-					// CEL validation should catch this, so this should never happen. log it here just in case and don't error.
-					logger.Error("invalid timeout in ExtProc provider", "error", err)
-				}
+			if gExt.ExtProc.Timeout.Duration > 0 {
+				envoyGrpcService.Timeout = durationpb.New(gExt.ExtProc.Timeout.Duration)
 			}
 
 			p.ExtProc = &envoy_ext_proc_v3.ExternalProcessor{
@@ -484,14 +474,10 @@ func resolveRateLimitService(grpcService *envoy_core_v3.GrpcService, rateLimit *
 	}
 
 	// Set timeout if specified
-	if rateLimit.Timeout != "" {
-		if duration, err := time.ParseDuration(string(rateLimit.Timeout)); err == nil {
-			envoyRateLimit.Timeout = durationpb.New(duration)
-		} else {
-			// CEL validation should catch this, so this should never happen. log it here just in case and don't error.
-			logger.Error("invalid timeout in rate limit provider", "error", err)
-		}
+	if rateLimit.Timeout.Duration > 0 {
+		envoyRateLimit.Timeout = durationpb.New(rateLimit.Timeout.Duration)
 	}
+
 	// Set defaults for other required fields
 	envoyRateLimit.StatPrefix = rateLimitStatPrefix
 	envoyRateLimit.EnableXRatelimitHeaders = ratev3.RateLimit_DRAFT_VERSION_03

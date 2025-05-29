@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/durationpb"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	gwv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
@@ -318,7 +319,7 @@ func TestToRateLimitFilterConfig(t *testing.T) {
 							BackendObjectReference: createBackendRef(),
 						},
 					},
-					Timeout: "5s",
+					Timeout: metav1.Duration{Duration: 5 * time.Second},
 				},
 				ObjectSource: ir.ObjectSource{
 					Name:      defaultExtensionName,
@@ -390,45 +391,6 @@ func TestToRateLimitFilterConfig(t *testing.T) {
 				require.NotNil(t, rl)
 				assert.False(t, rl.FailureModeDeny) // Should be fail open (false)
 			},
-		},
-		{
-			name: "with invalid timeout",
-			gatewayExtension: &ir.GatewayExtension{
-				Type: v1alpha1.GatewayExtensionTypeRateLimit,
-				RateLimit: &v1alpha1.RateLimitProvider{
-					Domain: "test-domain",
-					GrpcService: &v1alpha1.ExtGrpcService{
-						BackendRef: &gwv1alpha2.BackendRef{
-							BackendObjectReference: createBackendRef(),
-						},
-					},
-					Timeout: "invalid",
-				},
-				ObjectSource: ir.ObjectSource{
-					Name:      defaultExtensionName,
-					Namespace: defaultNamespace,
-				},
-			},
-			policy: &v1alpha1.RateLimitPolicy{
-				ExtensionRef: &corev1.LocalObjectReference{
-					Name: defaultExtensionName,
-				},
-				Descriptors: []v1alpha1.RateLimitDescriptor{
-					{
-						Entries: []v1alpha1.RateLimitDescriptorEntry{
-							{
-								Type: v1alpha1.RateLimitDescriptorEntryTypeGeneric,
-								Generic: &v1alpha1.RateLimitDescriptorEntryGeneric{
-									Key:   "service",
-									Value: "api",
-								},
-							},
-						},
-					},
-				},
-			},
-			trafficPolicy: &v1alpha1.TrafficPolicy{},
-			expectedError: "invalid timeout in GatewayExtension test-ratelimit: time: invalid duration \"invalid\"",
 		},
 		{
 			name: "without backend reference",
@@ -538,53 +500,44 @@ func TestToRateLimitFilterConfig(t *testing.T) {
 					var timeout *durationpb.Duration
 
 					// Use timeout from extension if specified
-					if extension.Timeout != "" {
-						var parseDurationErr error
-						duration, parseDurationErr := time.ParseDuration(string(extension.Timeout))
-						if parseDurationErr != nil {
-							err = fmt.Errorf("invalid timeout in GatewayExtension %s: %w",
-								tt.gatewayExtension.Name, parseDurationErr)
-						} else {
-							timeout = durationpb.New(duration)
-						}
+					if extension.Timeout.Duration > 0 {
+						timeout = durationpb.New(extension.Timeout.Duration)
+					}
+
+					// Use the domain from the extension
+					domain := extension.Domain
+
+					// Construct cluster name from the backendRef
+					clusterName := ""
+					if extension.GrpcService != nil && extension.GrpcService.BackendRef != nil {
+						clusterName = fmt.Sprintf("%s.%s.svc.cluster.local:%d",
+							extension.GrpcService.BackendRef.Name,
+							tt.gatewayExtension.Namespace,
+							*extension.GrpcService.BackendRef.Port)
+					} else {
+						err = fmt.Errorf("backend not provided in grpc service")
 					}
 
 					if err == nil {
-						// Use the domain from the extension
-						domain := extension.Domain
-
-						// Construct cluster name from the backendRef
-						clusterName := ""
-						if extension.GrpcService != nil && extension.GrpcService.BackendRef != nil {
-							clusterName = fmt.Sprintf("%s.%s.svc.cluster.local:%d",
-								extension.GrpcService.BackendRef.Name,
-								tt.gatewayExtension.Namespace,
-								*extension.GrpcService.BackendRef.Port)
-						} else {
-							err = fmt.Errorf("backend not provided in grpc service")
-						}
-
-						if err == nil {
-							// Create a rate limit configuration
-							rl = &ratev3.RateLimit{
-								Domain:          domain,
-								Timeout:         timeout,
-								FailureModeDeny: !extension.FailOpen,
-								RateLimitService: &ratelimitv3.RateLimitServiceConfig{
-									GrpcService: &corev3.GrpcService{
-										TargetSpecifier: &corev3.GrpcService_EnvoyGrpc_{
-											EnvoyGrpc: &corev3.GrpcService_EnvoyGrpc{
-												ClusterName: clusterName,
-											},
+						// Create a rate limit configuration
+						rl = &ratev3.RateLimit{
+							Domain:          domain,
+							Timeout:         timeout,
+							FailureModeDeny: !extension.FailOpen,
+							RateLimitService: &ratelimitv3.RateLimitServiceConfig{
+								GrpcService: &corev3.GrpcService{
+									TargetSpecifier: &corev3.GrpcService_EnvoyGrpc_{
+										EnvoyGrpc: &corev3.GrpcService_EnvoyGrpc{
+											ClusterName: clusterName,
 										},
 									},
-									TransportApiVersion: corev3.ApiVersion_V3,
 								},
-								Stage:                   0,
-								EnableXRatelimitHeaders: ratev3.RateLimit_DRAFT_VERSION_03,
-								RequestType:             "both",
-								StatPrefix:              rateLimitStatPrefix,
-							}
+								TransportApiVersion: corev3.ApiVersion_V3,
+							},
+							Stage:                   0,
+							EnableXRatelimitHeaders: ratev3.RateLimit_DRAFT_VERSION_03,
+							RequestType:             "both",
+							StatPrefix:              rateLimitStatPrefix,
 						}
 					}
 				}

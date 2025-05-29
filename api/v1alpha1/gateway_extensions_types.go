@@ -45,7 +45,9 @@ type ExtAuthProvider struct {
 	// Timeout for requests to the external authorization service.
 	// +optional
 	// +kubebuilder:default="200ms"
-	Timeout gwv1.Duration `json:"timeout,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('0s')",message="timeout must be a valid duration string"
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1ms')",message="timeout must be at least 1 millisecond"
+	Timeout metav1.Duration `json:"timeout,omitempty"`
 }
 
 // ExtProcProvider defines the configuration for an ExtProc provider.
@@ -57,7 +59,9 @@ type ExtProcProvider struct {
 	// Timeout for requests to the external processing service.
 	// +optional
 	// +kubebuilder:default="200ms"
-	Timeout gwv1.Duration `json:"timeout,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('0s')",message="timeout must be a valid duration string"
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1ms')",message="timeout must be at least 1 millisecond"
+	Timeout metav1.Duration `json:"timeout,omitempty"`
 }
 
 // ExtGrpcService defines the GRPC service that will handle the processing.
@@ -92,7 +96,9 @@ type RateLimitProvider struct {
 	// Timeout for requests to the rate limit service.
 	// +optional
 	// +kubebuilder:default="20ms"
-	Timeout gwv1.Duration `json:"timeout,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('0s')",message="timeout must be a valid duration string"
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1ms')",message="timeout must be at least 1 millisecond"
+	Timeout metav1.Duration `json:"timeout,omitempty"`
 }
 
 // GatewayExtensionSpec defines the desired state of GatewayExtension.
