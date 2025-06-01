@@ -113,7 +113,7 @@ func TestBuildEnvoyExtProc(t *testing.T) {
 	}
 }
 
-func TestExtProcTimeout(t *testing.T) {
+func TestExtProcTimeouts(t *testing.T) {
 	t.Run("configures timeout when specified", func(t *testing.T) {
 		// Setup
 		extension := &ir.GatewayExtension{
@@ -150,5 +150,64 @@ func TestExtProcTimeout(t *testing.T) {
 
 		// Verify
 		assert.Equal(t, time.Duration(0), extension.ExtProc.Timeout.Duration)
+	})
+
+	t.Run("configures messageTimeout when specified", func(t *testing.T) {
+		// Setup
+		extension := &ir.GatewayExtension{
+			ExtProc: &v1alpha1.ExtProcProvider{
+				GrpcService: &v1alpha1.ExtGrpcService{
+					BackendRef: &gwv1.BackendRef{
+						BackendObjectReference: gwv1.BackendObjectReference{
+							Name: "test-service",
+						},
+					},
+				},
+				MessageTimeout: metav1.Duration{Duration: 200 * time.Millisecond},
+			},
+		}
+
+		// Verify
+		assert.Equal(t, 200*time.Millisecond, extension.ExtProc.MessageTimeout.Duration)
+	})
+
+	t.Run("uses default messageTimeout when not specified", func(t *testing.T) {
+		// Setup
+		extension := &ir.GatewayExtension{
+			ExtProc: &v1alpha1.ExtProcProvider{
+				GrpcService: &v1alpha1.ExtGrpcService{
+					BackendRef: &gwv1.BackendRef{
+						BackendObjectReference: gwv1.BackendObjectReference{
+							Name: "test-service",
+						},
+					},
+				},
+				// No messageTimeout specified
+			},
+		}
+
+		// Verify
+		assert.Equal(t, time.Duration(0), extension.ExtProc.MessageTimeout.Duration)
+	})
+
+	t.Run("configures both timeout and messageTimeout", func(t *testing.T) {
+		// Setup
+		extension := &ir.GatewayExtension{
+			ExtProc: &v1alpha1.ExtProcProvider{
+				GrpcService: &v1alpha1.ExtGrpcService{
+					BackendRef: &gwv1.BackendRef{
+						BackendObjectReference: gwv1.BackendObjectReference{
+							Name: "test-service",
+						},
+					},
+				},
+				Timeout:        metav1.Duration{Duration: 5 * time.Second},
+				MessageTimeout: metav1.Duration{Duration: 100 * time.Millisecond},
+			},
+		}
+
+		// Verify both timeouts are configured independently
+		assert.Equal(t, 5*time.Second, extension.ExtProc.Timeout.Duration)
+		assert.Equal(t, 100*time.Millisecond, extension.ExtProc.MessageTimeout.Duration)
 	})
 }
