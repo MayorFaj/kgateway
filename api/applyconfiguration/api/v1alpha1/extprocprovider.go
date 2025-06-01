@@ -9,8 +9,9 @@ import (
 // ExtProcProviderApplyConfiguration represents a declarative configuration of the ExtProcProvider type for use
 // with apply.
 type ExtProcProviderApplyConfiguration struct {
-	GrpcService *ExtGrpcServiceApplyConfiguration `json:"grpcService,omitempty"`
-	Timeout     *v1.Duration                      `json:"timeout,omitempty"`
+	GrpcService    *ExtGrpcServiceApplyConfiguration `json:"grpcService,omitempty"`
+	Timeout        *v1.Duration                      `json:"timeout,omitempty"`
+	MessageTimeout *v1.Duration                      `json:"messageTimeout,omitempty"`
 }
 
 // ExtProcProviderApplyConfiguration constructs a declarative configuration of the ExtProcProvider type for use with
@@ -32,5 +33,13 @@ func (b *ExtProcProviderApplyConfiguration) WithGrpcService(value *ExtGrpcServic
 // If called multiple times, the Timeout field is set to the value of the last call.
 func (b *ExtProcProviderApplyConfiguration) WithTimeout(value v1.Duration) *ExtProcProviderApplyConfiguration {
 	b.Timeout = &value
+	return b
+}
+
+// WithMessageTimeout sets the MessageTimeout field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the MessageTimeout field is set to the value of the last call.
+func (b *ExtProcProviderApplyConfiguration) WithMessageTimeout(value v1.Duration) *ExtProcProviderApplyConfiguration {
+	b.MessageTimeout = &value
 	return b
 }

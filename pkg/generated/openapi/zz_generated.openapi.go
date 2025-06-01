@@ -2193,6 +2193,12 @@ func schema_kgateway_v2_api_v1alpha1_ExtProcProvider(ref common.ReferenceCallbac
 							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.Duration"),
 						},
 					},
+					"messageTimeout": {
+						SchemaProps: spec.SchemaProps{
+							Description: "MessageTimeout for individual message processing by the external processing service. This timeout applies to the processing of each individual message/request.",
+							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.Duration"),
+						},
+					},
 				},
 				Required: []string{"grpcService"},
 			},

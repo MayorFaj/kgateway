@@ -62,6 +62,14 @@ type ExtProcProvider struct {
 	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('0s')",message="timeout must be a valid duration string"
 	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1ms')",message="timeout must be at least 1 millisecond"
 	Timeout metav1.Duration `json:"timeout,omitempty"`
+
+	// MessageTimeout for individual message processing by the external processing service.
+	// This timeout applies to the processing of each individual message/request.
+	// +optional
+	// +kubebuilder:default="200ms"
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('0s')",message="messageTimeout must be a valid duration string"
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1ms')",message="messageTimeout must be at least 1 millisecond"
+	MessageTimeout metav1.Duration `json:"messageTimeout,omitempty"`
 }
 
 // ExtGrpcService defines the GRPC service that will handle the processing.
