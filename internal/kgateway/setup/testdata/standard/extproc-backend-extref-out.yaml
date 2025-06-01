@@ -70,7 +70,7 @@ listeners:
     - name: envoy.filters.network.http_connection_manager
       typedConfig:
         '@type': type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-        httpFilters:
+        httpFilters: 
         - disabled: true
           name: ext_proc/gwtest/extproc-ext
           typedConfig:
@@ -79,6 +79,7 @@ listeners:
               envoyGrpc:
                 clusterName: kube_gwtest_extproc_9091
               timeout: 0.200s
+            messageTimeout: 0.200s
         - name: envoy.filters.http.router
           typedConfig:
             '@type': type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
