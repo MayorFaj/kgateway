@@ -186,6 +186,15 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: model
       type:
         scalar: string
+- name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.AuthHeaderOverride
+  map:
+    fields:
+    - name: headerName
+      type:
+        scalar: string
+    - name: prefix
+      type:
+        scalar: string
 - name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.AwsAuth
   map:
     fields:
@@ -408,6 +417,39 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: maxStreamDuration
       type:
         namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Duration
+- name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.CorsPolicy
+  map:
+    fields:
+    - name: allowCredentials
+      type:
+        scalar: boolean
+    - name: allowHeaders
+      type:
+        list:
+          elementType:
+            scalar: string
+          elementRelationship: associative
+    - name: allowMethods
+      type:
+        list:
+          elementType:
+            scalar: string
+          elementRelationship: associative
+    - name: allowOrigins
+      type:
+        list:
+          elementType:
+            scalar: string
+          elementRelationship: associative
+    - name: exposeHeaders
+      type:
+        list:
+          elementType:
+            scalar: string
+          elementRelationship: associative
+    - name: maxAge
+      type:
+        scalar: numeric
 - name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.CustomLabel
   map:
     fields:
@@ -809,6 +851,9 @@ var schemaYAML = typed.YAMLObject(`types:
           elementType:
             namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.LocalPolicyTargetSelector
           elementRelationship: atomic
+    - name: upgradeConfig
+      type:
+        namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.UpgradeConfig
 - name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.HeaderFilter
   map:
     fields:
@@ -944,9 +989,15 @@ var schemaYAML = typed.YAMLObject(`types:
 - name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.LLMProvider
   map:
     fields:
+    - name: authHeaderOverride
+      type:
+        namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.AuthHeaderOverride
     - name: hostOverride
       type:
         namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.Host
+    - name: pathOverride
+      type:
+        namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.PathOverride
     - name: provider
       type:
         namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.SupportedLLMProvider
@@ -1040,6 +1091,12 @@ var schemaYAML = typed.YAMLObject(`types:
         namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.SingleAuthToken
       default: {}
     - name: model
+      type:
+        scalar: string
+- name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.PathOverride
+  map:
+    fields:
+    - name: fullPath
       type:
         scalar: string
 - name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.Pod
@@ -1454,6 +1511,9 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: ai
       type:
         namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.AIPolicy
+    - name: cors
+      type:
+        namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.CorsPolicy
     - name: extAuth
       type:
         namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.ExtAuthPolicy
@@ -1515,6 +1575,15 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: response
       type:
         namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.Transform
+- name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.UpgradeConfig
+  map:
+    fields:
+    - name: enabledUpgrades
+      type:
+        list:
+          elementType:
+            scalar: string
+          elementRelationship: atomic
 - name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.VertexAIConfig
   map:
     fields:

@@ -37,6 +37,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.AIPromptGuardApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("AnthropicConfig"):
 		return &apiv1alpha1.AnthropicConfigApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("AuthHeaderOverride"):
+		return &apiv1alpha1.AuthHeaderOverrideApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("AwsAuth"):
 		return &apiv1alpha1.AwsAuthApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("AwsBackend"):
@@ -63,6 +65,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.CELFilterApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("CommonHttpProtocolOptions"):
 		return &apiv1alpha1.CommonHttpProtocolOptionsApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("CorsPolicy"):
+		return &apiv1alpha1.CorsPolicyApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("CustomLabel"):
 		return &apiv1alpha1.CustomLabelApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("CustomResponse"):
@@ -149,6 +153,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.MultiPoolConfigApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("OpenAIConfig"):
 		return &apiv1alpha1.OpenAIConfigApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("PathOverride"):
+		return &apiv1alpha1.PathOverrideApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("Pod"):
 		return &apiv1alpha1.PodApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("Port"):
@@ -211,6 +217,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.TransformApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("TransformationPolicy"):
 		return &apiv1alpha1.TransformationPolicyApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("UpgradeConfig"):
+		return &apiv1alpha1.UpgradeConfigApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("VertexAIConfig"):
 		return &apiv1alpha1.VertexAIConfigApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("Webhook"):
