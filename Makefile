@@ -222,6 +222,10 @@ run-e2e-tests: TEST_PKG = ./test/e2e/ ## Run all in-memory E2E tests
 run-e2e-tests: GINKGO_FLAGS += --label-filter="end-to-end && !performance"
 run-e2e-tests: test
 
+.PHONY: run-load-tests
+run-load-tests:
+	@cd test/performance && go test -v -tags=load
+
 #----------------------------------------------------------------------------------
 # Env test
 #----------------------------------------------------------------------------------
