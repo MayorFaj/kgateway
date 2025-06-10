@@ -16,7 +16,7 @@ jobs:
     # TODO(tim): rename this job or consolidate with the other workflows.
     name: projects/gateway2
     runs-on: ubuntu-22.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
     - uses: actions/checkout@v4
     - name: Setup Go
@@ -30,7 +30,7 @@ jobs:
     - name: Run Tests
       shell: bash
       env:
-        TEST_PKG: "./internal/kgateway/..."
+        TEST_PKG: "./internal/... ./pkg/..."
       run: make go-test-with-coverage
     - name: Validate Test Coverage
       shell: bash

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 
+	envoy_config_core_v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoy_config_route_v3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	envoy_type_matcher_v3 "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
 	"google.golang.org/protobuf/proto"
@@ -15,10 +17,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/ir"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/reports"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/routeutils"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils"
+	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/ir"
 	reportssdk "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/reporter"
 	"github.com/kgateway-dev/kgateway/v2/pkg/utils/regexutils"
 )
@@ -36,6 +38,8 @@ type httpRouteConfigurationTranslator struct {
 	logger                   *slog.Logger
 }
 
+const WebSocketUpgradeType = "websocket"
+
 func (h *httpRouteConfigurationTranslator) ComputeRouteConfiguration(ctx context.Context, vhosts []*ir.VirtualHost) *envoy_config_route_v3.RouteConfiguration {
 	var attachedPolicies ir.AttachedPolicies
 	// the policies in order - first listener as they are more specific and thus higher priority.
@@ -46,14 +50,15 @@ func (h *httpRouteConfigurationTranslator) ComputeRouteConfiguration(ctx context
 	}
 	typedPerFilterConfigRoute := ir.TypedFilterConfigMap(map[string]proto.Message{})
 
-	for gk, pols := range attachedPolicies.Policies {
+	for _, gk := range attachedPolicies.ApplyOrderedGroupKinds() {
+		pols := attachedPolicies.Policies[gk]
 		pass := h.PluginPass[gk]
 		if pass == nil {
 			// TODO: user error - they attached a non http policy
 			continue
 		}
+		reportPolicyAcceptanceStatus(h.reporter, h.listener.PolicyAncestorRef, pols...)
 		for _, pol := range mergePolicies(pass, pols) {
-			reportPolicyAcceptanceStatus(h.reporter, h.listener.PolicyAncestorRef, pols...)
 			pass.ApplyRouteConfigPlugin(ctx, &ir.RouteConfigContext{
 				FilterChainName:   h.fc.FilterChainName,
 				TypedFilterConfig: typedPerFilterConfigRoute,
@@ -131,6 +136,14 @@ func (h *httpRouteConfigurationTranslator) computeVirtualHost(
 	return out
 }
 
+type backendConfigContext struct {
+	typedPerFilterConfigRoute ir.TypedFilterConfigMap
+	RequestHeadersToAdd       []*envoy_config_core_v3.HeaderValueOption
+	RequestHeadersToRemove    []string
+	ResponseHeadersToAdd      []*envoy_config_core_v3.HeaderValueOption
+	ResponseHeadersToRemove   []string
+}
+
 func (h *httpRouteConfigurationTranslator) envoyRoutes(ctx context.Context,
 	routeReport reportssdk.ParentRefReporter,
 	in ir.HttpRouteRuleMatchIR,
@@ -138,10 +151,10 @@ func (h *httpRouteConfigurationTranslator) envoyRoutes(ctx context.Context,
 ) *envoy_config_route_v3.Route {
 	out := h.initRoutes(in, generatedName)
 
-	typedPerFilterConfigRoute := ir.TypedFilterConfigMap(map[string]proto.Message{})
+	backendConfigCtx := backendConfigContext{typedPerFilterConfigRoute: ir.TypedFilterConfigMap(map[string]proto.Message{})}
 	if len(in.Backends) == 1 {
 		// if there's only one backend, we need to reuse typedPerFilterConfigRoute in both translateRouteAction and runRoutePlugins
-		out.Action = h.translateRouteAction(ctx, in, out, typedPerFilterConfigRoute)
+		out.Action = h.translateRouteAction(ctx, in, out, &backendConfigCtx)
 	} else if len(in.Backends) > 0 {
 		// If there is more than one backend, we translate the backends as WeightedClusters and each weighted cluster
 		// will have a TypedPerFilterConfig that overrides the parent route-level config.
@@ -149,13 +162,26 @@ func (h *httpRouteConfigurationTranslator) envoyRoutes(ctx context.Context,
 	}
 
 	// run plugins here that may set action
-	err := h.runRoutePlugins(ctx, routeReport, in, out, typedPerFilterConfigRoute)
+	err := h.runRoutePlugins(ctx, routeReport, in, out, backendConfigCtx.typedPerFilterConfigRoute)
 	if err == nil {
 		err = validateEnvoyRoute(out)
 	}
 
 	// apply typed per filter config from translating route action and route plugins
-	out.TypedPerFilterConfig = toPerFilterConfigMap(typedPerFilterConfigRoute)
+	typedPerFilterConfig := toPerFilterConfigMap(backendConfigCtx.typedPerFilterConfigRoute)
+	if out.GetTypedPerFilterConfig() == nil {
+		out.TypedPerFilterConfig = typedPerFilterConfig
+	} else {
+		for k, v := range typedPerFilterConfig {
+			if _, exists := out.GetTypedPerFilterConfig()[k]; !exists {
+				out.GetTypedPerFilterConfig()[k] = v
+			}
+		}
+	}
+	out.RequestHeadersToAdd = append(out.GetRequestHeadersToAdd(), backendConfigCtx.RequestHeadersToAdd...)
+	out.RequestHeadersToRemove = append(out.GetRequestHeadersToRemove(), backendConfigCtx.RequestHeadersToRemove...)
+	out.ResponseHeadersToAdd = append(out.GetResponseHeadersToAdd(), backendConfigCtx.ResponseHeadersToAdd...)
+	out.ResponseHeadersToRemove = append(out.GetResponseHeadersToRemove(), backendConfigCtx.ResponseHeadersToRemove...)
 
 	if err == nil && out.GetAction() == nil {
 		if in.Delegates {
@@ -191,6 +217,10 @@ func (h *httpRouteConfigurationTranslator) envoyRoutes(ctx context.Context,
 func toPerFilterConfigMap(typedPerFilterConfig ir.TypedFilterConfigMap) map[string]*anypb.Any {
 	typedPerFilterConfigAny := map[string]*anypb.Any{}
 	for k, v := range typedPerFilterConfig {
+		if anyMsg, ok := v.(*anypb.Any); ok {
+			typedPerFilterConfigAny[k] = anyMsg
+			continue
+		}
 		config, err := utils.MessageToAny(v)
 		if err != nil {
 			// TODO: error on status? this should never happen..
@@ -203,15 +233,17 @@ func toPerFilterConfigMap(typedPerFilterConfig ir.TypedFilterConfigMap) map[stri
 }
 
 func (h *httpRouteConfigurationTranslator) runVhostPlugins(ctx context.Context, virtualHost *ir.VirtualHost, out *envoy_config_route_v3.VirtualHost,
-	typedPerFilterConfig ir.TypedFilterConfigMap) {
-	for gk, pols := range virtualHost.AttachedPolicies.Policies {
+	typedPerFilterConfig ir.TypedFilterConfigMap,
+) {
+	for _, gk := range virtualHost.AttachedPolicies.ApplyOrderedGroupKinds() {
+		pols := virtualHost.AttachedPolicies.Policies[gk]
 		pass := h.PluginPass[gk]
 		if pass == nil {
 			// TODO: user error - they attached a non http policy
 			continue
 		}
+		reportPolicyAcceptanceStatus(h.reporter, h.listener.PolicyAncestorRef, pols...)
 		for _, pol := range mergePolicies(pass, pols) {
-			reportPolicyAcceptanceStatus(h.reporter, h.listener.PolicyAncestorRef, pols...)
 			pctx := &ir.VirtualHostContext{
 				Policy:            pol.PolicyIr,
 				TypedFilterConfig: typedPerFilterConfig,
@@ -261,7 +293,8 @@ func (h *httpRouteConfigurationTranslator) runRoutePlugins(
 			errs = append(errs, err)
 		}
 	}
-	for gk, pols := range attachedPolicies.Policies {
+	for _, gk := range attachedPolicies.ApplyOrderedGroupKinds() {
+		pols := attachedPolicies.Policies[gk]
 		pass := h.PluginPass[gk]
 		if pass == nil {
 			// TODO: should never happen, log error and report condition
@@ -307,14 +340,15 @@ func mergePolicies(pass *TranslationPass, policies []ir.PolicyAtt) []ir.PolicyAt
 
 func (h *httpRouteConfigurationTranslator) runBackendPolicies(ctx context.Context, in ir.HttpBackend, pCtx *ir.RouteBackendContext) error {
 	var errs []error
-	for gk, pols := range in.AttachedPolicies.Policies {
+	for _, gk := range in.AttachedPolicies.ApplyOrderedGroupKinds() {
+		pols := in.AttachedPolicies.Policies[gk]
 		pass := h.PluginPass[gk]
 		if pass == nil {
 			// TODO: should never happen, log error and report condition
 			continue
 		}
+		reportPolicyAcceptanceStatus(h.reporter, h.listener.PolicyAncestorRef, pols...)
 		for _, pol := range mergePolicies(pass, pols) {
-			reportPolicyAcceptanceStatus(h.reporter, h.listener.PolicyAncestorRef, pol)
 			// Policy on extension ref
 			err := pass.ApplyForRouteBackend(ctx, pol.PolicyIr, pCtx)
 			if err != nil {
@@ -345,7 +379,7 @@ func (h *httpRouteConfigurationTranslator) translateRouteAction(
 	ctx context.Context,
 	in ir.HttpRouteRuleMatchIR,
 	outRoute *envoy_config_route_v3.Route,
-	parentTypedPerFilterConfig ir.TypedFilterConfigMap,
+	parentBackendConfigCtx *backendConfigContext,
 ) *envoy_config_route_v3.Route_Route {
 	var clusters []*envoy_config_route_v3.WeightedCluster_ClusterWeight
 
@@ -359,15 +393,15 @@ func (h *httpRouteConfigurationTranslator) translateRouteAction(
 			Weight: wrapperspb.UInt32(backend.Backend.Weight),
 		}
 
-		typedPerFilterConfig := parentTypedPerFilterConfig
-		if parentTypedPerFilterConfig == nil {
-			typedPerFilterConfig = map[string]proto.Message{}
+		backendConfigCtx := parentBackendConfigCtx
+		if parentBackendConfigCtx == nil {
+			backendConfigCtx = &backendConfigContext{typedPerFilterConfigRoute: ir.TypedFilterConfigMap(map[string]proto.Message{})}
 		}
 
 		pCtx := ir.RouteBackendContext{
 			FilterChainName:   h.fc.FilterChainName,
 			Backend:           backend.Backend.BackendObject,
-			TypedFilterConfig: typedPerFilterConfig,
+			TypedFilterConfig: backendConfigCtx.typedPerFilterConfigRoute,
 		}
 
 		// non attached policy translation
@@ -381,7 +415,6 @@ func (h *httpRouteConfigurationTranslator) translateRouteAction(
 			// TODO: error on status
 			h.logger.Error("error processing backends", "error", err)
 		}
-
 		err = h.runBackendPolicies(
 			ctx,
 			backend,
@@ -392,18 +425,17 @@ func (h *httpRouteConfigurationTranslator) translateRouteAction(
 			h.logger.Error("error processing backends with policies", "error", err)
 		}
 
+		backendConfigCtx.RequestHeadersToAdd = pCtx.RequestHeadersToAdd
+		backendConfigCtx.RequestHeadersToRemove = pCtx.RequestHeadersToRemove
+		backendConfigCtx.ResponseHeadersToAdd = pCtx.ResponseHeadersToAdd
+		backendConfigCtx.ResponseHeadersToRemove = pCtx.ResponseHeadersToRemove
+
 		// Translating weighted clusters needs the typed per filter config on each cluster
-		typedPerFilterConfigAny := map[string]*anypb.Any{}
-		for k, v := range typedPerFilterConfig {
-			config, err := utils.MessageToAny(v)
-			if err != nil {
-				// TODO: error on status
-				h.logger.Error("unexpected marshalling error", "error", err)
-				continue
-			}
-			typedPerFilterConfigAny[k] = config
-		}
-		cw.TypedPerFilterConfig = typedPerFilterConfigAny
+		cw.TypedPerFilterConfig = toPerFilterConfigMap(backendConfigCtx.typedPerFilterConfigRoute)
+		cw.RequestHeadersToAdd = backendConfigCtx.RequestHeadersToAdd
+		cw.RequestHeadersToRemove = backendConfigCtx.RequestHeadersToRemove
+		cw.ResponseHeadersToAdd = backendConfigCtx.ResponseHeadersToAdd
+		cw.ResponseHeadersToRemove = backendConfigCtx.ResponseHeadersToRemove
 		clusters = append(clusters, cw)
 	}
 
@@ -437,6 +469,19 @@ func (h *httpRouteConfigurationTranslator) translateRouteAction(
 				WeightedClusters: &envoy_config_route_v3.WeightedCluster{
 					Clusters: clusters,
 				},
+			}
+		}
+	}
+
+	for _, backend := range in.Backends {
+		if back := backend.Backend.BackendObject; back != nil && back.AppProtocol == ir.WebSocketAppProtocol {
+			// add websocket upgrade if not already present
+			if !slices.ContainsFunc(action.GetUpgradeConfigs(), func(uc *envoy_config_route_v3.RouteAction_UpgradeConfig) bool {
+				return uc.GetUpgradeType() == WebSocketUpgradeType
+			}) {
+				action.UpgradeConfigs = append(action.GetUpgradeConfigs(), &envoy_config_route_v3.RouteAction_UpgradeConfig{
+					UpgradeType: WebSocketUpgradeType,
+				})
 			}
 		}
 	}

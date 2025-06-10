@@ -33,8 +33,10 @@ import (
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/helm"
+	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/ir"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
 	"github.com/kgateway-dev/kgateway/v2/internal/version"
+	common "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/collections"
 )
 
 var (
@@ -71,6 +73,7 @@ type Inputs struct {
 	ControlPlane         ControlPlaneInfo
 	InferenceExtension   *InferenceExtInfo
 	ImageInfo            *ImageInfo
+	CommonCollections    *common.CommonCollections
 }
 
 type ImageInfo struct {
@@ -302,13 +305,24 @@ func (d *Deployer) getGatewayClassFromGateway(ctx context.Context, gw *api.Gatew
 }
 
 func (d *Deployer) getValues(gw *api.Gateway, gwParam *v1alpha1.GatewayParameters) (*helmConfig, error) {
+	gwKey := ir.ObjectSource{
+		Group:     wellknown.GatewayGVK.GroupKind().Group,
+		Kind:      wellknown.GatewayGVK.GroupKind().Kind,
+		Name:      gw.GetName(),
+		Namespace: gw.GetNamespace(),
+	}
+	irGW := d.inputs.CommonCollections.GatewayIndex.Gateways.GetKey(gwKey.ResourceName())
+	if irGW == nil {
+		irGW = gatewayFrom(gw)
+	}
+
 	// construct the default values
 	vals := &helmConfig{
 		Gateway: &helmGateway{
 			Name:             &gw.Name,
 			GatewayName:      &gw.Name,
 			GatewayNamespace: &gw.Namespace,
-			Ports:            getPortsValues(gw, gwParam),
+			Ports:            getPortsValues(irGW, gwParam),
 			Xds: &helmXds{
 				// The xds host/port MUST map to the Service definition for the Control Plane
 				// This is the socket address that the Proxy will connect to on startup, to receive xds updates
@@ -801,7 +815,7 @@ func defaultGatewayParameters(imageInfo *ImageInfo) *v1alpha1.GatewayParameters 
 				},
 				Stats: &v1alpha1.StatsConfig{
 					Enabled:                 ptr.To(true),
-					RoutePrefixRewrite:      ptr.To("/stats/prometheus"),
+					RoutePrefixRewrite:      ptr.To("/stats/prometheus?usedonly"),
 					EnableStatsRoute:        ptr.To(true),
 					StatsRoutePrefixRewrite: ptr.To("/stats"),
 				},
@@ -846,4 +860,25 @@ func defaultGatewayParameters(imageInfo *ImageInfo) *v1alpha1.GatewayParameters 
 			},
 		},
 	}
+}
+
+func gatewayFrom(gw *api.Gateway) *ir.Gateway {
+	out := &ir.Gateway{
+		ObjectSource: ir.ObjectSource{
+			Group:     api.SchemeGroupVersion.Group,
+			Kind:      wellknown.GatewayKind,
+			Namespace: gw.Namespace,
+			Name:      gw.Name,
+		},
+		Obj:       gw,
+		Listeners: make([]ir.Listener, 0, len(gw.Spec.Listeners)),
+	}
+
+	for _, l := range gw.Spec.Listeners {
+		out.Listeners = append(out.Listeners, ir.Listener{
+			Listener: l,
+			Parent:   gw,
+		})
+	}
+	return out
 }

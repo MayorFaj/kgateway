@@ -1,3 +1,15 @@
+Clusters:
+- connectTimeout: 5s
+  edsClusterConfig:
+    edsConfig:
+      ads: {}
+      resourceApiVersion: V3
+  metadata: {}
+  name: kube_default_example-svc_80
+  type: EDS
+- connectTimeout: 5s
+  metadata: {}
+  name: test-backend-plugin_default_example-svc_80
 Listeners:
 - address:
     socketAddress:
@@ -70,7 +82,7 @@ Listeners:
   - name: envoy.filters.listener.tls_inspector
     typedConfig:
       '@type': type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
-  name: https~https-with-hostname
+  name: listener~443
 Routes:
 - ignorePortInHostMatching: true
   name: https

@@ -21,6 +21,10 @@ clusters:
       commonTlsContext:
         tlsParams: {}
         validationContext:
+          matchTypedSubjectAltNames:
+          - matcher:
+              exact: se.example.com
+            sanType: DNS
           trustedCa:
             inlineString: |
               -----BEGIN CERTIFICATE-----
@@ -72,22 +76,22 @@ listeners:
           configSource:
             ads: {}
             resourceApiVersion: V3
-          routeConfigName: http
+          routeConfigName: listener~8080
         statPrefix: http
         useRemoteAddress: true
-    name: http
-  name: http
+    name: listener~8080
+  name: listener~8080
 routes:
 - ignorePortInHostMatching: true
-  name: http
+  name: listener~8080
   virtualHosts:
   - domains:
     - se.example.com
-    name: http~se_example_com
+    name: listener~8080~se_example_com
     routes:
     - match:
         prefix: /
-      name: http~se_example_com-route-0-httproute-route-to-upstream-gwtest-0-0-matcher-0
+      name: listener~8080~se_example_com-route-0-httproute-route-to-upstream-gwtest-0-0-matcher-0
       route:
         cluster: istio-se_gwtest_example-se_se.example.com_80
         clusterNotFoundResponseCode: INTERNAL_SERVER_ERROR

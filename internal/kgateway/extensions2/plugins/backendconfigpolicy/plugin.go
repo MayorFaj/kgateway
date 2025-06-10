@@ -7,7 +7,9 @@ import (
 	clusterv3 "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	preserve_case_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/http/header_formatters/preserve_case/v3"
+	envoyauth "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
 	envoy_upstreams_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/upstreams/http/v3"
+	envoywellknown "github.com/envoyproxy/go-control-plane/pkg/wellknown"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 	skubeclient "istio.io/istio/pkg/config/schema/kubeclient"
@@ -23,6 +25,7 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/common"
 	extensionsplug "github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/plugin"
+	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/pluginutils"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/ir"
 	translatorutils "github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/utils"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils"
@@ -40,6 +43,7 @@ type BackendConfigPolicyIR struct {
 	tcpKeepalive                  *corev3.TcpKeepalive
 	commonHttpProtocolOptions     *corev3.HttpProtocolOptions
 	http1ProtocolOptions          *corev3.Http1ProtocolOptions
+	sslConfig                     *envoyauth.UpstreamTlsContext
 }
 
 var logger = logging.New("backendconfigpolicy")
@@ -53,6 +57,10 @@ func (d *BackendConfigPolicyIR) CreationTime() time.Time {
 func (d *BackendConfigPolicyIR) Equals(other any) bool {
 	d2, ok := other.(*BackendConfigPolicyIR)
 	if !ok {
+		return false
+	}
+
+	if !d.ct.Equal(d2.ct) {
 		return false
 	}
 
@@ -101,6 +109,15 @@ func (d *BackendConfigPolicyIR) Equals(other any) bool {
 		}
 	}
 
+	if (d.sslConfig == nil) != (d2.sslConfig == nil) {
+		return false
+	}
+	if d.sslConfig != nil && d2.sslConfig != nil {
+		if !proto.Equal(d.sslConfig, d2.sslConfig) {
+			return false
+		}
+	}
+
 	return true
 }
 
@@ -116,6 +133,7 @@ func registerTypes(ourCli versioned.Interface) {
 		},
 	)
 }
+
 func NewPlugin(ctx context.Context, commoncol *common.CommonCollections) extensionsplug.Plugin {
 	registerTypes(commoncol.OurClient)
 	col := krt.WrapClient(kclient.NewFiltered[*v1alpha1.BackendConfigPolicy](
@@ -130,7 +148,7 @@ func NewPlugin(ctx context.Context, commoncol *common.CommonCollections) extensi
 			Name:      b.Name,
 		}
 
-		policyIR, err := translate(b)
+		policyIR, err := translate(commoncol, krtctx, b)
 		errs := []error{}
 		if err != nil {
 			errs = append(errs, err)
@@ -139,7 +157,7 @@ func NewPlugin(ctx context.Context, commoncol *common.CommonCollections) extensi
 			ObjectSource: objSrc,
 			Policy:       b,
 			PolicyIR:     policyIR,
-			TargetRefs:   convertTargetRefs(b.Spec.TargetRefs),
+			TargetRefs:   pluginutils.TargetRefsToPolicyRefs(b.Spec.TargetRefs, b.Spec.TargetSelectors),
 			Errors:       errs,
 		}
 	}, commoncol.KrtOpts.ToOptions("BackendConfigPolicyIRs")...)
@@ -193,10 +211,24 @@ func processBackend(_ context.Context, polir ir.PolicyIR, _ ir.BackendObjectIR, 
 			logger.Error("failed to apply http1 protocol options", "error", err)
 		}
 	}
+
+	if pol.sslConfig != nil {
+		typedConfig, err := utils.MessageToAny(pol.sslConfig)
+		if err != nil {
+			logger.Error("failed to convert ssl config to any", "error", err)
+			return
+		}
+		out.TransportSocket = &corev3.TransportSocket{
+			Name: envoywellknown.TransportSocketTls,
+			ConfigType: &corev3.TransportSocket_TypedConfig{
+				TypedConfig: typedConfig,
+			},
+		}
+	}
 }
 
-func translate(pol *v1alpha1.BackendConfigPolicy) (*BackendConfigPolicyIR, error) {
-	ir := &BackendConfigPolicyIR{
+func translate(commoncol *common.CommonCollections, krtctx krt.HandlerContext, pol *v1alpha1.BackendConfigPolicy) (*BackendConfigPolicyIR, error) {
+	ir := BackendConfigPolicyIR{
 		ct: pol.CreationTimestamp.Time,
 	}
 	if pol.Spec.ConnectTimeout != nil {
@@ -217,12 +249,21 @@ func translate(pol *v1alpha1.BackendConfigPolicy) (*BackendConfigPolicyIR, error
 	if pol.Spec.Http1ProtocolOptions != nil {
 		http1ProtocolOptions, err := translateHttp1ProtocolOptions(pol.Spec.Http1ProtocolOptions)
 		if err != nil {
-			return nil, err
+			logger.Error("failed to translate http1 protocol options", "error", err)
+			return &ir, err
 		}
 		ir.http1ProtocolOptions = http1ProtocolOptions
 	}
 
-	return ir, nil
+	if pol.Spec.SSLConfig != nil {
+		sslConfig, err := translateSSLConfig(NewDefaultSecretGetter(commoncol.Secrets, krtctx), pol.Spec.SSLConfig, pol.Namespace)
+		if err != nil {
+			return &ir, err
+		}
+		ir.sslConfig = sslConfig
+	}
+
+	return &ir, nil
 }
 
 func translateTCPKeepalive(tcpKeepalive *v1alpha1.TCPKeepalive) *corev3.TcpKeepalive {
@@ -303,17 +344,4 @@ func translateHttp1ProtocolOptions(http1ProtocolOptions *v1alpha1.Http1ProtocolO
 		}
 	}
 	return out, nil
-}
-
-// convertTargetRefs converts []v1alpha1.LocalPolicyTargetReference to []ir.PolicyRef
-func convertTargetRefs(targetRefs []v1alpha1.LocalPolicyTargetReference) []ir.PolicyRef {
-	refs := make([]ir.PolicyRef, 0, len(targetRefs))
-	for _, targetRef := range targetRefs {
-		refs = append(refs, ir.PolicyRef{
-			Kind:  string(targetRef.Kind),
-			Name:  string(targetRef.Name),
-			Group: string(targetRef.Group),
-		})
-	}
-	return refs
 }
