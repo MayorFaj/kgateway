@@ -11,6 +11,7 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/csrf"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/deployer"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/dfp"
+	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/directresponse"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/extauth"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/extproc"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/lambda"
@@ -25,7 +26,6 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/transformation"
 	// "github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/admin_server"
 	// "github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/crd_categories"
-	// "github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/directresponse"
 	// "github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/headless_svc"
 	// "github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/http_listener_options"
 	// "github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/listener_options"
@@ -54,6 +54,7 @@ func KubeGatewaySuiteRunner() e2e.SuiteRunner {
 	kubeGatewaySuiteRunner.Register("ExtProc", extproc.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("LocalRateLimit", local_rate_limit.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("GlobalRateLimit", rate_limit.NewTestingSuite)
+	kubeGatewaySuiteRunner.Register("DirectResonse", directresponse.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("PolicySelector", policyselector.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("Cors", cors.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("BackendConfigPolicy", backendconfigpolicy.NewTestingSuite)
