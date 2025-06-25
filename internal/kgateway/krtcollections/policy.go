@@ -1379,7 +1379,6 @@ func (i *BackendIndex) normalizeInfPoolBackendPort(
 	return nil
 }
 
-<<<<<<< feat/10796-test-direct-response
 // ErrorPolicyIR represents a missing or failed policy resolution
 // This implements PolicyIR but carries error information instead of valid policy data
 type ErrorPolicyIR struct {
@@ -1416,7 +1415,8 @@ func (e *ErrorPolicyIR) Equals(in any) bool {
 func IsErrorPolicy(policy ir.PolicyIR) bool {
 	_, ok := policy.(*ErrorPolicyIR)
 	return ok
-=======
+}
+
 func parseRoutePrecedenceWeight(annotations map[string]string) (int32, error) {
 	val, ok := annotations[apiannotations.RoutePrecedenceWeight]
 	if !ok {
@@ -1427,5 +1427,4 @@ func parseRoutePrecedenceWeight(annotations map[string]string) (int32, error) {
 		return 0, fmt.Errorf("invalid value for annotation %s: %s; must be a valid integer", apiannotations.RoutePrecedenceWeight, val)
 	}
 	return int32(weight), nil
->>>>>>> main
 }
