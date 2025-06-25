@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"time"
 	"strconv"
+	"time"
 
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/kube/controllers"
