@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"regexp"
 	"slices"
+	"strings"
 
 	envoy_config_core_v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoy_config_route_v3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
@@ -17,6 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 
+	// "github.com/kgateway-dev/kgateway/v2/internal/kgateway/krtcollections"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/reports"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/routeutils"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils"
@@ -152,6 +155,25 @@ func (h *httpRouteConfigurationTranslator) envoyRoutes(
 ) *envoy_config_route_v3.Route {
 	out := h.initRoutes(in, generatedName)
 
+	// Early conflict detection - check for incompatible filter combinations before applying any plugins
+	if hasIncompatibleFilters(in) {
+		// Return a 500 error response immediately for incompatible filters
+		out.Action = &envoy_config_route_v3.Route_DirectResponse{
+			DirectResponse: &envoy_config_route_v3.DirectResponseAction{
+				Status: http.StatusInternalServerError,
+			},
+		}
+
+		routeReport.SetCondition(reportssdk.RouteCondition{
+			Type:    gwv1.RouteConditionAccepted,
+			Status:  metav1.ConditionFalse,
+			Reason:  gwv1.RouteReasonIncompatibleFilters,
+			Message: "incompatible filters: multiple route actions detected",
+		})
+
+		return out
+	}
+
 	backendConfigCtx := backendConfigContext{typedPerFilterConfigRoute: ir.TypedFilterConfigMap(map[string]proto.Message{})}
 	if len(in.Backends) == 1 {
 		// if there's only one backend, we need to reuse typedPerFilterConfigRoute in both translateRouteAction and runRoutePlugins
@@ -179,6 +201,7 @@ func (h *httpRouteConfigurationTranslator) envoyRoutes(
 			}
 		}
 	}
+
 	out.RequestHeadersToAdd = append(out.GetRequestHeadersToAdd(), backendConfigCtx.RequestHeadersToAdd...)
 	out.RequestHeadersToRemove = append(out.GetRequestHeadersToRemove(), backendConfigCtx.RequestHeadersToRemove...)
 	out.ResponseHeadersToAdd = append(out.GetResponseHeadersToAdd(), backendConfigCtx.ResponseHeadersToAdd...)
@@ -188,30 +211,90 @@ func (h *httpRouteConfigurationTranslator) envoyRoutes(
 		if in.Delegates {
 			return nil
 		} else {
-			err = errors.New("no action specified")
+			// Check if this route has any extension refs that might indicate missing policies
+			// If a route was expecting to get an action from an extension ref but has no action,
+			// it's likely due to a missing/unresolved policy that should result in a 500
+			hasMissingExtensionRefs := false
+			for _, extRefGroup := range in.ExtensionRefs.Policies {
+				for _, policy := range extRefGroup {
+					if policy.PolicyIr == nil && len(policy.Errors) > 0 {
+						hasMissingExtensionRefs = true
+						break
+					}
+				}
+				if hasMissingExtensionRefs {
+					break
+				}
+			}
+
+			if hasMissingExtensionRefs || (len(in.ExtensionRefs.Policies) == 0 && hasExpectedExtensionRefs(in)) {
+				err = fmt.Errorf("missing extension policy: %w", ir.ErrMissingPolicy)
+			} else {
+				err = errors.New("no action specified")
+			}
 		}
 	}
 	if err != nil {
 		h.logger.Debug("invalid route", "error", err)
-		// TODO: we may want to aggregate all these errors per http route object and report one message?
+
+		// Check if this is a plugin conflict error or missing policy error that should result in a 500 response
+		shouldReturn500 := errors.Is(err, ir.ErrRouteActionConflict) ||
+			errors.Is(err, ir.ErrMissingDirectResponse) ||
+			errors.Is(err, ir.ErrIncompatibleFilters) ||
+			errors.Is(err, ir.ErrMultipleRouteActions) ||
+			errors.Is(err, ir.ErrConflictingRouteActions) ||
+			errors.Is(err, ir.ErrMissingPolicy)
+
+		if shouldReturn500 {
+			// Replace the route with a 500 error response for incompatible filters or missing policies
+			out.Reset()
+			out.Match = h.initRoutes(in, generatedName).GetMatch()
+			out.Name = h.initRoutes(in, generatedName).GetName()
+			out.Action = &envoy_config_route_v3.Route_DirectResponse{
+				DirectResponse: &envoy_config_route_v3.DirectResponseAction{
+					Status: http.StatusInternalServerError,
+				},
+			}
+
+			// Set appropriate route condition for missing policies
+			if errors.Is(err, ir.ErrMissingPolicy) {
+				routeReport.SetCondition(reportssdk.RouteCondition{
+					Type:    gwv1.RouteConditionAccepted,
+					Status:  metav1.ConditionFalse,
+					Reason:  gwv1.RouteReasonUnsupportedValue,
+					Message: "missing or invalid extension policy",
+				})
+			}
+			return out
+		}
+
+		// For other errors, set RouteConditionPartiallyInvalid
 		routeReport.SetCondition(reportssdk.RouteCondition{
 			Type:    gwv1.RouteConditionPartiallyInvalid,
 			Status:  metav1.ConditionTrue,
 			Reason:  gwv1.RouteReasonUnsupportedValue,
 			Message: fmt.Sprintf("Dropped Rule (%d): %v", in.MatchIndex, err),
 		})
-		//  TODO: we currently drop the route which is not good;
-		//    we should implement route replacement.
-		// out.Reset()
-		// out.Action = &envoy_config_route_v3.Route_DirectResponse{
-		// 	DirectResponse: &envoy_config_route_v3.DirectResponseAction{
-		// 		Status: http.StatusInternalServerError,
-		// 	},
-		// }
 		out = nil
 	}
 
 	return out
+}
+
+// hasExpectedExtensionRefs checks if this route was expecting to have extension refs
+// by looking at the original HTTPRoute filters, backends, etc.
+func hasExpectedExtensionRefs(in ir.HttpRouteRuleMatchIR) bool {
+	for _, extRefGroup := range in.ExtensionRefs.Policies {
+		if len(extRefGroup) > 0 {
+			return true
+		}
+	}
+
+	if len(in.Backends) == 0 && !in.Delegates {
+		return true
+	}
+
+	return false
 }
 
 func toPerFilterConfigMap(typedPerFilterConfig ir.TypedFilterConfigMap) map[string]*anypb.Any {
@@ -286,11 +369,47 @@ func (h *httpRouteConfigurationTranslator) runRoutePlugins(
 	}
 
 	var errs []error
+	var hasRouteActionConflictError bool
+
+	// Early detection of missing policies - check for ErrorPolicyIR in ExtensionRefs
+	// This ensures that missing policies cause immediate route failure rather than "no action specified"
+	for _, policyGroup := range in.ExtensionRefs.Policies {
+		for _, policy := range policyGroup {
+			// Check if this is an ErrorPolicyIR (missing/unresolved policy)
+			if policy.PolicyIr != nil {
+				policyType := fmt.Sprintf("%T", policy.PolicyIr)
+				if strings.Contains(policyType, "ErrorPolicyIR") {
+					routeReport.SetCondition(reportssdk.RouteCondition{
+						Type:    gwv1.RouteConditionAccepted,
+						Status:  metav1.ConditionFalse,
+						Reason:  gwv1.RouteReasonUnsupportedValue,
+						Message: fmt.Sprintf("missing or invalid extension policy: %v", policy.FormatErrors()),
+					})
+					return fmt.Errorf("missing extension policy: %w", ir.ErrMissingPolicy)
+				}
+			}
+
+			if policy.PolicyIr == nil && len(policy.Errors) > 0 {
+				// This is a missing/unresolved policy - fail the route immediately
+				routeReport.SetCondition(reportssdk.RouteCondition{
+					Type:    gwv1.RouteConditionAccepted,
+					Status:  metav1.ConditionFalse,
+					Reason:  gwv1.RouteReasonUnsupportedValue,
+					Message: fmt.Sprintf("missing or invalid extension policy: %v", policy.FormatErrors()),
+				})
+				return fmt.Errorf("missing extension policy: %w", ir.ErrMissingPolicy)
+			}
+		}
+	}
 
 	applyForPolicy := func(ctx context.Context, pass *TranslationPass, pctx *ir.RouteContext, out *envoy_config_route_v3.Route) {
 		err := pass.ApplyForRoute(ctx, pctx, out)
 		if err != nil {
 			errs = append(errs, err)
+			// Check if this is a route action conflict error using type-safe detection
+			if errors.Is(err, ir.ErrRouteActionConflict) {
+				hasRouteActionConflictError = true
+			}
 		}
 	}
 	for _, gk := range attachedPolicies.ApplyOrderedGroupKinds() {
@@ -307,10 +426,37 @@ func (h *httpRouteConfigurationTranslator) runRoutePlugins(
 			TypedFilterConfig: typedPerFilterConfig,
 		}
 		for _, pol := range mergePolicies(pass, pols) {
-			// TODO: should we append pol.Error to errs?
-			// i.e. errs = append(errs, pol.Error)
-			pctx.Policy = pol.PolicyIr
-			applyForPolicy(ctx, pass, pctx, out)
+			// Check for route action conflicts detected early in policy resolution
+			if pol.PolicyIr == nil && len(pol.Errors) > 0 {
+				for _, err := range pol.Errors {
+					if strings.Contains(err.Error(), "incompatible filters: multiple route actions detected") {
+						hasRouteActionConflictError = true
+						errs = append(errs, err)
+						// Set the condition immediately to mark this route as having incompatible filters
+						routeReport.SetCondition(reportssdk.RouteCondition{
+							Type:    gwv1.RouteConditionAccepted,
+							Status:  metav1.ConditionFalse,
+							Reason:  gwv1.RouteReasonIncompatibleFilters,
+							Message: err.Error(),
+						})
+						return errors.Join(errs...)
+					}
+				}
+			}
+
+			if pol.PolicyIr == nil && len(pol.Errors) > 0 {
+				errs = append(errs, pol.Errors...)
+				continue
+			}
+
+			if len(pol.Errors) > 0 {
+				errs = append(errs, pol.Errors...)
+			}
+
+			if pol.PolicyIr != nil {
+				pctx.Policy = pol.PolicyIr
+				applyForPolicy(ctx, pass, pctx, out)
+			}
 		}
 
 		// TODO: check return value, if error returned, log error and report condition
@@ -318,12 +464,23 @@ func (h *httpRouteConfigurationTranslator) runRoutePlugins(
 
 	err := errors.Join(errs...)
 	if err != nil {
-		routeReport.SetCondition(reportssdk.RouteCondition{
-			Type:    gwv1.RouteConditionAccepted,
-			Status:  metav1.ConditionFalse,
-			Reason:  gwv1.RouteReasonIncompatibleFilters,
-			Message: err.Error(),
-		})
+		// If we have route action conflicts, treat this as IncompatibleFilters
+		if hasRouteActionConflictError {
+			routeReport.SetCondition(reportssdk.RouteCondition{
+				Type:    gwv1.RouteConditionAccepted,
+				Status:  metav1.ConditionFalse,
+				Reason:  gwv1.RouteReasonIncompatibleFilters,
+				Message: err.Error(),
+			})
+		} else {
+			// For other policy errors, treat as UnsupportedValue
+			routeReport.SetCondition(reportssdk.RouteCondition{
+				Type:    gwv1.RouteConditionAccepted,
+				Status:  metav1.ConditionFalse,
+				Reason:  gwv1.RouteReasonUnsupportedValue,
+				Message: err.Error(),
+			})
+		}
 	}
 
 	return err
@@ -667,4 +824,68 @@ func envoyQueryMatcher(in []gwv1.HTTPQueryParamMatch) []*envoy_config_route_v3.Q
 		out = append(out, envoyMatch)
 	}
 	return out
+}
+
+func hasIncompatibleFilters(in ir.HttpRouteRuleMatchIR) bool {
+	// Check for incompatible filter combinations that would result in multiple route actions
+
+	hasDirectResponse := false
+	hasRequestRedirect := false
+	hasDelegation := in.Delegates || len(in.Backends) > 0
+
+	// Check extension refs for DirectResponse and RequestRedirect filters
+	for _, extRef := range in.ExtensionRefs.Policies {
+		for _, policy := range extRef {
+			if policy.PolicyIr != nil {
+				// Check for DirectResponse policies
+				if strings.Contains(fmt.Sprintf("%T", policy.PolicyIr), "directResponse") {
+					hasDirectResponse = true
+				}
+			}
+		}
+	}
+
+	// Check attached policies for builtin filters (RequestRedirect is typically a builtin filter)
+	for _, policyGroup := range in.AttachedPolicies.Policies {
+		for _, policy := range policyGroup {
+			if policy.PolicyIr != nil {
+				policyType := fmt.Sprintf("%T", policy.PolicyIr)
+				// Check for RequestRedirect in builtin policies
+				if strings.Contains(policyType, "builtin") || strings.Contains(policyType, "redirect") {
+					hasRequestRedirect = true
+				}
+			}
+		}
+	}
+
+	// Also check parent route for inherited policies if this is a delegation scenario
+	if in.Parent != nil {
+		for _, policyGroup := range in.Parent.AttachedPolicies.Policies {
+			for _, policy := range policyGroup {
+				if policy.PolicyIr != nil {
+					policyType := fmt.Sprintf("%T", policy.PolicyIr)
+					if strings.Contains(policyType, "directResponse") {
+						hasDirectResponse = true
+					}
+					if strings.Contains(policyType, "builtin") || strings.Contains(policyType, "redirect") {
+						hasRequestRedirect = true
+					}
+				}
+			}
+		}
+	}
+
+	// Incompatible combinations:
+	// 1. DirectResponse + RequestRedirect
+	// 2. DirectResponse + Delegation (backends)
+	// 3. RequestRedirect + DirectResponse
+	if hasDirectResponse && hasRequestRedirect {
+		return true
+	}
+
+	if hasDirectResponse && hasDelegation {
+		return true
+	}
+
+	return false
 }

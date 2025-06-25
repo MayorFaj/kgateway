@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/kube/krt"
@@ -1074,7 +1075,6 @@ func (h *RoutesIndex) getExtensionRefs(kctx krt.HandlerContext, ns string, r []g
 		Policies: map[schema.GroupKind][]ir.PolicyAtt{},
 	}
 	for _, ext := range r {
-		// TODO: propagate error if we can't find the extension
 		gk, policy, errs := h.resolveExtension(kctx, ns, ext)
 		if policy != nil {
 			ret.Policies[gk] = append(ret.Policies[gk], ir.PolicyAtt{
@@ -1083,7 +1083,18 @@ func (h *RoutesIndex) getExtensionRefs(kctx krt.HandlerContext, ns string, r []g
 				Errors:   errs,
 			})
 		} else if len(errs) > 0 {
-			logger.Error("unresolved HTTPRouteFilter", "error", errors.Join(errs...))
+			// Create an ErrorPolicyIR to represent the missing/failed policy
+			// This allows error propagation without nil PolicyIr panics
+			errorPolicy := &ErrorPolicyIR{errors: errs}
+			ret.Policies[gk] = append(ret.Policies[gk], ir.PolicyAtt{
+				PolicyIr: errorPolicy,
+				Errors:   errs,
+			})
+
+			logger.Error("unresolved HTTPRouteFilter",
+				"error", errors.Join(errs...),
+				"filterType", ext.Type,
+				"extensionRef", ext.ExtensionRef)
 		}
 	}
 	return ret
@@ -1321,4 +1332,42 @@ func (i *BackendIndex) normalizeInfPoolBackendPort(
 	correct := gwv1.PortNumber(resolvedPort)
 	ref.Port = &correct
 	return nil
+}
+
+// ErrorPolicyIR represents a missing or failed policy resolution
+// This implements PolicyIR but carries error information instead of valid policy data
+type ErrorPolicyIR struct {
+	errors []error
+}
+
+// CreationTime implements PolicyIR interface
+func (e *ErrorPolicyIR) CreationTime() time.Time {
+	// Use epoch time for error policies so they don't interfere with policy sorting
+	return time.Time{}
+}
+
+// Equals implements PolicyIR interface
+func (e *ErrorPolicyIR) Equals(in any) bool {
+	other, ok := in.(*ErrorPolicyIR)
+	if !ok {
+		return false
+	}
+
+	if len(e.errors) != len(other.errors) {
+		return false
+	}
+
+	for i, err := range e.errors {
+		if err.Error() != other.errors[i].Error() {
+			return false
+		}
+	}
+
+	return true
+}
+
+// IsErrorPolicy checks if a PolicyIR is an error policy
+func IsErrorPolicy(policy ir.PolicyIR) bool {
+	_, ok := policy.(*ErrorPolicyIR)
+	return ok
 }

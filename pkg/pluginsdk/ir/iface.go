@@ -242,6 +242,16 @@ func (c PolicyWrapper) Equals(in PolicyWrapper) bool {
 
 var ErrNotAttachable = fmt.Errorf("policy is not attachable to this object")
 
+// Sentinel errors for route conflicts - these provide type-safe error detection
+var (
+	ErrRouteActionConflict     = fmt.Errorf("route action conflict")
+	ErrMissingDirectResponse   = fmt.Errorf("DirectResponse policy not found")
+	ErrIncompatibleFilters     = fmt.Errorf("incompatible filters")
+	ErrMultipleRouteActions    = fmt.Errorf("multiple route actions")
+	ErrConflictingRouteActions = fmt.Errorf("conflicting route actions")
+	ErrMissingPolicy           = fmt.Errorf("policy not found")
+)
+
 type PolicyRun interface {
 	// Allocate state for single listener+rotue translation pass.
 	NewGatewayTranslationPass(ctx context.Context, tctx GwTranslationCtx, reporter reports.Reporter) ProxyTranslationPass

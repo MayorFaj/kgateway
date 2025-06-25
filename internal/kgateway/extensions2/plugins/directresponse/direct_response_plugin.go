@@ -24,6 +24,7 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/reports"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
 	"github.com/kgateway-dev/kgateway/v2/pkg/client/clientset/versioned"
+	pluginsdkir "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/ir"
 )
 
 type directResponse struct {
@@ -123,7 +124,7 @@ func (p *directResponsePluginGwPass) ApplyForRoute(ctx context.Context, pCtx *ir
 				Status: http.StatusInternalServerError,
 			},
 		}
-		return fmt.Errorf("DirectResponse cannot be applied to route with existing action: %T", outputRoute.GetAction())
+		return fmt.Errorf("DirectResponse plugin: %w", pluginsdkir.ErrRouteActionConflict)
 	}
 
 	outputRoute.Action = &envoy_config_route_v3.Route_DirectResponse{
