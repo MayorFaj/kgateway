@@ -2,10 +2,10 @@ package settings_test
 
 import (
 	"os"
+	"strings"
 	"testing"
 
-	"github.com/onsi/gomega"
-
+	"github.com/google/go-cmp/cmp"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/settings"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
 )
@@ -138,35 +138,49 @@ func TestSettings(t *testing.T) {
 				DefaultImageTag:             "",
 				DefaultImagePullPolicy:      "IfNotPresent",
 				WaypointLocalBinding:        false,
+				IngressUseWaypoints:         false,
 				LogLevel:                    "info",
 				DiscoveryNamespaceSelectors: "[]",
 				EnableAgentGateway:          false,
+				WeightedRoutePrecedence:     false,
 			},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			g := gomega.NewWithT(t)
-
 			t.Cleanup(func() {
 				for k := range tc.envVars {
-					err := os.Unsetenv(k)
-					g.Expect(err).NotTo(gomega.HaveOccurred())
+					if err := os.Unsetenv(k); err != nil {
+						t.Errorf("Failed to unset environment variable %s: %v", k, err)
+					}
 				}
 			})
 
 			for k, v := range tc.envVars {
-				err := os.Setenv(k, v)
-				g.Expect(err).NotTo(gomega.HaveOccurred())
+				if err := os.Setenv(k, v); err != nil {
+					t.Fatalf("Failed to set environment variable %s=%s: %v", k, v, err)
+				}
 			}
+
 			s, err := settings.BuildSettings()
+
 			if tc.expectedErrorStr != "" {
-				g.Expect(err).To(gomega.HaveOccurred())
-				g.Expect(err.Error()).To(gomega.ContainSubstring(tc.expectedErrorStr))
-			} else {
-				g.Expect(err).NotTo(gomega.HaveOccurred())
-				g.Expect(s).To(gomega.Equal(tc.expectedSettings))
+				if err == nil {
+					t.Fatalf("Expected error containing %q, but got no error", tc.expectedErrorStr)
+				}
+				if !strings.Contains(err.Error(), tc.expectedErrorStr) {
+					t.Fatalf("Expected error to contain %q, but got: %v", tc.expectedErrorStr, err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			if diff := cmp.Diff(tc.expectedSettings, s); diff != "" {
+				t.Errorf("Settings do not match expected values (-expected +got):\n%s", diff)
 			}
 		})
 	}
