@@ -28,6 +28,8 @@ jobs:
         go-version-file: go.mod
     - name: Install dependencies
       run: make mod-download
+    - name: Install setup-envtest
+      run: go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
     - name: Build kgateway
       run: go build -v ./internal/kgateway/...
     - name: Run Tests

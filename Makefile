@@ -204,9 +204,11 @@ run-e2e-tests: test
 # Env test
 #----------------------------------------------------------------------------------
 
-# client-go version v0.X.Y corresponds to Kubernetes version 1.X
-ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{.Version}}" k8s.io/client-go | sed 's/v0\.\([0-9]*\)\..*/1.\1/')
-ENVTEST ?= go tool setup-envtest
+
+# client-go version v0.X.Y corresponds to Kubernetes version 1.X.0
+ENVTEST_K8S_VERSION = $(shell go list -m -f "{{.Version}}" k8s.io/client-go | sed 's/v0\.\([0-9]*\)\..*/1.\1.0/')
+
+ENVTEST ?= $(shell go env GOPATH)/bin/setup-envtest
 
 .PHONY: envtest-path
 envtest-path: ## Set the envtest path
