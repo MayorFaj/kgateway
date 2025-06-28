@@ -204,9 +204,8 @@ run-e2e-tests: test
 # Env test
 #----------------------------------------------------------------------------------
 
-
 # client-go version v0.X.Y corresponds to Kubernetes version 1.X
-ENVTEST_K8S_VERSION = $(shell go list -m k8s.io/client-go | awk '{print $$2}' | sed 's/v0\.\([0-9]*\)\..*/1.\1/')
+ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{.Version}}" k8s.io/client-go | sed 's/v0\.\([0-9]*\)\..*/1.\1/')
 ENVTEST ?= go tool setup-envtest
 
 .PHONY: envtest-path
@@ -508,7 +507,7 @@ kind-create: ## Create a KinD cluster
 CONFORMANCE_CHANNEL ?= experimental
 # Dynamically determine the Gateway API version for conformance tests from go.mod
 # This ensures conformance tests stay in sync with the actual Gateway API dependency
-CONFORMANCE_VERSION ?= $(shell go list -m sigs.k8s.io/gateway-api | awk '{print $$2}')
+CONFORMANCE_VERSION ?= $(shell go list -m -f "{{.Version}}" sigs.k8s.io/gateway-api)
 .PHONY: gw-api-crds
 gw-api-crds: ## Install the Gateway API CRDs
 	kubectl apply --kustomize "https://github.com/kubernetes-sigs/gateway-api/config/crd/$(CONFORMANCE_CHANNEL)?ref=$(CONFORMANCE_VERSION)"
