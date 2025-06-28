@@ -3,18 +3,19 @@ package ai
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"maps"
 	"os"
 
 	envoy_config_core_v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoy_config_route_v3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	envoy_ext_proc_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
-	"github.com/rotisserie/eris"
 	envoytransformation "github.com/solo-io/envoy-gloo/go/config/filter/http/transformation/v2"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
+	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/plugins/trafficpolicy"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/ir"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
 )
@@ -118,7 +119,7 @@ func PreprocessAIBackend(ctx context.Context, aiBackend *v1alpha1.AIBackend, ir 
 	}
 
 	if len(byType) != 1 {
-		return eris.Errorf("multiple AI backend types found for single ai route %+v", byType)
+		return fmt.Errorf("multiple AI backend types found for single ai route %+v", byType)
 	}
 
 	// This is only len(1)
@@ -129,13 +130,13 @@ func PreprocessAIBackend(ctx context.Context, aiBackend *v1alpha1.AIBackend, ir 
 
 	// We only want to add the transformation filter if we have a single AI backend
 	// Otherwise we already have the transformation filter added by the weighted destination.
-	transformation := createTransformationTemplate(ctx, aiBackend)
+	transformation := createTransformationTemplate(aiBackend)
 	routeTransformation := &envoytransformation.RouteTransformations_RouteTransformation{
 		Match: &envoytransformation.RouteTransformations_RouteTransformation_RequestMatch_{
 			RequestMatch: &envoytransformation.RouteTransformations_RouteTransformation_RequestMatch{
 				RequestTransformation: &envoytransformation.Transformation{
 					// Set this env var to true to log the request/response info for each transformation
-					LogRequestResponseInfo: wrapperspb.Bool(os.Getenv("AI_PLUGIN_DEBUG_TRANSFORMATIONS") == "true"),
+					LogRequestResponseInfo: wrapperspb.Bool(os.Getenv(trafficpolicy.AiDebugTransformations) == "true"),
 					TransformationType: &envoytransformation.Transformation_TransformationTemplate{
 						TransformationTemplate: transformation,
 					},

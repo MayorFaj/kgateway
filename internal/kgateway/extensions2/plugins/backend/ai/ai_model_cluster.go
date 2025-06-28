@@ -1,7 +1,6 @@
 package ai
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 
@@ -10,7 +9,6 @@ import (
 	envoy_config_endpoint_v3 "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	envoy_tls_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
-	"github.com/rotisserie/eris"
 	envoytransformation "github.com/solo-io/envoy-gloo/go/config/filter/http/transformation/v2"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -40,12 +38,12 @@ func tlsMatch(matchStr string) *structpb.Struct {
 	}
 }
 
-func ProcessAIBackend(ctx context.Context, in *v1alpha1.AIBackend, aiSecret *ir.Secret, multiSecrets map[string]*ir.Secret, out *envoy_config_cluster_v3.Cluster) error {
+func ProcessAIBackend(in *v1alpha1.AIBackend, aiSecret *ir.Secret, multiSecrets map[string]*ir.Secret, out *envoy_config_cluster_v3.Cluster) error {
 	if in == nil {
 		return nil
 	}
 
-	if err := buildModelCluster(ctx, in, aiSecret, multiSecrets, out); err != nil {
+	if err := buildModelCluster(in, aiSecret, multiSecrets, out); err != nil {
 		return err
 	}
 
@@ -56,7 +54,7 @@ func ProcessAIBackend(ctx context.Context, in *v1alpha1.AIBackend, aiSecret *ir.
 // This function is used by the `ProcessBackend` function to build the cluster for the AI backend.
 // It is ALSO used by `ProcessRoute` to create the cluster in the event of backup models being used
 // and fallbacks being required.
-func buildModelCluster(ctx context.Context, aiUs *v1alpha1.AIBackend, aiSecret *ir.Secret, multiSecrets map[string]*ir.Secret, out *envoy_config_cluster_v3.Cluster) error {
+func buildModelCluster(aiUs *v1alpha1.AIBackend, aiSecret *ir.Secret, multiSecrets map[string]*ir.Secret, out *envoy_config_cluster_v3.Cluster) error {
 	// set the type to strict dns to support mutli pool backends
 	out.ClusterDiscoveryType = &envoy_config_cluster_v3.Cluster_Type{
 		Type: envoy_config_cluster_v3.Cluster_STRICT_DNS,
@@ -112,7 +110,7 @@ func buildModelCluster(ctx context.Context, aiUs *v1alpha1.AIBackend, aiSecret *
 						secretRef := ep.Provider.VertexAI.AuthToken.SecretRef
 						secretForMultiPool = multiSecrets[GetMultiPoolSecretKey(idx, jdx, secretRef.Name)]
 					}
-					result, err = buildVertexAIEndpoint(ctx, ep.Provider.VertexAI, ep.HostOverride, secretForMultiPool)
+					result, err = buildVertexAIEndpoint(ep.Provider.VertexAI, ep.HostOverride, secretForMultiPool)
 				}
 				if err != nil {
 					return err
@@ -126,10 +124,10 @@ func buildModelCluster(ctx context.Context, aiUs *v1alpha1.AIBackend, aiSecret *
 			})
 		}
 		if len(epByType) > 1 {
-			return eris.Errorf("multi backend pools must all be of the same type, got %v", epByType)
+			return fmt.Errorf("multi backend pools must all be of the same type, got %v", epByType)
 		}
 	} else if aiUs.LLM != nil {
-		prioritized, err = buildLLMEndpoint(ctx, aiUs, aiSecret)
+		prioritized, err = buildLLMEndpoint(aiUs, aiSecret)
 		if err != nil {
 			return err
 		}
@@ -217,7 +215,7 @@ func buildModelCluster(ctx context.Context, aiUs *v1alpha1.AIBackend, aiSecret *
 	return nil
 }
 
-func buildLLMEndpoint(ctx context.Context, aiUs *v1alpha1.AIBackend, aiSecrets *ir.Secret) ([]*envoy_config_endpoint_v3.LocalityLbEndpoints, error) {
+func buildLLMEndpoint(aiUs *v1alpha1.AIBackend, aiSecrets *ir.Secret) ([]*envoy_config_endpoint_v3.LocalityLbEndpoints, error) {
 	var prioritized []*envoy_config_endpoint_v3.LocalityLbEndpoints
 	provider := aiUs.LLM.Provider
 	if provider.OpenAI != nil {
@@ -253,7 +251,7 @@ func buildLLMEndpoint(ctx context.Context, aiUs *v1alpha1.AIBackend, aiSecrets *
 			{LbEndpoints: []*envoy_config_endpoint_v3.LbEndpoint{host}},
 		}
 	} else if provider.VertexAI != nil {
-		host, err := buildVertexAIEndpoint(ctx, provider.VertexAI, aiUs.LLM.HostOverride, aiSecrets)
+		host, err := buildVertexAIEndpoint(provider.VertexAI, aiUs.LLM.HostOverride, aiSecrets)
 		if err != nil {
 			return nil, err
 		}
@@ -280,6 +278,7 @@ func buildOpenAIEndpoint(data *v1alpha1.OpenAIConfig, hostOverride *v1alpha1.Hos
 		buildEndpointMeta(token, model, nil),
 	), nil
 }
+
 func buildAnthropicEndpoint(data *v1alpha1.AnthropicConfig, hostOverride *v1alpha1.Host, aiSecrets *ir.Secret) (*envoy_config_endpoint_v3.LbEndpoint, error) {
 	token, err := aiutils.GetAuthToken(data.AuthToken, aiSecrets)
 	if err != nil {
@@ -296,6 +295,7 @@ func buildAnthropicEndpoint(data *v1alpha1.AnthropicConfig, hostOverride *v1alph
 		buildEndpointMeta(token, model, nil),
 	), nil
 }
+
 func buildAzureOpenAIEndpoint(data *v1alpha1.AzureOpenAIConfig, hostOverride *v1alpha1.Host, aiSecrets *ir.Secret) (*envoy_config_endpoint_v3.LbEndpoint, error) {
 	token, err := aiutils.GetAuthToken(data.AuthToken, aiSecrets)
 	if err != nil {
@@ -308,6 +308,7 @@ func buildAzureOpenAIEndpoint(data *v1alpha1.AzureOpenAIConfig, hostOverride *v1
 		buildEndpointMeta(token, data.DeploymentName, map[string]string{"api_version": data.ApiVersion}),
 	), nil
 }
+
 func buildGeminiEndpoint(data *v1alpha1.GeminiConfig, hostOverride *v1alpha1.Host, aiSecrets *ir.Secret) (*envoy_config_endpoint_v3.LbEndpoint, error) {
 	token, err := aiutils.GetAuthToken(data.AuthToken, aiSecrets)
 	if err != nil {
@@ -320,7 +321,8 @@ func buildGeminiEndpoint(data *v1alpha1.GeminiConfig, hostOverride *v1alpha1.Hos
 		buildEndpointMeta(token, data.Model, map[string]string{"api_version": data.ApiVersion}),
 	), nil
 }
-func buildVertexAIEndpoint(ctx context.Context, data *v1alpha1.VertexAIConfig, hostOverride *v1alpha1.Host, aiSecrets *ir.Secret) (*envoy_config_endpoint_v3.LbEndpoint, error) {
+
+func buildVertexAIEndpoint(data *v1alpha1.VertexAIConfig, hostOverride *v1alpha1.Host, aiSecrets *ir.Secret) (*envoy_config_endpoint_v3.LbEndpoint, error) {
 	token, err := aiutils.GetAuthToken(data.AuthToken, aiSecrets)
 	if err != nil {
 		return nil, err
@@ -420,7 +422,7 @@ func buildEndpointMeta(token, model string, additionalFields map[string]string) 
 	}
 }
 
-func createTransformationTemplate(ctx context.Context, aiBackend *v1alpha1.AIBackend) *envoytransformation.TransformationTemplate {
+func createTransformationTemplate(aiBackend *v1alpha1.AIBackend) *envoytransformation.TransformationTemplate {
 	// Setup initial transformation template. This may be modified by further
 	transformationTemplate := &envoytransformation.TransformationTemplate{
 		// We will add the auth token later
@@ -430,11 +432,11 @@ func createTransformationTemplate(ctx context.Context, aiBackend *v1alpha1.AIBac
 	var headerName, prefix, path string
 	var bodyTransformation *envoytransformation.TransformationTemplate_MergeJsonKeys
 	if aiBackend.LLM != nil {
-		headerName, prefix, path, bodyTransformation = getTransformation(ctx, aiBackend.LLM)
+		headerName, prefix, path, bodyTransformation = getTransformation(aiBackend.LLM)
 	} else if aiBackend.MultiPool != nil {
 		// We already know that all the backends are the same type so we can just take the first one
 		llmMultiPool := aiBackend.MultiPool.Priorities[0].Pool[0]
-		headerName, prefix, path, bodyTransformation = getTransformation(ctx, &llmMultiPool)
+		headerName, prefix, path, bodyTransformation = getTransformation(&llmMultiPool)
 	}
 	transformationTemplate.GetHeaders()[headerName] = &envoytransformation.InjaTemplate{
 		Text: prefix + `{% if host_metadata("auth_token") != "" %}{{host_metadata("auth_token")}}{% else %}{{dynamic_metadata("auth_token","ai.kgateway.io")}}{% endif %}`,
@@ -446,7 +448,7 @@ func createTransformationTemplate(ctx context.Context, aiBackend *v1alpha1.AIBac
 	return transformationTemplate
 }
 
-func getTransformation(ctx context.Context, llm *v1alpha1.LLMProvider) (string, string, string, *envoytransformation.TransformationTemplate_MergeJsonKeys) {
+func getTransformation(llm *v1alpha1.LLMProvider) (string, string, string, *envoytransformation.TransformationTemplate_MergeJsonKeys) {
 	headerName := "Authorization"
 	var prefix, path string
 	var bodyTransformation *envoytransformation.TransformationTemplate_MergeJsonKeys
