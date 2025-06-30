@@ -86,17 +86,16 @@ spec:
                         - message: Must have port for Service reference
                           rule: '(size(self.group) == 0 && self.kind == ''Service'')
                             ? has(self.port) : true'
+                      timeout:
+                        type: string
+                        x-kubernetes-validations:
+                        - message: timeout must be a valid duration string
+                          rule: duration(self) >= duration('0s')
+                        - message: timeout must be at least 1 millisecond
+                          rule: duration(self) >= duration('1ms')
                     required:
                     - backendRef
                     type: object
-                  timeout:
-                    default: 200ms
-                    type: string
-                    x-kubernetes-validations:
-                    - message: timeout must be a valid duration string
-                      rule: duration(self) >= duration('0s')
-                    - message: timeout must be at least 1 millisecond
-                      rule: duration(self) >= duration('1ms')
                 required:
                 - grpcService
                 type: object
@@ -146,6 +145,13 @@ spec:
                         - message: Must have port for Service reference
                           rule: '(size(self.group) == 0 && self.kind == ''Service'')
                             ? has(self.port) : true'
+                      timeout:
+                        type: string
+                        x-kubernetes-validations:
+                        - message: timeout must be a valid duration string
+                          rule: duration(self) >= duration('0s')
+                        - message: timeout must be at least 1 millisecond
+                          rule: duration(self) >= duration('1ms')
                     required:
                     - backendRef
                     type: object
@@ -156,14 +162,6 @@ spec:
                     - message: messageTimeout must be a valid duration string
                       rule: duration(self) >= duration('0s')
                     - message: messageTimeout must be at least 1 millisecond
-                      rule: duration(self) >= duration('1ms')
-                  timeout:
-                    default: 200ms
-                    type: string
-                    x-kubernetes-validations:
-                    - message: timeout must be a valid duration string
-                      rule: duration(self) >= duration('0s')
-                    - message: timeout must be at least 1 millisecond
                       rule: duration(self) >= duration('1ms')
                 required:
                 - grpcService
@@ -219,17 +217,16 @@ spec:
                         - message: Must have port for Service reference
                           rule: '(size(self.group) == 0 && self.kind == ''Service'')
                             ? has(self.port) : true'
+                      timeout:
+                        type: string
+                        x-kubernetes-validations:
+                        - message: timeout must be a valid duration string
+                          rule: duration(self) >= duration('0s')
+                        - message: timeout must be at least 1 millisecond
+                          rule: duration(self) >= duration('1ms')
                     required:
                     - backendRef
                     type: object
-                  timeout:
-                    default: 20ms
-                    type: string
-                    x-kubernetes-validations:
-                    - message: timeout must be a valid duration string
-                      rule: duration(self) >= duration('0s')
-                    - message: timeout must be at least 1 millisecond
-                      rule: duration(self) >= duration('1ms')
                 required:
                 - domain
                 - grpcService
