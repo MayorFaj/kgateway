@@ -41,13 +41,6 @@ type ExtAuthProvider struct {
 	// GrpcService is the GRPC service that will handle the authentication.
 	// +required
 	GrpcService *ExtGrpcService `json:"grpcService"`
-
-	// Timeout for requests to the external authorization service.
-	// +optional
-	// +kubebuilder:default="200ms"
-	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('0s')",message="timeout must be a valid duration string"
-	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1ms')",message="timeout must be at least 1 millisecond"
-	Timeout metav1.Duration `json:"timeout,omitempty"`
 }
 
 // ExtProcProvider defines the configuration for an ExtProc provider.
@@ -55,13 +48,6 @@ type ExtProcProvider struct {
 	// GrpcService is the GRPC service that will handle the processing.
 	// +required
 	GrpcService *ExtGrpcService `json:"grpcService"`
-
-	// Timeout for requests to the external processing service.
-	// +optional
-	// +kubebuilder:default="200ms"
-	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('0s')",message="timeout must be a valid duration string"
-	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1ms')",message="timeout must be at least 1 millisecond"
-	Timeout metav1.Duration `json:"timeout,omitempty"`
 
 	// MessageTimeout for individual message processing by the external processing service.
 	// This timeout applies to the processing of each individual message/request.
@@ -81,6 +67,13 @@ type ExtGrpcService struct {
 	// Authority is the authority header to use for the GRPC service.
 	// +optional
 	Authority *string `json:"authority,omitempty"`
+
+	// Timeout for requests to the external service.
+	// If not specified, relies on Envoy's default behavior.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('0s')",message="timeout must be a valid duration string"
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1ms')",message="timeout must be at least 1 millisecond"
+	Timeout metav1.Duration `json:"timeout,omitempty"`
 }
 
 // RateLimitProvider defines the configuration for a RateLimit service provider.
@@ -100,13 +93,6 @@ type RateLimitProvider struct {
 	// +optional
 	// +kubebuilder:default=false
 	FailOpen bool `json:"failOpen,omitempty"`
-
-	// Timeout for requests to the rate limit service.
-	// +optional
-	// +kubebuilder:default="20ms"
-	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('0s')",message="timeout must be a valid duration string"
-	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1ms')",message="timeout must be at least 1 millisecond"
-	Timeout metav1.Duration `json:"timeout,omitempty"`
 }
 
 // GatewayExtensionSpec defines the desired state of GatewayExtension.

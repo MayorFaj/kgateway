@@ -59,13 +59,13 @@ func TestExtAuthTimeout(t *testing.T) {
 							Name: "test-service",
 						},
 					},
+					Timeout: metav1.Duration{Duration: 5 * time.Second},
 				},
-				Timeout: metav1.Duration{Duration: 5 * time.Second},
 			},
 		}
 
 		// Verify
-		assert.Equal(t, 5*time.Second, extension.ExtAuth.Timeout.Duration)
+		assert.Equal(t, 5*time.Second, extension.ExtAuth.GrpcService.Timeout.Duration)
 		assert.NotNil(t, extension.ExtAuth.GrpcService)
 		assert.NotNil(t, extension.ExtAuth.GrpcService.BackendRef)
 		assert.Equal(t, gwv1.ObjectName("test-service"), extension.ExtAuth.GrpcService.BackendRef.Name)
@@ -81,13 +81,13 @@ func TestExtAuthTimeout(t *testing.T) {
 							Name: "test-service",
 						},
 					},
+					// No timeout specified
 				},
-				// No timeout specified
 			},
 		}
 
 		// Verify
-		assert.Equal(t, time.Duration(0), extension.ExtAuth.Timeout.Duration)
+		assert.Equal(t, time.Duration(0), extension.ExtAuth.GrpcService.Timeout.Duration)
 		assert.NotNil(t, extension.ExtAuth.GrpcService)
 		assert.NotNil(t, extension.ExtAuth.GrpcService.BackendRef)
 		assert.Equal(t, gwv1.ObjectName("test-service"), extension.ExtAuth.GrpcService.BackendRef.Name)

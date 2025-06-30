@@ -8,12 +8,12 @@ import (
 	"strconv"
 	"time"
 
-	routev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	exteniondynamicmodulev3 "github.com/envoyproxy/go-control-plane/envoy/extensions/dynamic_modules/v3"
 	corsv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/cors/v3"
 	envoy_csrf_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/csrf/v3"
 	dynamicmodulesv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/dynamic_modules/v3"
 	localratelimitv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/local_ratelimit/v3"
+	routev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	envoy_wellknown "github.com/envoyproxy/go-control-plane/pkg/wellknown"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -186,78 +186,6 @@ func registerTypes(ourCli versioned.Interface) {
 	)
 }
 
-func TranslateGatewayExtensionBuilder(commoncol *common.CommonCollections) func(krtctx krt.HandlerContext, gExt ir.GatewayExtension) *TrafficPolicyGatewayExtensionIR {
-	return func(krtctx krt.HandlerContext, gExt ir.GatewayExtension) *TrafficPolicyGatewayExtensionIR {
-		p := &TrafficPolicyGatewayExtensionIR{
-			Name:    krt.Named{Name: gExt.Name, Namespace: gExt.Namespace}.ResourceName(),
-			ExtType: gExt.Type,
-		}
-
-		switch gExt.Type {
-		case v1alpha1.GatewayExtensionTypeExtAuth:
-			envoyGrpcService, err := ResolveExtGrpcService(krtctx, commoncol.BackendIndex, false, gExt.ObjectSource, gExt.ExtAuth.GrpcService)
-			if err != nil {
-				// TODO: should this be a warning, and set cluster to blackhole?
-				p.Err = fmt.Errorf("failed to resolve ExtAuth backend: %w", err)
-				return p
-			}
-
-			// Set timeout if specified
-			if gExt.ExtAuth.Timeout.Duration > 0 {
-				envoyGrpcService.Timeout = durationpb.New(gExt.ExtAuth.Timeout.Duration)
-			}
-
-			p.ExtAuth = &envoy_ext_authz_v3.ExtAuthz{
-				Services: &envoy_ext_authz_v3.ExtAuthz_GrpcService{
-					GrpcService: envoyGrpcService,
-				},
-				FilterEnabledMetadata: ExtAuthzEnabledMetadataMatcher,
-			}
-
-		case v1alpha1.GatewayExtensionTypeExtProc:
-			envoyGrpcService, err := ResolveExtGrpcService(krtctx, commoncol.BackendIndex, false, gExt.ObjectSource, gExt.ExtProc.GrpcService)
-			if err != nil {
-				p.Err = fmt.Errorf("failed to resolve ExtProc backend: %w", err)
-				return p
-			}
-
-			// Set timeout if specified
-			if gExt.ExtProc.Timeout.Duration > 0 {
-				envoyGrpcService.Timeout = durationpb.New(gExt.ExtProc.Timeout.Duration)
-			}
-
-			extProcConfig := &envoy_ext_proc_v3.ExternalProcessor{
-				GrpcService: envoyGrpcService,
-			}
-
-			// Set messageTimeout if specified
-			if gExt.ExtProc.MessageTimeout.Duration > 0 {
-				extProcConfig.MessageTimeout = durationpb.New(gExt.ExtProc.MessageTimeout.Duration)
-			}
-
-			p.ExtProc = extProcConfig
-
-		case v1alpha1.GatewayExtensionTypeRateLimit:
-			if gExt.RateLimit == nil {
-				p.Err = fmt.Errorf("rate limit extension missing configuration")
-				return p
-			}
-
-			grpcService, err := ResolveExtGrpcService(krtctx, commoncol.BackendIndex, false, gExt.ObjectSource, gExt.RateLimit.GrpcService)
-			if err != nil {
-				p.Err = fmt.Errorf("ratelimit: %w", err)
-				return p
-			}
-
-			// Use the specialized function for rate limit service resolution
-			rateLimitConfig := resolveRateLimitService(grpcService, gExt.RateLimit)
-
-			p.RateLimit = rateLimitConfig
-		}
-		return p
-	}
-}
-
 func NewPlugin(ctx context.Context, commoncol *common.CommonCollections) extensionsplug.Plugin {
 	registerTypes(commoncol.OurClient)
 
@@ -304,69 +232,6 @@ func NewPlugin(ctx context.Context, commoncol *common.CommonCollections) extensi
 		},
 		ExtraHasSynced: translator.HasSynced,
 	}
-}
-
-func ResolveExtGrpcService(krtctx krt.HandlerContext, backends *krtcollections.BackendIndex, disableExtensionRefValidation bool, objectSource ir.ObjectSource, grpcService *v1alpha1.ExtGrpcService) (*envoy_core_v3.GrpcService, error) {
-	var clusterName string
-	var authority string
-	if grpcService != nil {
-		if grpcService.BackendRef == nil {
-			return nil, errors.New("backend not provided")
-		}
-		backendRef := grpcService.BackendRef.BackendObjectReference
-
-		var backend *ir.BackendObjectIR
-		var err error
-		if disableExtensionRefValidation {
-			backend, err = backends.GetBackendFromRefWithoutRefGrantValidation(krtctx, objectSource, backendRef)
-		} else {
-			backend, err = backends.GetBackendFromRef(krtctx, objectSource, backendRef)
-		}
-		if err != nil {
-			return nil, err
-		}
-		if backend != nil {
-			clusterName = backend.ClusterName()
-		}
-		if grpcService.Authority != nil {
-			authority = *grpcService.Authority
-		}
-	}
-	if clusterName == "" {
-		return nil, errors.New("backend not found")
-	}
-	envoyGrpcService := &envoy_core_v3.GrpcService{
-		TargetSpecifier: &envoy_core_v3.GrpcService_EnvoyGrpc_{
-			EnvoyGrpc: &envoy_core_v3.GrpcService_EnvoyGrpc{
-				ClusterName: clusterName,
-				Authority:   authority,
-			},
-		},
-	}
-	return envoyGrpcService, nil
-}
-
-func resolveRateLimitService(grpcService *envoy_core_v3.GrpcService, rateLimit *v1alpha1.RateLimitProvider) *ratev3.RateLimit {
-	envoyRateLimit := &ratev3.RateLimit{
-		Domain:          rateLimit.Domain,
-		FailureModeDeny: !rateLimit.FailOpen,
-		RateLimitService: &ratelimitv3.RateLimitServiceConfig{
-			GrpcService:         grpcService,
-			TransportApiVersion: envoy_core_v3.ApiVersion_V3,
-		},
-	}
-
-	// Set timeout if specified
-	if rateLimit.Timeout.Duration > 0 {
-		envoyRateLimit.Timeout = durationpb.New(rateLimit.Timeout.Duration)
-	}
-
-	// Set defaults for other required fields
-	envoyRateLimit.StatPrefix = rateLimitStatPrefix
-	envoyRateLimit.EnableXRatelimitHeaders = ratev3.RateLimit_DRAFT_VERSION_03
-	envoyRateLimit.RequestType = "both"
-
-	return envoyRateLimit
 }
 
 func NewGatewayTranslationPass(ctx context.Context, tctx ir.GwTranslationCtx, reporter reports.Reporter) ir.ProxyTranslationPass {

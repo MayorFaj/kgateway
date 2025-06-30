@@ -318,8 +318,8 @@ func TestToRateLimitFilterConfig(t *testing.T) {
 						BackendRef: &gwv1alpha2.BackendRef{
 							BackendObjectReference: createBackendRef(),
 						},
+						Timeout: metav1.Duration{Duration: 5 * time.Second},
 					},
-					Timeout: metav1.Duration{Duration: 5 * time.Second},
 				},
 				ObjectSource: ir.ObjectSource{
 					Name:      defaultExtensionName,
@@ -500,8 +500,8 @@ func TestToRateLimitFilterConfig(t *testing.T) {
 					var timeout *durationpb.Duration
 
 					// Use timeout from extension if specified
-					if extension.Timeout.Duration > 0 {
-						timeout = durationpb.New(extension.Timeout.Duration)
+					if extension.GrpcService != nil && extension.GrpcService.Timeout.Duration > 0 {
+						timeout = durationpb.New(extension.GrpcService.Timeout.Duration)
 					}
 
 					// Use the domain from the extension

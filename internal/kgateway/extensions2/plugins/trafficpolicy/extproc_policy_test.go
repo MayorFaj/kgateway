@@ -124,13 +124,13 @@ func TestExtProcTimeouts(t *testing.T) {
 							Name: "test-service",
 						},
 					},
+					Timeout: metav1.Duration{Duration: 10 * time.Second},
 				},
-				Timeout: metav1.Duration{Duration: 10 * time.Second},
 			},
 		}
 
 		// Verify
-		assert.Equal(t, 10*time.Second, extension.ExtProc.Timeout.Duration)
+		assert.Equal(t, 10*time.Second, extension.ExtProc.GrpcService.Timeout.Duration)
 	})
 
 	t.Run("uses default timeout when not specified", func(t *testing.T) {
@@ -143,13 +143,13 @@ func TestExtProcTimeouts(t *testing.T) {
 							Name: "test-service",
 						},
 					},
+					// No timeout specified
 				},
-				// No timeout specified
 			},
 		}
 
 		// Verify
-		assert.Equal(t, time.Duration(0), extension.ExtProc.Timeout.Duration)
+		assert.Equal(t, time.Duration(0), extension.ExtProc.GrpcService.Timeout.Duration)
 	})
 
 	t.Run("configures messageTimeout when specified", func(t *testing.T) {
@@ -200,14 +200,14 @@ func TestExtProcTimeouts(t *testing.T) {
 							Name: "test-service",
 						},
 					},
+					Timeout: metav1.Duration{Duration: 5 * time.Second},
 				},
-				Timeout:        metav1.Duration{Duration: 5 * time.Second},
 				MessageTimeout: metav1.Duration{Duration: 100 * time.Millisecond},
 			},
 		}
 
 		// Verify both timeouts are configured independently
-		assert.Equal(t, 5*time.Second, extension.ExtProc.Timeout.Duration)
+		assert.Equal(t, 5*time.Second, extension.ExtProc.GrpcService.Timeout.Duration)
 		assert.Equal(t, 100*time.Millisecond, extension.ExtProc.MessageTimeout.Duration)
 	})
 }
