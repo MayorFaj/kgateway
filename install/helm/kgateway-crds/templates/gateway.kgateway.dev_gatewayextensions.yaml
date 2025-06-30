@@ -239,7 +239,6 @@ spec:
                 - ExtAuth
                 - ExtProc
                 - RateLimit
-                - Extended
                 type: string
             required:
             - type
