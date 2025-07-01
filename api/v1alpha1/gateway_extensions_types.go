@@ -52,10 +52,8 @@ type ExtProcProvider struct {
 	// MessageTimeout for individual message processing by the external processing service.
 	// This timeout applies to the processing of each individual message/request.
 	// +optional
-	// +kubebuilder:default="200ms"
-	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('0s')",message="messageTimeout must be a valid duration string"
-	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1ms')",message="messageTimeout must be at least 1 millisecond"
-	MessageTimeout metav1.Duration `json:"messageTimeout,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1ms')",message="messageTimeout must be a valid duration value of at least 1 millisecond"
+	MessageTimeout *metav1.Duration `json:"messageTimeout,omitempty"`
 }
 
 // ExtGrpcService defines the GRPC service that will handle the processing.
@@ -71,9 +69,8 @@ type ExtGrpcService struct {
 	// Timeout for requests to the external service.
 	// If not specified, relies on Envoy's default behavior.
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('0s')",message="timeout must be a valid duration string"
-	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1ms')",message="timeout must be at least 1 millisecond"
-	Timeout metav1.Duration `json:"timeout,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1ms')",message="timeout must be a valid duration value of at least 1 millisecond"
+	Timeout *metav1.Duration `json:"timeout,omitempty"`
 }
 
 // RateLimitProvider defines the configuration for a RateLimit service provider.

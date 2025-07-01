@@ -153,7 +153,7 @@ func ResolveExtGrpcService(krtctx krt.HandlerContext, backends *krtcollections.B
 	}
 
 	// Set timeout if specified in the grpcService
-	if grpcService != nil && grpcService.Timeout.Duration > 0 {
+	if grpcService != nil && grpcService.Timeout != nil && grpcService.Timeout.Duration > 0 {
 		envoyGrpcService.Timeout = durationpb.New(grpcService.Timeout.Duration)
 	}
 

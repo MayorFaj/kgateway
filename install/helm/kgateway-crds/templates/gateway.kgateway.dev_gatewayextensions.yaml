@@ -89,9 +89,8 @@ spec:
                       timeout:
                         type: string
                         x-kubernetes-validations:
-                        - message: timeout must be a valid duration string
-                          rule: duration(self) >= duration('0s')
-                        - message: timeout must be at least 1 millisecond
+                        - message: timeout must be a valid duration value of at least
+                            1 millisecond
                           rule: duration(self) >= duration('1ms')
                     required:
                     - backendRef
@@ -148,20 +147,17 @@ spec:
                       timeout:
                         type: string
                         x-kubernetes-validations:
-                        - message: timeout must be a valid duration string
-                          rule: duration(self) >= duration('0s')
-                        - message: timeout must be at least 1 millisecond
+                        - message: timeout must be a valid duration value of at least
+                            1 millisecond
                           rule: duration(self) >= duration('1ms')
                     required:
                     - backendRef
                     type: object
                   messageTimeout:
-                    default: 200ms
                     type: string
                     x-kubernetes-validations:
-                    - message: messageTimeout must be a valid duration string
-                      rule: duration(self) >= duration('0s')
-                    - message: messageTimeout must be at least 1 millisecond
+                    - message: messageTimeout must be a valid duration value of at
+                        least 1 millisecond
                       rule: duration(self) >= duration('1ms')
                 required:
                 - grpcService
@@ -220,9 +216,8 @@ spec:
                       timeout:
                         type: string
                         x-kubernetes-validations:
-                        - message: timeout must be a valid duration string
-                          rule: duration(self) >= duration('0s')
-                        - message: timeout must be at least 1 millisecond
+                        - message: timeout must be a valid duration value of at least
+                            1 millisecond
                           rule: duration(self) >= duration('1ms')
                     required:
                     - backendRef
