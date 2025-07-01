@@ -19,7 +19,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	// "github.com/kgateway-dev/kgateway/v2/internal/kgateway/krtcollections"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/reports"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/routeutils"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils"
