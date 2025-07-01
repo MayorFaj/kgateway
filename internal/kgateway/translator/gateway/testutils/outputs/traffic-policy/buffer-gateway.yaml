@@ -1,14 +1,5 @@
 Clusters:
 - connectTimeout: 5s
-  edsClusterConfig:
-    edsConfig:
-      ads: {}
-      resourceApiVersion: V3
-  ignoreHealthOnHostRemoval: true
-  metadata: {}
-  name: kube_gwtest_example-svc_80
-  type: EDS
-- connectTimeout: 5s
   metadata: {}
   name: test-backend-plugin_default_example-svc_80
 Listeners:
@@ -23,6 +14,11 @@ Listeners:
       typedConfig:
         '@type': type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
         httpFilters:
+        - disabled: true
+          name: envoy.filters.http.buffer
+          typedConfig:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.buffer.v3.Buffer
+            maxRequestBytes: 4294967295
         - name: envoy.filters.http.router
           typedConfig:
             '@type': type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -40,13 +36,8 @@ Listeners:
 Routes:
 - ignorePortInHostMatching: true
   name: listener~8080
-  virtualHosts:
-  - domains:
-    - www.example.com
-    name: listener~8080~www_example_com
-    routes:
-    - directResponse:
-        status: 500
-      match:
-        prefix: /
-      name: listener~8080~www_example_com-route-0-httproute-invalid-traffic-policy-route-gwtest-0-0-matcher-0
+  typedPerFilterConfig:
+    envoy.filters.http.buffer:
+      '@type': type.googleapis.com/envoy.extensions.filters.http.buffer.v3.BufferPerRoute
+      buffer:
+        maxRequestBytes: 65536
