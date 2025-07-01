@@ -2,23 +2,14 @@ package settings_test
 
 import (
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/require"
 
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
 	"github.com/kgateway-dev/kgateway/v2/pkg/settings"
 )
-
-func cleanupEnvVars(t *testing.T, envVars map[string]string) {
-	t.Helper()
-	for k := range envVars {
-		if err := os.Unsetenv(k); err != nil {
-			t.Errorf("Failed to unset environment variable %s: %v", k, err)
-		}
-	}
-}
 
 func TestSettings(t *testing.T) {
 	testCases := []struct {
@@ -172,22 +163,23 @@ func TestSettings(t *testing.T) {
 			s, err := settings.BuildSettings()
 
 			if tc.expectedErrorStr != "" {
-				if err == nil {
-					t.Fatalf("Expected error containing %q, but got no error", tc.expectedErrorStr)
-				}
-				if !strings.Contains(err.Error(), tc.expectedErrorStr) {
-					t.Fatalf("Expected error to contain %q, but got: %v", tc.expectedErrorStr, err)
-				}
+				require.ErrorContains(t, err, tc.expectedErrorStr)
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
+			require.NoError(t, err)
 
-			if diff := cmp.Diff(tc.expectedSettings, s); diff != "" {
-				t.Errorf("Settings do not match expected values (-expected +got):\n%s", diff)
-			}
+			diff := cmp.Diff(tc.expectedSettings, s)
+			require.Emptyf(t, diff, "Settings do not match expected values (-expected +got):\n%s", diff)
 		})
+	}
+}
+
+func cleanupEnvVars(t *testing.T, envVars map[string]string) {
+	t.Helper()
+	for k := range envVars {
+		if err := os.Unsetenv(k); err != nil {
+			t.Errorf("Failed to unset environment variable %s: %v", k, err)
+		}
 	}
 }
