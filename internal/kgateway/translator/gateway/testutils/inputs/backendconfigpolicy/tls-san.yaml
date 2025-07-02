@@ -1,0 +1,75 @@
+kind: Gateway
+apiVersion: gateway.networking.k8s.io/v1
+metadata:
+  name: example-gateway
+spec:
+  gatewayClassName: kgateway
+  listeners:
+  - protocol: HTTP
+    port: 8080
+    name: http
+    allowedRoutes:
+      namespaces:
+        from: All
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  labels:
+    app: backend
+    service: backend
+spec:
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8443
+      appProtocol: https
+  selector:
+    app: backend
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: client-tls-secret
+type: kubernetes.io/tls
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURORENCQWh5Z0F3SUJBZ0lVTDZqSkhIVmljUGJUcnhOWGpUWDJ0aS8yc3dnd0RRWUpLb1pJaHZjTkFRRUwKQlFBd0d6RVpNQmNHQTFVRUF3d1FkR1Z6ZEM1bGVHRnRjR3hsUG1OdmJUQWVGdzB5TlRBMU1qa3hOVFE1TVRoYQpGdzB5TmpBMU1qa3hOVFE1TVRoYU1Cc3hHVEFYQmdOVkJBTU1FSFJsYzNRdVpYaGhiWEJzWlM1amIyMHdnZ0VpCk1BMEdDU3FHU0liM0RRRUJBUVVBQTRJQkR3QXdnZ0VLQW9JQkFRQzB6RTlBdVpONFVjNVZPc1ViTFlIWmFFaC8KZGI=
+  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2UUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktjd2dnU2pBZ0VBQW9JQkFRQzB6RTlBdVpONFVjNVYKT3NVYkxZSFphRWgvZGIySGlIc1lkeXhwdUx4MUMyYVhZVXBJeUdqd1ZTczg0K1R3UzQ2WFJDc3RaSHNURHJTdgpsTTZod1UyeCtCN0VGa3NFTTVUUFUvMGU2K2xVZGUweVV3ZWlZQ1lJS25KVTFQeldPN3BsZFM4SzhhZg==
+  ca.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURORENCQWh5Z0F3SUJBZ0lVTDZqSkhIVmljUGJUcnhOWGpUWDJ0aS8yc3dnd0RRWUpLb1pJaHZjTkFRRUwKQlFBd0d6RVpNQmNHQTFVRUF3d1FkR1Z6ZEM1bGVHRnRjR3hsUG1OdmJUQWVGdzB5TlRBMU1qa3hOVFE1TVRoYQpGdzB5TmpBMU1qa3hOVFE1TVRoYU1Cc3hHVEFYQmdOVkJBTU1FSFJsYzNRdVpYaGhiWEJzWlM1amIyMHdnZ0VpCk1BMEdDU3FHU0liM0RRRUJBUVVBQTRJQkR3QXdnZ0VLQW9JQkFRQzB6RTlBdVpONFVjNVZPc1ViTFlIWmFFaC8KZGI=
+---
+kind: BackendConfigPolicy
+apiVersion: gateway.kgateway.dev/v1alpha1
+metadata:
+  name: backend-tls-policy
+spec:
+  targetRefs:
+    - name: backend-service
+      group: ""
+      kind: Service
+  tls:
+    secretRef:
+      name: client-tls-secret
+    sni: test.example.com
+    verifySubjectAltName:
+      - test.example.com
+      - api.example.com
+    allowRenegotiation: true
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: backend-route
+spec:
+  parentRefs:
+    - name: example-gateway
+  hostnames:
+    - "example.com"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: backend-service
+          port: 443
