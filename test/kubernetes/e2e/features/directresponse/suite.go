@@ -240,26 +240,26 @@ func (s *testingSuite) TestInvalidOverlappingFilters() {
 		string(gwv1.RouteReasonIncompatibleFilters), 10*time.Second, 1*time.Second)
 }
 
-// func (s *testingSuite) TestInvalidMultipleRouteActions() {
-// 	// the route specifies both a request redirect and a direct response, which is invalid.
-// 	// verify the route was replaced with a 500 direct response due to the
-// 	// invalid configuration.
-// 	s.ti.Assertions.AssertEventualCurlResponse(
-// 		s.ctx,
-// 		defaults.CurlPodExecOpt,
-// 		[]curl.Option{
-// 			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
-// 			curl.WithHostHeader("www.example.com"),
-// 			curl.WithPath("/"),
-// 		},
-// 		&matchers.HttpResponse{
-// 			StatusCode: http.StatusInternalServerError,
-// 		},
-// 		time.Minute,
-// 	)
-// 	s.ti.Assertions.EventuallyHTTPRouteStatusContainsReason(s.ctx, httpbinMeta.Name, httpbinMeta.Namespace,
-// 		string(gwv1.RouteReasonIncompatibleFilters), 10*time.Second, 1*time.Second)
-// }
+func (s *testingSuite) TestInvalidMultipleRouteActions() {
+	// the route specifies both a request redirect and a direct response, which is invalid.
+	// verify the route was replaced with a 500 direct response due to the
+	// invalid configuration.
+	s.ti.Assertions.AssertEventualCurlResponse(
+		s.ctx,
+		testdefaults.CurlPodExecOpt,
+		[]curl.Option{
+			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
+			curl.WithHostHeader("www.example.com"),
+			curl.WithPath("/"),
+		},
+		&matchers.HttpResponse{
+			StatusCode: http.StatusInternalServerError,
+		},
+		time.Minute,
+	)
+	s.ti.Assertions.EventuallyHTTPRouteStatusContainsReason(s.ctx, httpbinMeta.Name, httpbinMeta.Namespace,
+		string(gwv1.RouteReasonIncompatibleFilters), 10*time.Second, 1*time.Second)
+}
 
 func (s *testingSuite) TestInvalidBackendRefFilter() {
 	// verify that configuring a DR with a backendRef filter results in a 404 as

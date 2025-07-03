@@ -231,7 +231,7 @@ func (h *httpRouteConfigurationTranslator) envoyRoutes(
 			if hasMissingExtensionRefs || (len(in.ExtensionRefs.Policies) == 0 && hasExpectedExtensionRefs(in)) {
 				err = fmt.Errorf("missing extension policy: %w", ir.ErrMissingPolicy)
 			} else {
-				err = errors.New("no action specified")
+				err = fmt.Errorf("no action specified")
 			}
 		}
 	}
@@ -847,52 +847,68 @@ func hasIncompatibleFilters(in ir.HttpRouteRuleMatchIR) bool {
 	hasRequestRedirect := false
 	hasDelegation := in.Delegates || len(in.Backends) > 0
 
-	// Check extension refs for DirectResponse and RequestRedirect filters
-	for _, extRef := range in.ExtensionRefs.Policies {
-		for _, policy := range extRef {
+	// Check for RequestRedirect in the original HTTPRoute filters
+	if in.Parent != nil && in.Parent.SourceObject != nil {
+		// Check if the source object is an HTTPRoute
+		if httpRoute, ok := in.Parent.SourceObject.(*gwv1.HTTPRoute); ok {
+			// Look through the rules to find the matching rule
+			for _, rule := range httpRoute.Spec.Rules {
+				for _, filter := range rule.Filters {
+					if filter.Type == gwv1.HTTPRouteFilterRequestRedirect {
+						hasRequestRedirect = true
+						break
+					}
+				}
+				if hasRequestRedirect {
+					break
+				}
+			}
+		}
+	}
+
+	// Check attached policies and extension refs for RequestRedirect and DirectResponse filters
+	checkPolicyConditions := func(policies []ir.PolicyAtt) {
+		for _, policy := range policies {
 			if policy.PolicyIr != nil {
-				// Check for DirectResponse policies
-				if strings.Contains(fmt.Sprintf("%T", policy.PolicyIr), "directResponse") {
+				policyType := strings.ToLower(fmt.Sprintf("%T", policy.PolicyIr))
+				if strings.Contains(policyType, "requestredirect") || (strings.Contains(policyType, "builtin") && strings.Contains(policyType, "redirect")) {
+					hasRequestRedirect = true
+				}
+				// Use type switch for more reliable redirect detection
+				switch policy.PolicyIr.(type) {
+				case interface{ IsRequestRedirect() bool }:
+					hasRequestRedirect = true
+				case interface{ IsBuiltinRedirect() bool }:
+					hasRequestRedirect = true
+				}
+
+				if isDirectResponse(policy.PolicyIr) {
 					hasDirectResponse = true
 				}
 			}
 		}
 	}
 
-	// Check attached policies for builtin filters (RequestRedirect is typically a builtin filter)
+	// Check attached policies directly on this route
 	for _, policyGroup := range in.AttachedPolicies.Policies {
-		for _, policy := range policyGroup {
-			if policy.PolicyIr != nil {
-				policyType := fmt.Sprintf("%T", policy.PolicyIr)
-				// Check for RequestRedirect in builtin policies
-				if strings.Contains(policyType, "builtin") || strings.Contains(policyType, "redirect") {
-					hasRequestRedirect = true
-				}
-			}
+		checkPolicyConditions(policyGroup)
+	}
+
+	// Check parent attached policies if this is a delegation scenario
+	if in.Parent != nil {
+		for _, policyGroup := range in.Parent.AttachedPolicies.Policies {
+			checkPolicyConditions(policyGroup)
 		}
 	}
 
-	// Also check parent route for inherited policies if this is a delegation scenario
-	if in.Parent != nil {
-		for _, policyGroup := range in.Parent.AttachedPolicies.Policies {
-			for _, policy := range policyGroup {
-				if policy.PolicyIr != nil {
-					policyType := fmt.Sprintf("%T", policy.PolicyIr)
-					if strings.Contains(policyType, "directResponse") {
-						hasDirectResponse = true
-					}
-					if strings.Contains(policyType, "builtin") || strings.Contains(policyType, "redirect") {
-						hasRequestRedirect = true
-					}
-				}
-			}
-		}
+	// Check extension refs for DirectResponse filters
+	for _, extRef := range in.ExtensionRefs.Policies {
+		checkPolicyConditions(extRef)
 	}
 
 	// Incompatible combinations:
 	// 1. DirectResponse + RequestRedirect
 	// 2. DirectResponse + Delegation (backends)
-	// 3. RequestRedirect + DirectResponse
 	if hasDirectResponse && hasRequestRedirect {
 		return true
 	}
@@ -902,4 +918,10 @@ func hasIncompatibleFilters(in ir.HttpRouteRuleMatchIR) bool {
 	}
 
 	return false
+}
+
+// isDirectResponse checks if the given policy is a DirectResponse policy
+func isDirectResponse(policyIr interface{}) bool {
+	policyType := strings.ToLower(fmt.Sprintf("%T", policyIr))
+	return strings.Contains(policyType, "directresponse")
 }
