@@ -1,4 +1,4 @@
-package load_testing
+package loadtesting
 
 import (
 	"path/filepath"
