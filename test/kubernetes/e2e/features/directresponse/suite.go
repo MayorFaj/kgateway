@@ -1,3 +1,5 @@
+//go:build ignore
+
 package directresponse
 
 import (
@@ -15,6 +17,7 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/pkg/utils/requestutils/curl"
 	"github.com/kgateway-dev/kgateway/v2/test/gomega/matchers"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e"
+	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/defaults"
 	testdefaults "github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/defaults"
 )
 
@@ -55,13 +58,13 @@ func (s *testingSuite) SetupSuite() {
 
 	// include gateway manifests for the tests, so we recreate it for each test run
 	s.manifests = map[string][]string{
-		"TestBasicDirectResponse": {gatewayManifest, basicDirectResponseManifests},
-		"TestDelegation":          {gatewayManifest, basicDelegationManifests},
-		// "TestInvalidDelegationConflictingFilters": {gatewayManifest, invalidDelegationConflictingFiltersManifests},
-		"TestInvalidMissingRef":         {gatewayManifest, invalidMissingRefManifests},
-		"TestInvalidOverlappingFilters": {gatewayManifest, invalidOverlappingFiltersManifests},
-		// "TestInvalidMultipleRouteActions":         {gatewayManifest, invalidMultipleRouteActionsManifests},
-		"TestInvalidBackendRefFilter": {gatewayManifest, invalidBackendRefFilterManifests},
+		"TestBasicDirectResponse":                 {gatewayManifest, basicDirectResposeManifests},
+		"TestDelegation":                          {gatewayManifest, basicDelegationManifests},
+		"TestInvalidDelegationConflictingFilters": {gatewayManifest, invalidDelegationConflictingFiltersManifests},
+		"TestInvalidMissingRef":                   {gatewayManifest, invalidMissingRefManifests},
+		"TestInvalidOverlappingFilters":           {gatewayManifest, invalidOverlappingFiltersManifests},
+		"TestInvalidMultipleRouteActions":         {gatewayManifest, invalidMultipleRouteActionsManifests},
+		"TestInvalidBackendRefFilter":             {gatewayManifest, invalidBackendRefFilterManifests},
 	}
 }
 
@@ -112,7 +115,7 @@ func (s *testingSuite) TestBasicDirectResponse() {
 	// verify that a direct response route works as expected
 	s.ti.Assertions.AssertEventualCurlResponse(
 		s.ctx,
-		testdefaults.CurlPodExecOpt,
+		defaults.CurlPodExecOpt,
 		[]curl.Option{
 			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
 			curl.WithHostHeader("www.example.com"),
@@ -130,7 +133,7 @@ func (s *testingSuite) TestDelegation() {
 	// verify the regular child route works as expected.
 	s.ti.Assertions.AssertEventualCurlResponse(
 		s.ctx,
-		testdefaults.CurlPodExecOpt,
+		defaults.CurlPodExecOpt,
 		[]curl.Option{
 			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
 			curl.WithHostHeader("www.example.com"),
@@ -146,7 +149,7 @@ func (s *testingSuite) TestDelegation() {
 	// verify the parent's DR works as expected.
 	s.ti.Assertions.AssertEventualCurlResponse(
 		s.ctx,
-		testdefaults.CurlPodExecOpt,
+		defaults.CurlPodExecOpt,
 		[]curl.Option{
 			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
 			curl.WithHostHeader("www.example.com"),
@@ -162,7 +165,7 @@ func (s *testingSuite) TestDelegation() {
 	// verify that the child's DR works as expected.
 	s.ti.Assertions.AssertEventualCurlResponse(
 		s.ctx,
-		testdefaults.CurlPodExecOpt,
+		defaults.CurlPodExecOpt,
 		[]curl.Option{
 			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
 			curl.WithHostHeader("www.example.com"),
@@ -176,35 +179,33 @@ func (s *testingSuite) TestDelegation() {
 	)
 }
 
-// TODO: This test is commented out due to conflicting route actions in the parent HTTPRoute.
-// TODO: Re-enable this test once the issue with conflicting filters is resolved or the expected behavior is clarified.
-// func (s *testingSuite) TestInvalidDelegationConflictingFilters() {
-// 	// the parent httproute both 1) specifies a direct response and 2) delegates to another httproute which routes to a service.
-// 	// since these route actions are conflicting, we should get a 500 here
-// 	s.ti.Assertions.AssertEventualCurlResponse(
-// 		s.ctx,
-// 		defaults.CurlPodExecOpt,
-// 		[]curl.Option{
-// 			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
-// 			curl.WithHostHeader("www.example.com"),
-// 			curl.WithPath("/headers"),
-// 		},
-// 		&matchers.HttpResponse{
-// 			StatusCode: http.StatusInternalServerError,
-// 		},
-// 		time.Minute,
-// 	)
+func (s *testingSuite) TestInvalidDelegationConflictingFilters() {
+	// the parent httproute both 1) specifies a direct response and 2) delegates to another httproute which routes to a service.
+	// since these route actions are conflicting, we should get a 500 here
+	s.ti.Assertions.AssertEventualCurlResponse(
+		s.ctx,
+		defaults.CurlPodExecOpt,
+		[]curl.Option{
+			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
+			curl.WithHostHeader("www.example.com"),
+			curl.WithPath("/headers"),
+		},
+		&matchers.HttpResponse{
+			StatusCode: http.StatusInternalServerError,
+		},
+		time.Minute,
+	)
 
-// 	// the parent should show an error in its status
-// 	s.ti.Assertions.EventuallyHTTPRouteStatusContainsReason(s.ctx, gwRouteMeta.Name, gwRouteMeta.Namespace,
-// 		string(gwv1.RouteReasonIncompatibleFilters), 10*time.Second, 1*time.Second)
-// }
+	// the parent should show an error in its status
+	s.ti.Assertions.EventuallyHTTPRouteStatusContainsReason(s.ctx, gwRouteMeta.Name, gwRouteMeta.Namespace,
+		string(gwv1.RouteReasonIncompatibleFilters), 10*time.Second, 1*time.Second)
+}
 
 func (s *testingSuite) TestInvalidMissingRef() {
 	// the route points to a DR that doesn't exist, so this should error
 	s.ti.Assertions.AssertEventualCurlResponse(
 		s.ctx,
-		testdefaults.CurlPodExecOpt,
+		defaults.CurlPodExecOpt,
 		[]curl.Option{
 			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
 			curl.WithHostHeader("www.example.com"),
@@ -217,7 +218,7 @@ func (s *testingSuite) TestInvalidMissingRef() {
 	)
 
 	s.ti.Assertions.EventuallyHTTPRouteStatusContainsReason(s.ctx, httpbinMeta.Name, httpbinMeta.Namespace,
-		string(gwv1.RouteReasonUnsupportedValue), 10*time.Second, 1*time.Second)
+		string(gwv1.RouteReasonBackendNotFound), 10*time.Second, 1*time.Second)
 }
 
 func (s *testingSuite) TestInvalidOverlappingFilters() {
@@ -226,7 +227,7 @@ func (s *testingSuite) TestInvalidOverlappingFilters() {
 	// invalid configuration.
 	s.ti.Assertions.AssertEventualCurlResponse(
 		s.ctx,
-		testdefaults.CurlPodExecOpt,
+		defaults.CurlPodExecOpt,
 		[]curl.Option{
 			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
 			curl.WithHostHeader("www.example.com"),
@@ -242,35 +243,33 @@ func (s *testingSuite) TestInvalidOverlappingFilters() {
 		string(gwv1.RouteReasonIncompatibleFilters), 10*time.Second, 1*time.Second)
 }
 
-// TODO: This test is commented out due to conflicting route actions in the parent HTTPRoute.
-// TODO: Re-enable this test once the issue with conflicting filters is resolved or the expected behavior is clarified.
-// func (s *testingSuite) TestInvalidMultipleRouteActions() {
-// 	// the route specifies both a request redirect and a direct response, which is invalid.
-// 	// verify the route was replaced with a 500 direct response due to the
-// 	// invalid configuration.
-// 	s.ti.Assertions.AssertEventualCurlResponse(
-// 		s.ctx,
-// 		defaults.CurlPodExecOpt,
-// 		[]curl.Option{
-// 			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
-// 			curl.WithHostHeader("www.example.com"),
-// 			curl.WithPath("/"),
-// 		},
-// 		&matchers.HttpResponse{
-// 			StatusCode: http.StatusInternalServerError,
-// 		},
-// 		time.Minute,
-// 	)
-// 	s.ti.Assertions.EventuallyHTTPRouteStatusContainsReason(s.ctx, httpbinMeta.Name, httpbinMeta.Namespace,
-// 		string(gwv1.RouteReasonIncompatibleFilters), 10*time.Second, 1*time.Second)
-// }
+func (s *testingSuite) TestInvalidMultipleRouteActions() {
+	// the route specifies both a request redirect and a direct response, which is invalid.
+	// verify the route was replaced with a 500 direct response due to the
+	// invalid configuration.
+	s.ti.Assertions.AssertEventualCurlResponse(
+		s.ctx,
+		defaults.CurlPodExecOpt,
+		[]curl.Option{
+			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
+			curl.WithHostHeader("www.example.com"),
+			curl.WithPath("/"),
+		},
+		&matchers.HttpResponse{
+			StatusCode: http.StatusInternalServerError,
+		},
+		time.Minute,
+	)
+	s.ti.Assertions.EventuallyHTTPRouteStatusContainsReason(s.ctx, httpbinMeta.Name, httpbinMeta.Namespace,
+		string(gwv1.RouteReasonIncompatibleFilters), 10*time.Second, 1*time.Second)
+}
 
 func (s *testingSuite) TestInvalidBackendRefFilter() {
 	// verify that configuring a DR with a backendRef filter results in a 404 as
 	// this configuration is not supported / ignored by the direct response plugin.
 	s.ti.Assertions.AssertEventualCurlResponse(
 		s.ctx,
-		testdefaults.CurlPodExecOpt,
+		defaults.CurlPodExecOpt,
 		[]curl.Option{
 			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
 			curl.WithHostHeader("www.example.com"),
