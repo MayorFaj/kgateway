@@ -258,7 +258,7 @@ var _ = DescribeTable("Basic GatewayTranslator Tests",
 			},
 		}),
 	Entry(
-		"TrafficPolicy edge cases",
+		"TrafficPolicy ExtAuth edge cases",
 		translatorTestCase{
 			inputFile:  "traffic-policy/extauth.yaml",
 			outputFile: "traffic-policy/extauth.yaml",

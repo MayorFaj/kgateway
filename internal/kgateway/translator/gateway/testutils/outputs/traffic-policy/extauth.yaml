@@ -62,6 +62,7 @@ Listeners:
             grpcService:
               envoyGrpc:
                 clusterName: kube_infra_ext-authz_9000
+              timeout: 15s
         - disabled: true
           name: ext_auth/infra/section-name-gw-extauth
           typedConfig:
@@ -76,6 +77,7 @@ Listeners:
             grpcService:
               envoyGrpc:
                 clusterName: kube_infra_ext-authz_9000
+              timeout: 20s
         - name: envoy.filters.http.router
           typedConfig:
             '@type': type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -192,6 +194,7 @@ Listeners:
             grpcService:
               envoyGrpc:
                 clusterName: kube_infra_ext-authz_9000
+              timeout: 15s
         - disabled: true
           name: ext_auth/infra/basic-gw-extauth
           typedConfig:
@@ -220,6 +223,7 @@ Listeners:
             grpcService:
               envoyGrpc:
                 clusterName: kube_infra_ext-authz_9000
+              timeout: 20s
         - name: envoy.filters.http.router
           typedConfig:
             '@type': type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
