@@ -13,7 +13,7 @@ import (
 var (
 	setupManifest               = filepath.Join(fsutils.MustGetThisDir(), "testdata", "setup.yaml")
 	gatewayManifest             = filepath.Join(fsutils.MustGetThisDir(), "testdata", "gateway.yaml")
-	basicDirectResposeManifests = filepath.Join(fsutils.MustGetThisDir(), "testdata", "basic-direct-response.yaml")
+	basicDirectResponseManifests = filepath.Join(fsutils.MustGetThisDir(), "testdata", "basic-direct-response.yaml")
 	basicDelegationManifests    = filepath.Join(fsutils.MustGetThisDir(), "testdata", "basic-delegation-direct-response.yaml")
 	// invalidDelegationConflictingFiltersManifests = filepath.Join(fsutils.MustGetThisDir(), "testdata", "invalid-delegation-conflicting-filters.yaml")
 	invalidMissingRefManifests         = filepath.Join(fsutils.MustGetThisDir(), "testdata", "invalid-missing-ref-direct-response.yaml")
