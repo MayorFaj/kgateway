@@ -27,6 +27,7 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/services/tlsroute"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/tracing"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/transformation"
+	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/load_testing"
 	// "github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/admin_server"
 	// "github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/crd_categories"
 	// "github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/headless_svc"
@@ -65,6 +66,7 @@ func KubeGatewaySuiteRunner() e2e.SuiteRunner {
 	kubeGatewaySuiteRunner.Register("CSRF", csrf.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("Tracing", tracing.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("DirectResponse", directresponse.NewTestingSuite)
+	kubeGatewaySuiteRunner.Register("LoadTesting", load_testing.NewTestingSuite)
 
 	// kubeGatewaySuiteRunner.Register("HttpListenerOptions", http_listener_options.NewTestingSuite)
 	// kubeGatewaySuiteRunner.Register("ListenerOptions", listener_options.NewTestingSuite)
