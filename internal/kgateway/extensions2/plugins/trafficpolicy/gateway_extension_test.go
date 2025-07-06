@@ -5,8 +5,11 @@ import (
 	"testing"
 	"time"
 
+	envoy_core_v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	envoy_ext_proc_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"istio.io/istio/pkg/kube/krt"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -380,6 +383,54 @@ func TestResolveExtGrpcService(t *testing.T) {
 						assert.Equal(t, time.Duration(0), tt.grpcService.Timeout.Duration, "Zero timeout should not be converted for test: %s", tt.description)
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestExtProcMessageTimeoutConfiguration(t *testing.T) {
+	tests := []struct {
+		name            string
+		messageTimeout  *metav1.Duration
+		expectedTimeout *time.Duration
+		description     string
+	}{
+		{
+			name:            "with_message_timeout",
+			description:     "ExtProc with MessageTimeout should set message_timeout in Envoy config",
+			messageTimeout:  &metav1.Duration{Duration: 5 * time.Second},
+			expectedTimeout: timePtr(5 * time.Second),
+		},
+		{
+			name:            "without_message_timeout",
+			description:     "ExtProc without MessageTimeout should not set message_timeout in Envoy config",
+			messageTimeout:  nil,
+			expectedTimeout: nil,
+		},
+		{
+			name:            "with_zero_message_timeout",
+			description:     "ExtProc with zero MessageTimeout should not set message_timeout in Envoy config",
+			messageTimeout:  &metav1.Duration{Duration: 0},
+			expectedTimeout: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			extProc := &envoy_ext_proc_v3.ExternalProcessor{
+				// GrpcService would be set by ResolveExtGrpcService in production
+				GrpcService: &envoy_core_v3.GrpcService{}, // minimal valid service
+			}
+			if tt.messageTimeout != nil && tt.messageTimeout.Duration > 0 {
+				extProc.MessageTimeout = durationpb.New(tt.messageTimeout.Duration)
+			}
+
+			if tt.expectedTimeout != nil {
+				require.NotNil(t, extProc.MessageTimeout, "MessageTimeout should be set in Envoy config for test: %s", tt.description)
+				assert.Equal(t, *tt.expectedTimeout, extProc.MessageTimeout.AsDuration(), "MessageTimeout duration mismatch for test: %s", tt.description)
+			} else {
+				assert.Nil(t, extProc.MessageTimeout, "MessageTimeout should not be set in Envoy config for test: %s", tt.description)
 			}
 		})
 	}

@@ -89,9 +89,16 @@ func TranslateGatewayExtensionBuilder(commoncol *common.CommonCollections) func(
 				return p
 			}
 
-			p.ExtProc = &envoy_ext_proc_v3.ExternalProcessor{
+			extProc := &envoy_ext_proc_v3.ExternalProcessor{
 				GrpcService: envoyGrpcService,
 			}
+
+			// Set MessageTimeout if specified
+			if gExt.ExtProc != nil && gExt.ExtProc.MessageTimeout != nil && gExt.ExtProc.MessageTimeout.Duration > 0 {
+				extProc.MessageTimeout = durationpb.New(gExt.ExtProc.MessageTimeout.Duration)
+			}
+
+			p.ExtProc = extProc
 
 		case v1alpha1.GatewayExtensionTypeRateLimit:
 			if gExt.RateLimit == nil {
