@@ -268,6 +268,16 @@ var _ = DescribeTable("Basic GatewayTranslator Tests",
 			},
 		}),
 	Entry(
+		"TrafficPolicy ExtProc edge cases",
+		translatorTestCase{
+			inputFile:  "traffic-policy/extproc.yaml",
+			outputFile: "traffic-policy/extproc.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "infra",
+				Name:      "example-gateway",
+			},
+		}),
+	Entry(
 		"TrafficPolicy with buffer attached to gateway",
 		translatorTestCase{
 			inputFile:  "traffic-policy/buffer-gateway.yaml",

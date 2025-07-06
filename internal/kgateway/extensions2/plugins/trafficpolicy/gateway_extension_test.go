@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	envoy_core_v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoy_ext_proc_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -417,11 +416,7 @@ func TestExtProcMessageTimeoutConfiguration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
-			extProc := &envoy_ext_proc_v3.ExternalProcessor{
-				// GrpcService would be set by ResolveExtGrpcService in production
-				GrpcService: &envoy_core_v3.GrpcService{}, // minimal valid service
-			}
+			extProc := &envoy_ext_proc_v3.ExternalProcessor{}
 			if tt.messageTimeout != nil && tt.messageTimeout.Duration > 0 {
 				extProc.MessageTimeout = durationpb.New(tt.messageTimeout.Duration)
 			}
