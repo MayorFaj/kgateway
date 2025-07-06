@@ -51,12 +51,10 @@ var (
 
 	testCases = map[string]*base.TestCase{
 		"TestAttachedRoutes": {
-			SimpleTestCase: base.SimpleTestCase{
-			},
+			SimpleTestCase: base.SimpleTestCase{},
 		},
 		"TestAttachedRoutesMultiGW": {
-			SimpleTestCase: base.SimpleTestCase{
-			},
+			SimpleTestCase: base.SimpleTestCase{},
 		},
 		// "TestRouteProbe": {
 		// 	SimpleTestCase: base.SimpleTestCase{
