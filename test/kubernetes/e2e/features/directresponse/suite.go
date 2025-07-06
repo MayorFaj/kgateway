@@ -176,6 +176,8 @@ func (s *testingSuite) TestDelegation() {
 	)
 }
 
+// TODO: This test is commented out due to conflicting route actions in the parent HTTPRoute. 
+// TODO: Re-enable this test once the issue with conflicting filters is resolved or the expected behavior is clarified.
 // func (s *testingSuite) TestInvalidDelegationConflictingFilters() {
 // 	// the parent httproute both 1) specifies a direct response and 2) delegates to another httproute which routes to a service.
 // 	// since these route actions are conflicting, we should get a 500 here
