@@ -55,7 +55,7 @@ func (s *testingSuite) SetupSuite() {
 
 	// include gateway manifests for the tests, so we recreate it for each test run
 	s.manifests = map[string][]string{
-		"TestBasicDirectResponse": {gatewayManifest, basicDirectResposeManifests},
+		"TestBasicDirectResponse": {gatewayManifest, basicDirectResponseManifests},
 		"TestDelegation":          {gatewayManifest, basicDelegationManifests},
 		// "TestInvalidDelegationConflictingFilters": {gatewayManifest, invalidDelegationConflictingFiltersManifests},
 		"TestInvalidMissingRef":         {gatewayManifest, invalidMissingRefManifests},
@@ -176,7 +176,7 @@ func (s *testingSuite) TestDelegation() {
 	)
 }
 
-// TODO: This test is commented out due to conflicting route actions in the parent HTTPRoute. 
+// TODO: This test is commented out due to conflicting route actions in the parent HTTPRoute.
 // TODO: Re-enable this test once the issue with conflicting filters is resolved or the expected behavior is clarified.
 // func (s *testingSuite) TestInvalidDelegationConflictingFilters() {
 // 	// the parent httproute both 1) specifies a direct response and 2) delegates to another httproute which routes to a service.
@@ -242,6 +242,8 @@ func (s *testingSuite) TestInvalidOverlappingFilters() {
 		string(gwv1.RouteReasonIncompatibleFilters), 10*time.Second, 1*time.Second)
 }
 
+// TODO: This test is commented out due to conflicting route actions in the parent HTTPRoute.
+// TODO: Re-enable this test once the issue with conflicting filters is resolved or the expected behavior is clarified.
 // func (s *testingSuite) TestInvalidMultipleRouteActions() {
 // 	// the route specifies both a request redirect and a direct response, which is invalid.
 // 	// verify the route was replaced with a 500 direct response due to the
