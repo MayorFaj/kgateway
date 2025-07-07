@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"regexp"
 	"slices"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/ir"
 	reportssdk "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/reporter"
+	"github.com/kgateway-dev/kgateway/v2/pkg/settings"
 	"github.com/kgateway-dev/kgateway/v2/pkg/utils/regexutils"
 )
 
@@ -36,6 +38,7 @@ type httpRouteConfigurationTranslator struct {
 	requireTlsOnVirtualHosts bool
 	PluginPass               TranslationPassPlugins
 	logger                   *slog.Logger
+	routeReplacementMode     settings.RouteReplacementMode
 }
 
 const WebSocketUpgradeType = "websocket"
@@ -144,7 +147,8 @@ type backendConfigContext struct {
 	ResponseHeadersToRemove   []string
 }
 
-func (h *httpRouteConfigurationTranslator) envoyRoutes(ctx context.Context,
+func (h *httpRouteConfigurationTranslator) envoyRoutes(
+	ctx context.Context,
 	routeReport reportssdk.ParentRefReporter,
 	in ir.HttpRouteRuleMatchIR,
 	generatedName string,
@@ -194,21 +198,25 @@ func (h *httpRouteConfigurationTranslator) envoyRoutes(ctx context.Context,
 		h.logger.Debug("invalid route", "error", err)
 		// TODO: we may want to aggregate all these errors per http route object and report one message?
 		routeReport.SetCondition(reportssdk.RouteCondition{
-			Type:   gwv1.RouteConditionPartiallyInvalid,
-			Status: metav1.ConditionTrue,
-			Reason: gwv1.RouteConditionReason(err.Error()),
-			// The message for this condition MUST start with the prefix "Dropped Rule"
-			Message: fmt.Sprintf("Dropped Rule: %v", err),
+			Type:    gwv1.RouteConditionPartiallyInvalid,
+			Status:  metav1.ConditionTrue,
+			Reason:  gwv1.RouteReasonUnsupportedValue,
+			Message: fmt.Sprintf("Dropped Rule (%d): %v", in.MatchIndex, err),
 		})
-		//  TODO: we currently drop the route which is not good;
-		//    we should implement route replacement.
-		// out.Reset()
-		// out.Action = &envoy_config_route_v3.Route_DirectResponse{
-		// 	DirectResponse: &envoy_config_route_v3.DirectResponseAction{
-		// 		Status: http.StatusInternalServerError,
-		// 	},
-		// }
-		out = nil
+
+		switch h.routeReplacementMode {
+		case settings.RouteReplacementStandard, settings.RouteReplacementStrict:
+			// Replace invalid route with a direct response
+			out.Action = &envoy_config_route_v3.Route_DirectResponse{
+				DirectResponse: &envoy_config_route_v3.DirectResponseAction{
+					Status: http.StatusInternalServerError,
+				},
+			}
+			return out
+		default:
+			// Drop the route entirely (legacy behavior, will be removed in the future)
+			return nil
+		}
 	}
 
 	return out
@@ -439,7 +447,6 @@ func (h *httpRouteConfigurationTranslator) translateRouteAction(
 		clusters = append(clusters, cw)
 	}
 
-	// TODO: i think envoy nacks if all weights are 0, we should error on that.
 	action := outRoute.GetRoute()
 	if action == nil {
 		action = &envoy_config_route_v3.RouteAction{
@@ -501,10 +508,28 @@ func validateEnvoyRoute(r *envoy_config_route_v3.Route) error {
 	validatePath(re.GetSchemeRedirect(), &errs)
 	validatePrefixRewrite(route.GetPrefixRewrite(), &errs)
 	validatePrefixRewrite(re.GetPrefixRewrite(), &errs)
+	validateWeightedClusters(route.GetWeightedClusters().GetClusters(), &errs)
 	if len(errs) == 0 {
 		return nil
 	}
 	return fmt.Errorf("error %s: %w", r.GetName(), errors.Join(errs...))
+}
+
+func validateWeightedClusters(clusters []*envoy_config_route_v3.WeightedCluster_ClusterWeight, errs *[]error) {
+	if len(clusters) == 0 {
+		return
+	}
+
+	allZeroWeight := true
+	for _, cluster := range clusters {
+		if cluster.GetWeight().GetValue() > 0 {
+			allZeroWeight = false
+			break
+		}
+	}
+	if allZeroWeight {
+		*errs = append(*errs, errors.New("All backend weights are 0. At least one backendRef in the HTTPRoute rule must specify a non-zero weight"))
+	}
 }
 
 // creates Envoy routes for each matcher provided on our Gateway route

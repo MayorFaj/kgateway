@@ -9,8 +9,6 @@ import (
 	"github.com/onsi/gomega"
 	"github.com/onsi/gomega/gstruct"
 
-	// errors "github.com/rotisserie/eris"
-	// "github.com/solo-io/solo-kit/pkg/api/v1/resources/core"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -243,7 +241,7 @@ func (p *Provider) EventuallyHTTPRouteCondition(
 				break
 			}
 		}
-		g.Expect(conditionFound).To(gomega.BeTrue(), fmt.Sprintf("%v condition is not %v for any parent of TLSRoute %s/%s",
+		g.Expect(conditionFound).To(gomega.BeTrue(), fmt.Sprintf("%v condition is not %v for any parent of HTTPRoute %s/%s",
 			cond, expect, routeNamespace, routeName))
 	}, currentTimeout, pollingInterval).Should(gomega.Succeed())
 }
