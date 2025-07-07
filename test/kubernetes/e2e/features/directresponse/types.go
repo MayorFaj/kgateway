@@ -22,7 +22,7 @@ var (
 	// invalidDelegationConflictingFiltersManifests = filepath.Join(fsutils.MustGetThisDir(), "testdata", "invalid-delegation-conflicting-filters.yaml")
 	// invalidMultipleRouteActionsManifests         = filepath.Join(fsutils.MustGetThisDir(), "testdata", "invalid-multiple-route-actions.yaml")
 
-	glooProxyObjectMeta = metav1.ObjectMeta{
+	proxyObjectMeta = metav1.ObjectMeta{
 		Name:      "gw",
 		Namespace: "default",
 	}
@@ -30,7 +30,7 @@ var (
 		Name:      "httpbin",
 		Namespace: "httpbin",
 	}
-	proxyDeployment   = &appsv1.Deployment{ObjectMeta: glooProxyObjectMeta}
-	proxyService      = &corev1.Service{ObjectMeta: glooProxyObjectMeta}
+	proxyDeployment   = &appsv1.Deployment{ObjectMeta: proxyObjectMeta}
+	proxyService      = &corev1.Service{ObjectMeta: proxyObjectMeta}
 	httpbinDeployment = &appsv1.Deployment{ObjectMeta: httpbinMeta}
 )

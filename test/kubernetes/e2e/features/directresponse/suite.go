@@ -114,7 +114,7 @@ func (s *testingSuite) TestBasicDirectResponse() {
 		s.ctx,
 		testdefaults.CurlPodExecOpt,
 		[]curl.Option{
-			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
+			curl.WithHost(kubeutils.ServiceFQDN(proxyObjectMeta)),
 			curl.WithHostHeader("www.example.com"),
 			curl.WithPath("/robots.txt"),
 		},
@@ -132,7 +132,7 @@ func (s *testingSuite) TestDelegation() {
 		s.ctx,
 		testdefaults.CurlPodExecOpt,
 		[]curl.Option{
-			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
+			curl.WithHost(kubeutils.ServiceFQDN(proxyObjectMeta)),
 			curl.WithHostHeader("www.example.com"),
 			curl.WithPath("/headers"),
 		},
@@ -148,7 +148,7 @@ func (s *testingSuite) TestDelegation() {
 		s.ctx,
 		testdefaults.CurlPodExecOpt,
 		[]curl.Option{
-			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
+			curl.WithHost(kubeutils.ServiceFQDN(proxyObjectMeta)),
 			curl.WithHostHeader("www.example.com"),
 			curl.WithPath("/parent"),
 		},
@@ -164,7 +164,7 @@ func (s *testingSuite) TestDelegation() {
 		s.ctx,
 		testdefaults.CurlPodExecOpt,
 		[]curl.Option{
-			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
+			curl.WithHost(kubeutils.ServiceFQDN(proxyObjectMeta)),
 			curl.WithHostHeader("www.example.com"),
 			curl.WithPath("/child"),
 		},
@@ -185,7 +185,7 @@ func (s *testingSuite) TestDelegation() {
 // 		s.ctx,
 // 		defaults.CurlPodExecOpt,
 // 		[]curl.Option{
-// 			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
+// 			curl.WithHost(kubeutils.ServiceFQDN(proxyObjectMeta)),
 // 			curl.WithHostHeader("www.example.com"),
 // 			curl.WithPath("/headers"),
 // 		},
@@ -206,7 +206,7 @@ func (s *testingSuite) TestInvalidMissingRef() {
 		s.ctx,
 		testdefaults.CurlPodExecOpt,
 		[]curl.Option{
-			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
+			curl.WithHost(kubeutils.ServiceFQDN(proxyObjectMeta)),
 			curl.WithHostHeader("www.example.com"),
 			curl.WithPath("/non-existent"),
 		},
@@ -228,7 +228,7 @@ func (s *testingSuite) TestInvalidOverlappingFilters() {
 		s.ctx,
 		testdefaults.CurlPodExecOpt,
 		[]curl.Option{
-			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
+			curl.WithHost(kubeutils.ServiceFQDN(proxyObjectMeta)),
 			curl.WithHostHeader("www.example.com"),
 			curl.WithPath("/"),
 		},
@@ -252,7 +252,7 @@ func (s *testingSuite) TestInvalidOverlappingFilters() {
 // 		s.ctx,
 // 		defaults.CurlPodExecOpt,
 // 		[]curl.Option{
-// 			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
+// 			curl.WithHost(kubeutils.ServiceFQDN(proxyObjectMeta)),
 // 			curl.WithHostHeader("www.example.com"),
 // 			curl.WithPath("/"),
 // 		},
@@ -272,7 +272,7 @@ func (s *testingSuite) TestInvalidBackendRefFilter() {
 		s.ctx,
 		testdefaults.CurlPodExecOpt,
 		[]curl.Option{
-			curl.WithHost(kubeutils.ServiceFQDN(glooProxyObjectMeta)),
+			curl.WithHost(kubeutils.ServiceFQDN(proxyObjectMeta)),
 			curl.WithHostHeader("www.example.com"),
 			curl.WithPath("/not-implemented"),
 		},
