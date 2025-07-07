@@ -186,5 +186,5 @@ func (c *CommonCollections) InitPlugins(
 
 // GetControllerName returns the controller name for this collection
 func (c *CommonCollections) GetControllerName() string {
-	return c.controllerName
+	return c.ControllerName
 }
