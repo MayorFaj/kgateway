@@ -43,6 +43,10 @@ func (s *testingSuite) SetupSuite() {
 	err = s.ti.Actions.Kubectl().ApplyFile(s.ctx, testdefaults.CurlPodManifest)
 	s.NoError(err, "can apply curl pod manifest")
 
+	// Apply the gateway manifest once for the entire test suite
+	err = s.ti.Actions.Kubectl().ApplyFile(s.ctx, gatewayManifest)
+	s.NoError(err, "can apply gateway manifest")
+
 	// Check that istio injection is successful and httpbin is running
 	s.ti.Assertions.EventuallyObjectsExist(s.ctx, httpbinDeployment)
 	// httpbin can take a while to start up with Istio sidecar
@@ -53,24 +57,32 @@ func (s *testingSuite) SetupSuite() {
 		LabelSelector: "app.kubernetes.io/name=curl",
 	})
 
-	// include gateway manifests for the tests, so we recreate it for each test run
+	// Wait for the gateway and proxy to be ready
+	s.ti.Assertions.EventuallyObjectsExist(s.ctx, proxyService, proxyDeployment)
+	s.ti.Assertions.EventuallyPodsRunning(s.ctx, proxyDeployment.ObjectMeta.GetNamespace(), metav1.ListOptions{
+		LabelSelector: "app.kubernetes.io/name=gw",
+	})
+
+	// Only include test-specific manifests (no longer include gatewayManifest for each test)
 	s.manifests = map[string][]string{
-		"TestBasicDirectResponse": {gatewayManifest, basicDirectResponseManifests},
-		"TestDelegation":          {gatewayManifest, basicDelegationManifests},
-		// "TestInvalidDelegationConflictingFilters": {gatewayManifest, invalidDelegationConflictingFiltersManifests},
-		"TestInvalidMissingRef":         {gatewayManifest, invalidMissingRefManifests},
-		"TestInvalidOverlappingFilters": {gatewayManifest, invalidOverlappingFiltersManifests},
-		// "TestInvalidMultipleRouteActions":         {gatewayManifest, invalidMultipleRouteActionsManifests},
-		"TestInvalidBackendRefFilter": {gatewayManifest, invalidBackendRefFilterManifests},
+		"TestBasicDirectResponse": {basicDirectResponseManifests},
+		"TestDelegation":          {basicDelegationManifests},
+		// "TestInvalidDelegationConflictingFilters": {invalidDelegationConflictingFiltersManifests},
+		"TestInvalidMissingRef":         {invalidMissingRefManifests},
+		"TestInvalidOverlappingFilters": {invalidOverlappingFiltersManifests},
+		// "TestInvalidMultipleRouteActions":         {invalidMultipleRouteActionsManifests},
+		"TestInvalidBackendRefFilter": {invalidBackendRefFilterManifests},
 	}
 }
 
 func (s *testingSuite) TearDownSuite() {
-	err := s.ti.Actions.Kubectl().DeleteFileSafe(s.ctx, setupManifest)
+	err := s.ti.Actions.Kubectl().DeleteFileSafe(s.ctx, gatewayManifest)
+	s.NoError(err, "can delete gateway manifest")
+	err = s.ti.Actions.Kubectl().DeleteFileSafe(s.ctx, setupManifest)
 	s.NoError(err, "can delete setup manifest")
 	err = s.ti.Actions.Kubectl().DeleteFileSafe(s.ctx, testdefaults.CurlPodManifest)
 	s.NoError(err, "can delete curl pod manifest")
-	s.ti.Assertions.EventuallyObjectsNotExist(s.ctx, httpbinDeployment)
+	s.ti.Assertions.EventuallyObjectsNotExist(s.ctx, proxyService, proxyDeployment, httpbinDeployment)
 }
 
 func (s *testingSuite) BeforeTest(suiteName, testName string) {
@@ -82,13 +94,6 @@ func (s *testingSuite) BeforeTest(suiteName, testName string) {
 		err := s.ti.Actions.Kubectl().ApplyFile(s.ctx, manifest)
 		s.Assert().NoError(err, "can apply manifest "+manifest)
 	}
-
-	// we recreate the `Gateway` resource (and thus dynamically provision the proxy pod) for each test run
-	// so let's assert the proxy svc and pod is ready before moving on
-	s.ti.Assertions.EventuallyObjectsExist(s.ctx, proxyService, proxyDeployment)
-	s.ti.Assertions.EventuallyPodsRunning(s.ctx, proxyDeployment.ObjectMeta.GetNamespace(), metav1.ListOptions{
-		LabelSelector: "app.kubernetes.io/name=gw",
-	})
 }
 
 func (s *testingSuite) AfterTest(suiteName, testName string) {
@@ -102,10 +107,8 @@ func (s *testingSuite) AfterTest(suiteName, testName string) {
 		s.ti.Assertions.ExpectObjectDeleted(manifest, err, output)
 	}
 
-	// make sure the dynamically provisioned proxy resources are cleaned up
-	s.ti.Assertions.EventuallyObjectsNotExist(s.ctx, proxyService, proxyDeployment)
-	// make sure all the resources created by the tests are cleaned up (we just pass the list types to avoid needing to enumerate each object)
-	s.ti.Assertions.EventuallyObjectTypesNotExist(s.ctx, &gwv1.GatewayList{}, &gwv1.HTTPRouteList{}, &v1alpha1.DirectResponseList{})
+	// make sure all the test-specific resources are cleaned up
+	s.ti.Assertions.EventuallyObjectTypesNotExist(s.ctx, &gwv1.HTTPRouteList{}, &v1alpha1.DirectResponseList{})
 }
 
 func (s *testingSuite) TestBasicDirectResponse() {
