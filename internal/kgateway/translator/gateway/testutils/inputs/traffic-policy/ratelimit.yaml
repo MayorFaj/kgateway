@@ -1,0 +1,373 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: example-gateway
+  namespace: infra
+spec:
+  gatewayClassName: example-gateway-class
+  listeners:
+  - name: http1
+    protocol: HTTP
+    port: 80
+    hostname: "example.com"
+  - name: http2
+    protocol: HTTP
+    hostname: "no-ratelimit.example.com"
+    port: 80
+  - name: tls1
+    protocol: HTTPS
+    port: 443
+    tls:
+      mode: Terminate
+      certificateRefs:
+        - name: https
+          kind: Secret
+    hostname: "tls.example.com"
+  - name: tls2
+    hostname: "no-ratelimit-tls.example.com"
+    protocol: HTTPS
+    port: 443
+    tls:
+      mode: Terminate
+      certificateRefs:
+        - name: https
+          kind: Secret
+---
+# gateway extension that will be applied to the gateway
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: GatewayExtension
+metadata:
+  name: basic-gw-ratelimit
+  namespace: infra
+spec:
+  type: RateLimit
+  rateLimit:
+    grpcService:
+      backendRef:
+        name: rate-limit-service
+        port: 8081
+      timeout: 100ms
+    domain: "api-gateway"
+    failOpen: false
+---
+# gateway extension that will be applied to a section in the gateway
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: GatewayExtension
+metadata:
+  name: section-name-gw-ratelimit
+  namespace: infra
+spec:
+  type: RateLimit
+  rateLimit:
+    grpcService:
+      backendRef:
+        name: rate-limit-service
+        port: 8081
+      timeout: 200ms
+    domain: "api-gateway-section"
+    failOpen: true
+---
+# gateway extension that will be applied to routes
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: GatewayExtension
+metadata:
+  name: basic-ratelimit
+  namespace: infra
+spec:
+  type: RateLimit
+  rateLimit:
+    grpcService:
+      backendRef:
+        name: rate-limit-service
+        port: 8081
+      timeout: 50ms
+    domain: "api-gateway-routes"
+    failOpen: false
+---
+# add a bunch of routes in all the listeners.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: example-route
+  namespace: infra
+spec:
+  parentRefs:
+  - name: example-gateway  
+  hostnames:
+  - "example.com"
+  rules:
+  - backendRefs:
+    - name: example-svc
+      port: 80
+    matches:
+    - path:
+        type: PathPrefix
+        value: /example-route
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: example-route-no-ratelimit
+  namespace: infra
+spec:
+  parentRefs:
+  - name: example-gateway
+  hostnames:
+  - "no-ratelimit.example.com"
+  rules:
+  - backendRefs:
+    - name: example-svc
+      port: 80
+    matches:
+    - path:
+        type: PathPrefix
+        value: /example-route-no-ratelimit
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: example-tls-route
+  namespace: infra
+spec:
+  parentRefs:
+  - name: example-gateway
+  hostnames:
+  - "tls.example.com"
+  rules:
+  - backendRefs:
+    - name: example-svc
+      port: 80
+    matches:
+    - path:
+        type: PathPrefix
+        value: /example-tls-route
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: example-tls-sibling-route
+  namespace: infra
+spec:
+  parentRefs:
+  - name: example-gateway
+  hostnames:
+  - "tls.example.com"
+  rules:
+  - backendRefs:
+    - name: example-svc
+      port: 80
+    matches:
+    - path:
+        type: PathPrefix
+        value: /example-tls-sibling-route
+---
+# make sure we can handle extensionRef on a tls route (i.e. filter is only applied on the correct tls filter chain).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: example-tls-route-extension-ref
+  namespace: infra
+spec:
+  parentRefs:
+  - name: example-gateway  
+  hostnames:
+  - "tls.example.com"
+  rules:
+  - backendRefs:
+    - name: example-svc
+      port: 80
+    name: route-name
+    matches:
+    - path:
+        type: PathPrefix
+        value: /example-route-tls-section-name
+  - backendRefs:
+    - name: example-svc
+      port: 80
+    matches:
+    - path:
+        type: PathPrefix
+        value: /example-route-tls-extension-ref
+    filters:
+    - type: ExtensionRef
+      extensionRef:
+        name: ratelimit-for-extension-ref
+        group: gateway.kgateway.dev
+        kind: TrafficPolicy
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: example-tls-route-no-ratelimit
+  namespace: infra
+spec:
+  parentRefs:
+  - name: example-gateway  
+  hostnames:
+  - "no-ratelimit-tls.example.com"
+  rules:
+  - backendRefs:
+    - name: example-svc
+      port: 80
+    matches:
+    - path:
+        type: PathPrefix
+        value: /example-route-tls-no-ratelimit
+---
+# attach to the whole gw with IP-based rate limiting
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: ratelimit-for-gateway
+  namespace: infra
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: example-gateway
+  rateLimit:
+    global:
+      descriptors:
+      - entries:
+        - type: RemoteAddress
+      extensionRef:
+        name: basic-gw-ratelimit
+---
+# attach to a section in the gw with path-based rate limiting
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: ratelimit-for-gateway-section-name
+  namespace: infra
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: example-gateway
+    sectionName: http1
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: example-gateway
+    sectionName: tls1
+  rateLimit:
+    global:
+      descriptors:
+      - entries:
+        - type: Path
+      - entries:
+        - type: Generic
+          generic:
+            key: service
+            value: premium-api
+      extensionRef:
+        name: section-name-gw-ratelimit
+---
+# attach to http routes with header-based rate limiting. regular and tls. In the tls case, the filter should only apply to the tls.example.com filter chain.
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: ratelimit-for-http-route
+  namespace: infra
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: example-route
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: example-tls-route
+  rateLimit:
+    global:
+      descriptors:
+      - entries:
+        - type: Header
+          header: "X-User-ID"
+      - entries:
+        - type: Generic
+          generic:
+            key: route_type
+            value: user_specific
+      extensionRef:
+        name: basic-ratelimit
+---
+# this will be attached via an extensionRef, so no need for a targetRef.
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: ratelimit-for-extension-ref
+  namespace: infra
+spec:
+  rateLimit:
+    global:
+      descriptors:
+      - entries:
+        - type: RemoteAddress
+      - entries:
+        - type: Path
+      - entries:
+        - type: Header
+          header: "X-API-Key"
+      extensionRef:
+        name: basic-ratelimit
+---
+# this will be attached via an extensionRef, so no need for a targetRef.
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: ratelimit-for-route-section-name
+  namespace: infra
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: example-tls-route-extension-ref
+    sectionName: route-name
+  rateLimit:
+    global:
+      descriptors:
+      - entries:
+        - type: Generic
+          generic:
+            key: priority
+            value: high
+      extensionRef:
+        name: basic-ratelimit
+---
+# A test service and rate limit service
+apiVersion: v1
+kind: Service
+metadata:
+  name: example-svc
+  namespace: infra
+spec:
+  selector:
+    test: test
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: test
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: infra
+  name: rate-limit-service
+spec:
+  ports:
+  - port: 8081
+    targetPort: 8081
+    protocol: TCP
+    appProtocol: kubernetes.io/h2c
+  selector:
+    app: rate-limit-service
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  namespace: infra
+  name: https
+type: kubernetes.io/tls
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURGekNDQWYrZ0F3SUJBZ0lVVVAramhQa3Jpa2RxVzg3bEhNRHBXM3dZMTN3d0RRWUpLb1pJaHZjTkFRRUwKQlFBd0d6RVpNQmNHQTFVRUF3d1FkR1Z6ZEM1bGVHRnRjR3hsTG1OdmJUQWVGdzB5TlRBM01ESXhNak0wTWpSYQpGdzB5TmpBM01ESXhNak0wTWpSYU1Cc3hHVEFYQmdOVkJBTU1FSFJsYzNRdVpYaGhiWEJzWlM1amIyMHdnZ0VpCk1BMEdDU3FHU0liM0RRRUJBUVVBQTRJQkR3QXdnZ0VLQW9JQkFRQzJ4UGkreEwrNU05ZTZ1SmI0QjlmOURzMnoKMU1xZXEyT21FYVBBd2cxQk9hUnBnOXBaNVg5amFqL0xHa0o4WDdCUjZEZk1PRXZ4RUJ1MnVndk8vemxOVmQyMwp1V2N4ZFNNalJCNTJtR1pETnljc1NDS1NKNzFFZWFXamhJNytJR2RKSjJyemF3Mk5ad2lDZmNqVmdrSDdHZnhmCk9ZYzdtbTE4d2lmOVl4VkppODdJRjhhQkpFNnU3YUtoblFUK1NnRDJ3OTErT1pORlZCZEZFSWNxalJIMVdNT0YKS2tDWThlanIwYWlCV2ltUVZrNDFpTGoxL0YvYlNxaGRhZE1sQlJjM1RvTEZYT1kzOUhsVTdEcTdjZjJRZlZ3Zgp6a1VWaUZ3cHp2UEVUWC9XVk85SWlWRXhEM2NwQzN6VWpEdWtqU0FkMjZRUzR4UDRtdm5qbzNweW1OVG5BZ01CCkFBR2pVekJSTUIwR0ExVWREZ1FXQkJTazNGbFdpSDkyMzZ5NWhoajdJdFQvZWZTc1ZqQWZCZ05WSFNNRUdEQVcKZ0JTazNGbFdpSDkyMzZ5NWhoajdJdFQvZWZTc1ZqQVBCZ05WSFJNQkFmOEVCVEFEQVFIL01BMEdDU3FHU0liMwpEUUVCQ3dVQUE0SUJBUUIvajhlRDRUZlV1Q1BQQ3AzN1BkL1lpV1VGYTBwWldEMXJKY3dadG1aRlcyRTcvODZUCmwweUJFY2diS0lzWm1VVDJybkpHNHpjQ3VtQXhwelA1THVvTzlXdTVSVWdxRmJNK25HblEzOXc1M21WQzNDVjQKaGNaeFNOaXpNaWNTd21BMDFNNEhUZHY5UDd0ai83bTl0VGI4VlEvVHl3STNrZE1hak9QREkrR3RyRTc2bStwUApzb3pRb3R2Uk1SbW9uYTkrNDk2TEJGc1N0QmFQOE5pQXFaZnVsZU5qMGhEMW9BZEwzZWtRK0haMWIxQUJmYTZECkJ4SXJRQ1Z2eUM0SmwwekxtbkVEUElCdnNyb0NWaXZxNEMvTUtYYlhzbi9iRHJoTUhkNXlxRHYxL21tdkdSU24KMmI1dk5hMWFWdElxV0pHS3B1STJyS3pkN0xTSVF2K2t1RkYzCi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2UUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktjd2dnU2pBZ0VBQW9JQkFRQzJ4UGkreEwrNU05ZTYKdUpiNEI5ZjlEczJ6MU1xZXEyT21FYVBBd2cxQk9hUnBnOXBaNVg5amFqL0xHa0o4WDdCUjZEZk1PRXZ4RUJ1Mgp1Z3ZPL3psTlZkMjN1V2N4ZFNNalJCNTJtR1pETnljc1NDS1NKNzFFZWFXamhJNytJR2RKSjJyemF3Mk5ad2lDCmZjalZna0g3R2Z4Zk9ZYzdtbTE4d2lmOVl4VkppODdJRjhhQkpFNnU3YUtoblFUK1NnRDJ3OTErT1pORlZCZEYKRUljcWpSSDFXTU9GS2tDWThlanIwYWlCV2ltUVZrNDFpTGoxL0YvYlNxaGRhZE1sQlJjM1RvTEZYT1kzOUhsVQo3RHE3Y2YyUWZWd2Z6a1VWaUZ3cHp2UEVUWC9XVk85SWlWRXhEM2NwQzN6VWpEdWtqU0FkMjZRUzR4UDRtdm5qCm8zcHltTlRuQWdNQkFBRUNnZ0VBQnZ3cGZZWkxjQ3FPWTNFaE9VTE9KYnBtY05SVndoRk94NlFEbkI3NUhyV3oKUU9Kc2VvOE9KVXN1NWt1UFN1MlA4WWJCeXlqdVRoSTRNa0xvcDBxVEhXVGJYN3JTNU0yb2xYVWZBa0treXpZcQpaY09EL3JpaUZTSGVZTGQwNGpySmQ3N3RQc3hTbDVyZWRRNUFSSzRCRTRyL1hZR2lBaUhPeEJFdmgyYm9BMTE4Cm1pejZzMjhhSXVxekZoUUdpOEh5ejREOVJCUzJkRWFsazFWK2V1QVhocHFxZ29HRms4TFhrWGxtUlpzZVdYN0MKZEpyVjhQL0grTGZXb3JCM09KRGs3SWIrek9Cc0pLeklwM3NiRlVsajdraGcyd2xjYi9SZUQrUU5BR1VQR3h1YQpHVndqRFVBSmpwb1RmamhIdjdhYUwwaWtyVVB6a1J2TEFQdjBwc0syb1FLQmdRRE05V2tyZkFhZjh2ZVNxR2lzCk1aSkNtOWFVVkUwdGY4eWkxL3owaGxRYlJFb25Mc2xZM0NCWlFZMHZ1T1owWFc1U29PQ1BUamRKRW1lUjFHTFIKVS9BSUJwRmhnNW5VMVIxaEprUkkyOWtPaGFHVXFBREpSR1ErZWdhK0IrQldLNVhUa3hGVFdFRjBSRDhVWENkQQpXa2lzaFBrU1V0VjV2VjdqNy9ibitSR09hUUtCZ1FEa1NQSmlBMTFNODhBSENTdjRWaHJDb3NRdjZURnZyK0p2CnFJVmlmMHowcFBvT0ZDVE1OdUcxN1Zxa29WV0d6U0R6ejBMYUJHWllGRlk5M2E0cGtxZWNnS3kxZVN1eHJKdlEKUko4WTRKSXpKYXlDbzRhc0lURGJPV21LaGk1am92bHkxRDVmSlFKMjNyUVNsWlRSbHVOdWJpVWxTQkErTS9EcQptcFg4c3ZkK3p3S0JnSCszTlEvWnV5OFVjZDA3Zis0OC9ZendHdWhYRjdpUWVHM0k5V0ZTQ3pycWRPS3hydG5tCllXbjlCUU9Gem1VWWkxU0YxeWkxYnBIa0hCR3RMTjZQMVhUSzB2RFcxcGJmTGUySnNPZE54NVhiQTNMa3RZaTEKUzFuN0pCUnFTQXFxSWpTeTRncnpaZVlUV05OUkVVeHlkZks2OFpIUGVDTGlOQzBKTE93a01pSnhBb0dCQUkvMgpGS3lNdEp6ZnBueUpZeW96bXFLZHBKMFdNTy9lK2l3eUdSTzVkZDFkNExkYUtxNkIrYXNSNkxTamJWMGFKU3E3CnpNdlNOSHhkTHRuSzM1Y2wvZjlyQWY5YlQ1dTNYM2RpbnZaQVFOSnljcXpiMVFUZDFZS2FYUjFYYXcrNGFoanAKRWdCTVJaYVM4UG83VEdNMEJXN1JsU2xDbmNPc1c4U0hBZ2tmRDRidkFvR0FUdmxGT0JiNDJmb3hIMTZsQzVtbQpsZThYdWd0eE5zUGY1OTVUVWw4OFRVZVhnZXlFUlQwMDY4NGo4M0pxcjViTENoc016RlYraTUwUjVQWnZsYW1tCnVkdm04NEFmblN1MktHaVBoTFovZkU2K3NVT284NWIza3R6UkZreFBIQklkbEt6V3FWRDhhV0NjcmxGbjdXTVUKM3RlUllXL2NFRFExUFRnTGZBa2I3Rms9Ci0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K
+  ca.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURGekNDQWYrZ0F3SUJBZ0lVVVAramhQa3Jpa2RxVzg3bEhNRHBXM3dZMTN3d0RRWUpKb1pJaHZjTkFRRUwKQlFBd0d6RVpNQmNHQTFVRUF3d1FkR1Z6ZEM1bGVHRnRjR3hsTG1OdmJUQWVGdzB5TlRBM01ESXhNak0wTWpSYQpGdzB5TmpBM01ESXhNak0wTWpSYU1Cc3hHVEFYQmdOVkJBTU1FSFJsYzNRdVpYaGhiWEJzWlM1amIyMHdnZ0VpCk1BMEdDU3FHU0liM0RRRUJBUVVBQTRJQkR3QXdnZ0VLQW9JQkFRQzJ4UGkreEwrNU05ZTZ1SmI0QjlmOURzMnoKMU1xZXEyT21FYVBBd2cxQk9hUnBnOXBaNVg5amFqL0xHa0o4WDdCUjZEZk1PRXZ4RUJ1MnVndk8vemxOVmQyMwp1V2N4ZFNNalJCNTJtR1pETnljc1NDS1NKNzFFZWFXamhJNytJR2RKSjJyemF3Mk5ad2lDZmNqVmdrSDdHZnhmCk9ZYzdtbTE4d2lmOVl4VkppODdJRjhhQkpFNnU3YUtoblFUK1NnRDJ3OTErT1pORlZCZEZFSWNxalJIMVdNT0YKS2tDWThlanIwYWlCV2ltUVZrNDFpTGoxL0YvYlNxaGRhZE1sQlJjM1RvTEZYT1kzOUhsVTdEcTdjZjJRZlZ3Zgp6a1VWaUZ3cHp2UEVUWC9XVk85SWlWRXhEM2NwQzN6VWpEdWtqU0FkMjZRUzR4UDRtdm5qbzNweW1OVG5BZ01CCkFBR2pVekJSTUIwR0ExVWREZ1FXQkJTazNGbFdpSDkyMzZ5NWhoajdJdFQvZWZTc1ZqQWZCZ05WSFNNRUdEQVcKZ0JTazNGbFdpSDkyMzZ5NWhoajdJdFQvZWZTc1ZqQVBCZ05WSFJNQkFmOEVCVEFEQVFIL01BMEdDU3FHU0liMwpEUUVCQ3dVQUE0SUJBUUIvajhlRDRUZlV1Q1BQQ3AzN1BkL1lpV1VGYTBwWldEMXJKY3dadG1aRlcyRTcvODZUCmwweUJFY2diS0lzWm1VVDJybkpHNHpjQ3VtQXhwelA1THVvTzlXdTVSVWdxRmJNK25HblEzOXc1M21WQzNDVjQKaGNaeFNOaXpNaWNTd21BMDFNNEhUZHY5UDd0ai83bTl0VGI4VlEvVHl3STNrZE1hak9QREkrR3RyRTc2bStwUApzb3pRb3R2Uk1SbW9uYTkrNDk2TEJGc1N0QmFQOE5pQXFaZnVsZU5qMGhEMW9BZEwzZWtRK0haMWIxQUJmYTZECkJ4SXJRQ1Z2eUM0SmwwekxtbkVEUElCdnNyb0NWaXZxNEMvTUtYYlhzbi9iRHJoTUhkNXlxRHYxL21tdkdSU24KMmI1dk5hMWFWdElxV0pHS3B1STJyS3pkN0xTSVF2K2t1RkYzCi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K

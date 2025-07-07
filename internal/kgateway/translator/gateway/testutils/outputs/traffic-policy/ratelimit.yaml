@@ -1,0 +1,356 @@
+Clusters:
+- connectTimeout: 5s
+  edsClusterConfig:
+    edsConfig:
+      ads: {}
+      resourceApiVersion: V3
+  ignoreHealthOnHostRemoval: true
+  metadata: {}
+  name: kube_infra_example-svc_80
+  type: EDS
+- connectTimeout: 5s
+  edsClusterConfig:
+    edsConfig:
+      ads: {}
+      resourceApiVersion: V3
+  ignoreHealthOnHostRemoval: true
+  metadata: {}
+  name: kube_infra_rate-limit-service_8081
+  type: EDS
+  typedExtensionProtocolOptions:
+    envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+      '@type': type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+      explicitHttpConfig:
+        http2ProtocolOptions: {}
+- connectTimeout: 5s
+  metadata: {}
+  name: test-backend-plugin_default_example-svc_80
+Listeners:
+- address:
+    socketAddress:
+      address: '::'
+      ipv4Compat: true
+      portValue: 8443
+  filterChains:
+  - filterChainMatch:
+      serverNames:
+      - tls.example.com
+    filters:
+    - name: envoy.filters.network.http_connection_manager
+      typedConfig:
+        '@type': type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+        httpFilters:
+        - name: ratelimit/infra/basic-ratelimit
+          typedConfig:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+            domain: api-gateway-routes
+            enableXRatelimitHeaders: DRAFT_VERSION_03
+            failureModeDeny: true
+            rateLimitService:
+              grpcService:
+                envoyGrpc:
+                  clusterName: kube_infra_rate-limit-service_8081
+                timeout: 0.050s
+              transportApiVersion: V3
+            requestType: both
+            statPrefix: http_rate_limit
+        - name: ratelimit/infra/section-name-gw-ratelimit
+          typedConfig:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+            domain: api-gateway-section
+            enableXRatelimitHeaders: DRAFT_VERSION_03
+            rateLimitService:
+              grpcService:
+                envoyGrpc:
+                  clusterName: kube_infra_rate-limit-service_8081
+                timeout: 0.200s
+              transportApiVersion: V3
+            requestType: both
+            statPrefix: http_rate_limit
+        - name: envoy.filters.http.router
+          typedConfig:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+        mergeSlashes: true
+        normalizePath: true
+        rds:
+          configSource:
+            ads: {}
+            resourceApiVersion: V3
+          routeConfigName: tls1
+        statPrefix: http
+        useRemoteAddress: true
+    name: tls1
+    transportSocket:
+      name: envoy.transport_sockets.tls
+      typedConfig:
+        '@type': type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+        commonTlsContext:
+          tlsCertificates:
+          - certificateChain:
+              inlineBytes: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURGekNDQWYrZ0F3SUJBZ0lVVVAramhQa3Jpa2RxVzg3bEhNRHBXM3dZMTN3d0RRWUpLb1pJaHZjTkFRRUwKQlFBd0d6RVpNQmNHQTFVRUF3d1FkR1Z6ZEM1bGVHRnRjR3hsTG1OdmJUQWVGdzB5TlRBM01ESXhNak0wTWpSYQpGdzB5TmpBM01ESXhNak0wTWpSYU1Cc3hHVEFYQmdOVkJBTU1FSFJsYzNRdVpYaGhiWEJzWlM1amIyMHdnZ0VpCk1BMEdDU3FHU0liM0RRRUJBUVVBQTRJQkR3QXdnZ0VLQW9JQkFRQzJ4UGkreEwrNU05ZTZ1SmI0QjlmOURzMnoKMU1xZXEyT21FYVBBd2cxQk9hUnBnOXBaNVg5amFqL0xHa0o4WDdCUjZEZk1PRXZ4RUJ1MnVndk8vemxOVmQyMwp1V2N4ZFNNalJCNTJtR1pETnljc1NDS1NKNzFFZWFXamhJNytJR2RKSjJyemF3Mk5ad2lDZmNqVmdrSDdHZnhmCk9ZYzdtbTE4d2lmOVl4VkppODdJRjhhQkpFNnU3YUtoblFUK1NnRDJ3OTErT1pORlZCZEZFSWNxalJIMVdNT0YKS2tDWThlanIwYWlCV2ltUVZrNDFpTGoxL0YvYlNxaGRhZE1sQlJjM1RvTEZYT1kzOUhsVTdEcTdjZjJRZlZ3Zgp6a1VWaUZ3cHp2UEVUWC9XVk85SWlWRXhEM2NwQzN6VWpEdWtqU0FkMjZRUzR4UDRtdm5qbzNweW1OVG5BZ01CCkFBR2pVekJSTUIwR0ExVWREZ1FXQkJTazNGbFdpSDkyMzZ5NWhoajdJdFQvZWZTc1ZqQWZCZ05WSFNNRUdEQVcKZ0JTazNGbFdpSDkyMzZ5NWhoajdJdFQvZWZTc1ZqQVBCZ05WSFJNQkFmOEVCVEFEQVFIL01BMEdDU3FHU0liMwpEUUVCQ3dVQUE0SUJBUUIvajhlRDRUZlV1Q1BQQ3AzN1BkL1lpV1VGYTBwWldEMXJKY3dadG1aRlcyRTcvODZUCmwweUJFY2diS0lzWm1VVDJybkpHNHpjQ3VtQXhwelA1THVvTzlXdTVSVWdxRmJNK25HblEzOXc1M21WQzNDVjQKaGNaeFNOaXpNaWNTd21BMDFNNEhUZHY5UDd0ai83bTl0VGI4VlEvVHl3STNrZE1hak9QREkrR3RyRTc2bStwUApzb3pRb3R2Uk1SbW9uYTkrNDk2TEJGc1N0QmFQOE5pQXFaZnVsZU5qMGhEMW9BZEwzZWtRK0haMWIxQUJmYTZECkJ4SXJRQ1Z2eUM0SmwwekxtbkVEUElCdnNyb0NWaXZxNEMvTUtYYlhzbi9iRHJoTUhkNXlxRHYxL21tdkdSU24KMmI1dk5hMWFWdElxV0pHS3B1STJyS3pkN0xTSVF2K2t1RkYzCi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+            privateKey:
+              inlineBytes: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2UUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktjd2dnU2pBZ0VBQW9JQkFRQzJ4UGkreEwrNU05ZTYKdUpiNEI5ZjlEczJ6MU1xZXEyT21FYVBBd2cxQk9hUnBnOXBaNVg5amFqL0xHa0o4WDdCUjZEZk1PRXZ4RUJ1Mgp1Z3ZPL3psTlZkMjN1V2N4ZFNNalJCNTJtR1pETnljc1NDS1NKNzFFZWFXamhJNytJR2RKSjJyemF3Mk5ad2lDCmZjalZna0g3R2Z4Zk9ZYzdtbTE4d2lmOVl4VkppODdJRjhhQkpFNnU3YUtoblFUK1NnRDJ3OTErT1pORlZCZEYKRUljcWpSSDFXTU9GS2tDWThlanIwYWlCV2ltUVZrNDFpTGoxL0YvYlNxaGRhZE1sQlJjM1RvTEZYT1kzOUhsVQo3RHE3Y2YyUWZWd2Z6a1VWaUZ3cHp2UEVUWC9XVk85SWlWRXhEM2NwQzN6VWpEdWtqU0FkMjZRUzR4UDRtdm5qCm8zcHltTlRuQWdNQkFBRUNnZ0VBQnZ3cGZZWkxjQ3FPWTNFaE9VTE9KYnBtY05SVndoRk94NlFEbkI3NUhyV3oKUU9Kc2VvOE9KVXN1NWt1UFN1MlA4WWJCeXlqdVRoSTRNa0xvcDBxVEhXVGJYN3JTNU0yb2xYVWZBa0treXpZcQpaY09EL3JpaUZTSGVZTGQwNGpySmQ3N3RQc3hTbDVyZWRRNUFSSzRCRTRyL1hZR2lBaUhPeEJFdmgyYm9BMTE4Cm1pejZzMjhhSXVxekZoUUdpOEh5ejREOVJCUzJkRWFsazFWK2V1QVhocHFxZ29HRms4TFhrWGxtUlpzZVdYN0MKZEpyVjhQL0grTGZXb3JCM09KRGs3SWIrek9Cc0pLeklwM3NiRlVsajdraGcyd2xjYi9SZUQrUU5BR1VQR3h1YQpHVndqRFVBSmpwb1RmamhIdjdhYUwwaWtyVVB6a1J2TEFQdjBwc0syb1FLQmdRRE05V2tyZkFhZjh2ZVNxR2lzCk1aSkNtOWFVVkUwdGY4eWkxL3owaGxRYlJFb25Mc2xZM0NCWlFZMHZ1T1owWFc1U29PQ1BUamRKRW1lUjFHTFIKVS9BSUJwRmhnNW5VMVIxaEprUkkyOWtPaGFHVXFBREpSR1ErZWdhK0IrQldLNVhUa3hGVFdFRjBSRDhVWENkQQpXa2lzaFBrU1V0VjV2VjdqNy9ibitSR09hUUtCZ1FEa1NQSmlBMTFNODhBSENTdjRWaHJDb3NRdjZURnZyK0p2CnFJVmlmMHowcFBvT0ZDVE1OdUcxN1Zxa29WV0d6U0R6ejBMYUJHWllGRlk5M2E0cGtxZWNnS3kxZVN1eHJKdlEKUko4WTRKSXpKYXlDbzRhc0lURGJPV21LaGk1am92bHkxRDVmSlFKMjNyUVNsWlRSbHVOdWJpVWxTQkErTS9EcQptcFg4c3ZkK3p3S0JnSCszTlEvWnV5OFVjZDA3Zis0OC9ZendHdWhYRjdpUWVHM0k5V0ZTQ3pycWRPS3hydG5tCllXbjlCUU9Gem1VWWkxU0YxeWkxYnBIa0hCR3RMTjZQMVhUSzB2RFcxcGJmTGUySnNPZE54NVhiQTNMa3RZaTEKUzFuN0pCUnFTQXFxSWpTeTRncnpaZVlUV05OUkVVeHlkZks2OFpIUGVDTGlOQzBKTE93a01pSnhBb0dCQUkvMgpGS3lNdEp6ZnBueUpZeW96bXFLZHBKMFdNTy9lK2l3eUdSTzVkZDFkNExkYUtxNkIrYXNSNkxTamJWMGFKU3E3CnpNdlNOSHhkTHRuSzM1Y2wvZjlyQWY5YlQ1dTNYM2RpbnZaQVFOSnljcXpiMVFUZDFZS2FYUjFYYXcrNGFoanAKRWdCTVJaYVM4UG83VEdNMEJXN1JsU2xDbmNPc1c4U0hBZ2tmRDRidkFvR0FUdmxGT0JiNDJmb3hIMTZsQzVtbQpsZThYdWd0eE5zUGY1OTVUVWw4OFRVZVhnZXlFUlQwMDY4NGo4M0pxcjViTENoc016RlYraTUwUjVQWnZsYW1tCnVkdm04NEFmblN1MktHaVBoTFovZkU2K3NVT284NWIza3R6UkZreFBIQklkbEt6V3FWRDhhV0NjcmxGbjdXTVUKM3RlUllXL2NFRFExUFRnTGZBa2I3Rms9Ci0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K
+          tlsParams: {}
+  - filterChainMatch:
+      serverNames:
+      - no-ratelimit-tls.example.com
+    filters:
+    - name: envoy.filters.network.http_connection_manager
+      typedConfig:
+        '@type': type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+        httpFilters:
+        - name: ratelimit/infra/basic-gw-ratelimit
+          typedConfig:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+            domain: api-gateway
+            enableXRatelimitHeaders: DRAFT_VERSION_03
+            failureModeDeny: true
+            rateLimitService:
+              grpcService:
+                envoyGrpc:
+                  clusterName: kube_infra_rate-limit-service_8081
+                timeout: 0.100s
+              transportApiVersion: V3
+            requestType: both
+            statPrefix: http_rate_limit
+        - name: envoy.filters.http.router
+          typedConfig:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+        mergeSlashes: true
+        normalizePath: true
+        rds:
+          configSource:
+            ads: {}
+            resourceApiVersion: V3
+          routeConfigName: tls2
+        statPrefix: http
+        useRemoteAddress: true
+    name: tls2
+    transportSocket:
+      name: envoy.transport_sockets.tls
+      typedConfig:
+        '@type': type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+        commonTlsContext:
+          tlsCertificates:
+          - certificateChain:
+              inlineBytes: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURGekNDQWYrZ0F3SUJBZ0lVVVAramhQa3Jpa2RxVzg3bEhNRHBXM3dZMTN3d0RRWUpLb1pJaHZjTkFRRUwKQlFBd0d6RVpNQmNHQTFVRUF3d1FkR1Z6ZEM1bGVHRnRjR3hsTG1OdmJUQWVGdzB5TlRBM01ESXhNak0wTWpSYQpGdzB5TmpBM01ESXhNak0wTWpSYU1Cc3hHVEFYQmdOVkJBTU1FSFJsYzNRdVpYaGhiWEJzWlM1amIyMHdnZ0VpCk1BMEdDU3FHU0liM0RRRUJBUVVBQTRJQkR3QXdnZ0VLQW9JQkFRQzJ4UGkreEwrNU05ZTZ1SmI0QjlmOURzMnoKMU1xZXEyT21FYVBBd2cxQk9hUnBnOXBaNVg5amFqL0xHa0o4WDdCUjZEZk1PRXZ4RUJ1MnVndk8vemxOVmQyMwp1V2N4ZFNNalJCNTJtR1pETnljc1NDS1NKNzFFZWFXamhJNytJR2RKSjJyemF3Mk5ad2lDZmNqVmdrSDdHZnhmCk9ZYzdtbTE4d2lmOVl4VkppODdJRjhhQkpFNnU3YUtoblFUK1NnRDJ3OTErT1pORlZCZEZFSWNxalJIMVdNT0YKS2tDWThlanIwYWlCV2ltUVZrNDFpTGoxL0YvYlNxaGRhZE1sQlJjM1RvTEZYT1kzOUhsVTdEcTdjZjJRZlZ3Zgp6a1VWaUZ3cHp2UEVUWC9XVk85SWlWRXhEM2NwQzN6VWpEdWtqU0FkMjZRUzR4UDRtdm5qbzNweW1OVG5BZ01CCkFBR2pVekJSTUIwR0ExVWREZ1FXQkJTazNGbFdpSDkyMzZ5NWhoajdJdFQvZWZTc1ZqQWZCZ05WSFNNRUdEQVcKZ0JTazNGbFdpSDkyMzZ5NWhoajdJdFQvZWZTc1ZqQVBCZ05WSFJNQkFmOEVCVEFEQVFIL01BMEdDU3FHU0liMwpEUUVCQ3dVQUE0SUJBUUIvajhlRDRUZlV1Q1BQQ3AzN1BkL1lpV1VGYTBwWldEMXJKY3dadG1aRlcyRTcvODZUCmwweUJFY2diS0lzWm1VVDJybkpHNHpjQ3VtQXhwelA1THVvTzlXdTVSVWdxRmJNK25HblEzOXc1M21WQzNDVjQKaGNaeFNOaXpNaWNTd21BMDFNNEhUZHY5UDd0ai83bTl0VGI4VlEvVHl3STNrZE1hak9QREkrR3RyRTc2bStwUApzb3pRb3R2Uk1SbW9uYTkrNDk2TEJGc1N0QmFQOE5pQXFaZnVsZU5qMGhEMW9BZEwzZWtRK0haMWIxQUJmYTZECkJ4SXJRQ1Z2eUM0SmwwekxtbkVEUElCdnNyb0NWaXZxNEMvTUtYYlhzbi9iRHJoTUhkNXlxRHYxL21tdkdSU24KMmI1dk5hMWFWdElxV0pHS3B1STJyS3pkN0xTSVF2K2t1RkYzCi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+            privateKey:
+              inlineBytes: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2UUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktjd2dnU2pBZ0VBQW9JQkFRQzJ4UGkreEwrNU05ZTYKdUpiNEI5ZjlEczJ6MU1xZXEyT21FYVBBd2cxQk9hUnBnOXBaNVg5amFqL0xHa0o4WDdCUjZEZk1PRXZ4RUJ1Mgp1Z3ZPL3psTlZkMjN1V2N4ZFNNalJCNTJtR1pETnljc1NDS1NKNzFFZWFXamhJNytJR2RKSjJyemF3Mk5ad2lDCmZjalZna0g3R2Z4Zk9ZYzdtbTE4d2lmOVl4VkppODdJRjhhQkpFNnU3YUtoblFUK1NnRDJ3OTErT1pORlZCZEYKRUljcWpSSDFXTU9GS2tDWThlanIwYWlCV2ltUVZrNDFpTGoxL0YvYlNxaGRhZE1sQlJjM1RvTEZYT1kzOUhsVQo3RHE3Y2YyUWZWd2Z6a1VWaUZ3cHp2UEVUWC9XVk85SWlWRXhEM2NwQzN6VWpEdWtqU0FkMjZRUzR4UDRtdm5qCm8zcHltTlRuQWdNQkFBRUNnZ0VBQnZ3cGZZWkxjQ3FPWTNFaE9VTE9KYnBtY05SVndoRk94NlFEbkI3NUhyV3oKUU9Kc2VvOE9KVXN1NWt1UFN1MlA4WWJCeXlqdVRoSTRNa0xvcDBxVEhXVGJYN3JTNU0yb2xYVWZBa0treXpZcQpaY09EL3JpaUZTSGVZTGQwNGpySmQ3N3RQc3hTbDVyZWRRNUFSSzRCRTRyL1hZR2lBaUhPeEJFdmgyYm9BMTE4Cm1pejZzMjhhSXVxekZoUUdpOEh5ejREOVJCUzJkRWFsazFWK2V1QVhocHFxZ29HRms4TFhrWGxtUlpzZVdYN0MKZEpyVjhQL0grTGZXb3JCM09KRGs3SWIrek9Cc0pLeklwM3NiRlVsajdraGcyd2xjYi9SZUQrUU5BR1VQR3h1YQpHVndqRFVBSmpwb1RmamhIdjdhYUwwaWtyVVB6a1J2TEFQdjBwc0syb1FLQmdRRE05V2tyZkFhZjh2ZVNxR2lzCk1aSkNtOWFVVkUwdGY4eWkxL3owaGxRYlJFb25Mc2xZM0NCWlFZMHZ1T1owWFc1U29PQ1BUamRKRW1lUjFHTFIKVS9BSUJwRmhnNW5VMVIxaEprUkkyOWtPaGFHVXFBREpSR1ErZWdhK0IrQldLNVhUa3hGVFdFRjBSRDhVWENkQQpXa2lzaFBrU1V0VjV2VjdqNy9ibitSR09hUUtCZ1FEa1NQSmlBMTFNODhBSENTdjRWaHJDb3NRdjZURnZyK0p2CnFJVmlmMHowcFBvT0ZDVE1OdUcxN1Zxa29WV0d6U0R6ejBMYUJHWllGRlk5M2E0cGtxZWNnS3kxZVN1eHJKdlEKUko4WTRKSXpKYXlDbzRhc0lURGJPV21LaGk1am92bHkxRDVmSlFKMjNyUVNsWlRSbHVOdWJpVWxTQkErTS9EcQptcFg4c3ZkK3p3S0JnSCszTlEvWnV5OFVjZDA3Zis0OC9ZendHdWhYRjdpUWVHM0k5V0ZTQ3pycWRPS3hydG5tCllXbjlCUU9Gem1VWWkxU0YxeWkxYnBIa0hCR3RMTjZQMVhUSzB2RFcxcGJmTGUySnNPZE54NVhiQTNMa3RZaTEKUzFuN0pCUnFTQXFxSWpTeTRncnpaZVlUV05OUkVVeHlkZks2OFpIUGVDTGlOQzBKTE93a01pSnhBb0dCQUkvMgpGS3lNdEp6ZnBueUpZeW96bXFLZHBKMFdNTy9lK2l3eUdSTzVkZDFkNExkYUtxNkIrYXNSNkxTamJWMGFKU3E3CnpNdlNOSHhkTHRuSzM1Y2wvZjlyQWY5YlQ1dTNYM2RpbnZaQVFOSnljcXpiMVFUZDFZS2FYUjFYYXcrNGFoanAKRWdCTVJaYVM4UG83VEdNMEJXN1JsU2xDbmNPc1c4U0hBZ2tmRDRidkFvR0FUdmxGT0JiNDJmb3hIMTZsQzVtbQpsZThYdWd0eE5zUGY1OTVUVWw4OFRVZVhnZXlFUlQwMDY4NGo4M0pxcjViTENoc016RlYraTUwUjVQWnZsYW1tCnVkdm04NEFmblN1MktHaVBoTFovZkU2K3NVT284NWIza3R6UkZreFBIQklkbEt6V3FWRDhhV0NjcmxGbjdXTVUKM3RlUllXL2NFRFExUFRnTGZBa2I3Rms9Ci0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K
+          tlsParams: {}
+  listenerFilters:
+  - name: envoy.filters.listener.tls_inspector
+    typedConfig:
+      '@type': type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
+  name: listener~443
+- address:
+    socketAddress:
+      address: '::'
+      ipv4Compat: true
+      portValue: 8080
+  filterChains:
+  - filters:
+    - name: envoy.filters.network.http_connection_manager
+      typedConfig:
+        '@type': type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+        httpFilters:
+        - name: ratelimit/infra/basic-gw-ratelimit
+          typedConfig:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+            domain: api-gateway
+            enableXRatelimitHeaders: DRAFT_VERSION_03
+            failureModeDeny: true
+            rateLimitService:
+              grpcService:
+                envoyGrpc:
+                  clusterName: kube_infra_rate-limit-service_8081
+                timeout: 0.100s
+              transportApiVersion: V3
+            requestType: both
+            statPrefix: http_rate_limit
+        - name: ratelimit/infra/basic-ratelimit
+          typedConfig:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+            domain: api-gateway-routes
+            enableXRatelimitHeaders: DRAFT_VERSION_03
+            failureModeDeny: true
+            rateLimitService:
+              grpcService:
+                envoyGrpc:
+                  clusterName: kube_infra_rate-limit-service_8081
+                timeout: 0.050s
+              transportApiVersion: V3
+            requestType: both
+            statPrefix: http_rate_limit
+        - name: ratelimit/infra/section-name-gw-ratelimit
+          typedConfig:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+            domain: api-gateway-section
+            enableXRatelimitHeaders: DRAFT_VERSION_03
+            rateLimitService:
+              grpcService:
+                envoyGrpc:
+                  clusterName: kube_infra_rate-limit-service_8081
+                timeout: 0.200s
+              transportApiVersion: V3
+            requestType: both
+            statPrefix: http_rate_limit
+        - name: envoy.filters.http.router
+          typedConfig:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+        mergeSlashes: true
+        normalizePath: true
+        rds:
+          configSource:
+            ads: {}
+            resourceApiVersion: V3
+          routeConfigName: listener~80
+        statPrefix: http
+        useRemoteAddress: true
+    name: listener~80
+  name: listener~80
+Routes:
+- ignorePortInHostMatching: true
+  name: listener~80
+  typedPerFilterConfig:
+    ratelimit/infra/basic-gw-ratelimit:
+      '@type': type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimitPerRoute
+      rateLimits:
+      - actions:
+        - remoteAddress: {}
+  virtualHosts:
+  - domains:
+    - example.com
+    name: listener~80~example_com
+    routes:
+    - match:
+        pathSeparatedPrefix: /example-route
+      name: listener~80~example_com-route-0-httproute-example-route-infra-0-0-matcher-0
+      route:
+        cluster: kube_infra_example-svc_80
+        clusterNotFoundResponseCode: INTERNAL_SERVER_ERROR
+      typedPerFilterConfig:
+        ratelimit/infra/basic-ratelimit:
+          '@type': type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimitPerRoute
+          rateLimits:
+          - actions:
+            - requestHeaders:
+                descriptorKey: X-User-ID
+                headerName: X-User-ID
+            - genericKey:
+                descriptorKey: route_type
+                descriptorValue: user_specific
+    typedPerFilterConfig:
+      ratelimit/infra/section-name-gw-ratelimit:
+        '@type': type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimitPerRoute
+        rateLimits:
+        - actions:
+          - requestHeaders:
+              descriptorKey: path
+              headerName: :path
+          - genericKey:
+              descriptorKey: service
+              descriptorValue: premium-api
+  - domains:
+    - no-ratelimit.example.com
+    name: listener~80~no-ratelimit_example_com
+    routes:
+    - match:
+        pathSeparatedPrefix: /example-route-no-ratelimit
+      name: listener~80~no-ratelimit_example_com-route-0-httproute-example-route-no-ratelimit-infra-0-0-matcher-0
+      route:
+        cluster: kube_infra_example-svc_80
+        clusterNotFoundResponseCode: INTERNAL_SERVER_ERROR
+- ignorePortInHostMatching: true
+  name: tls1
+  typedPerFilterConfig:
+    ratelimit/infra/section-name-gw-ratelimit:
+      '@type': type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimitPerRoute
+      rateLimits:
+      - actions:
+        - requestHeaders:
+            descriptorKey: path
+            headerName: :path
+        - genericKey:
+            descriptorKey: service
+            descriptorValue: premium-api
+  virtualHosts:
+  - domains:
+    - tls.example.com
+    name: tls1~tls_example_com
+    requireTls: ALL
+    routes:
+    - match:
+        pathSeparatedPrefix: /example-route-tls-extension-ref
+      name: tls1~tls_example_com-route-0-httproute-example-tls-route-extension-ref-infra-1-0-matcher-0
+      route:
+        cluster: kube_infra_example-svc_80
+        clusterNotFoundResponseCode: INTERNAL_SERVER_ERROR
+      typedPerFilterConfig:
+        ratelimit/infra/basic-ratelimit:
+          '@type': type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimitPerRoute
+          rateLimits:
+          - actions:
+            - remoteAddress: {}
+            - requestHeaders:
+                descriptorKey: path
+                headerName: :path
+            - requestHeaders:
+                descriptorKey: X-API-Key
+                headerName: X-API-Key
+    - match:
+        pathSeparatedPrefix: /example-route-tls-section-name
+      name: tls1~tls_example_com-route-1-httproute-example-tls-route-extension-ref-infra-0-0-route-name-matcher-0
+      route:
+        cluster: kube_infra_example-svc_80
+        clusterNotFoundResponseCode: INTERNAL_SERVER_ERROR
+      typedPerFilterConfig:
+        ratelimit/infra/basic-ratelimit:
+          '@type': type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimitPerRoute
+          rateLimits:
+          - actions:
+            - genericKey:
+                descriptorKey: priority
+                descriptorValue: high
+    - match:
+        pathSeparatedPrefix: /example-tls-sibling-route
+      name: tls1~tls_example_com-route-2-httproute-example-tls-sibling-route-infra-0-0-matcher-0
+      route:
+        cluster: kube_infra_example-svc_80
+        clusterNotFoundResponseCode: INTERNAL_SERVER_ERROR
+    - match:
+        pathSeparatedPrefix: /example-tls-route
+      name: tls1~tls_example_com-route-3-httproute-example-tls-route-infra-0-0-matcher-0
+      route:
+        cluster: kube_infra_example-svc_80
+        clusterNotFoundResponseCode: INTERNAL_SERVER_ERROR
+      typedPerFilterConfig:
+        ratelimit/infra/basic-ratelimit:
+          '@type': type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimitPerRoute
+          rateLimits:
+          - actions:
+            - requestHeaders:
+                descriptorKey: X-User-ID
+                headerName: X-User-ID
+            - genericKey:
+                descriptorKey: route_type
+                descriptorValue: user_specific
+- ignorePortInHostMatching: true
+  name: tls2
+  typedPerFilterConfig:
+    ratelimit/infra/basic-gw-ratelimit:
+      '@type': type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimitPerRoute
+      rateLimits:
+      - actions:
+        - remoteAddress: {}
+  virtualHosts:
+  - domains:
+    - no-ratelimit-tls.example.com
+    name: tls2~no-ratelimit-tls_example_com
+    requireTls: ALL
+    routes:
+    - match:
+        pathSeparatedPrefix: /example-route-tls-no-ratelimit
+      name: tls2~no-ratelimit-tls_example_com-route-0-httproute-example-tls-route-no-ratelimit-infra-0-0-matcher-0
+      route:
+        cluster: kube_infra_example-svc_80
+        clusterNotFoundResponseCode: INTERNAL_SERVER_ERROR
