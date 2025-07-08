@@ -65,11 +65,10 @@ func (s *testingSuite) SetupSuite() {
 
 	// Only include functional test manifests - negative test cases moved to gateway translator suite
 	s.manifests = map[string][]string{
-		"TestBasicDirectResponse":     {basicDirectResponseManifests},
-		"TestDelegation":              {basicDelegationManifests},
+		"TestBasicDirectResponse": {basicDirectResponseManifests},
+		"TestDelegation":          {basicDelegationManifests},
 		// "TestInvalidDelegationConflictingFilters": {invalidDelegationConflictingFiltersManifests},
 		// "TestInvalidMultipleRouteActions":         {invalidMultipleRouteActionsManifests},
-		"TestInvalidBackendRefFilter": {invalidBackendRefFilterManifests},
 	}
 }
 
@@ -222,22 +221,3 @@ func (s *testingSuite) TestDelegation() {
 // 	s.ti.Assertions.EventuallyHTTPRouteStatusContainsReason(s.ctx, httpbinMeta.Name, httpbinMeta.Namespace,
 // 		string(gwv1.RouteReasonIncompatibleFilters), 10*time.Second, 1*time.Second)
 // }
-
-func (s *testingSuite) TestInvalidBackendRefFilter() {
-	// verify that configuring a DR with a backendRef filter results in a 404 as
-	// this configuration is not supported / ignored by the direct response plugin.
-	s.ti.Assertions.AssertEventualCurlResponse(
-		s.ctx,
-		testdefaults.CurlPodExecOpt,
-		[]curl.Option{
-			curl.WithHost(kubeutils.ServiceFQDN(proxyObjectMeta)),
-			curl.WithHostHeader("www.example.com"),
-			curl.WithPath("/not-implemented"),
-		},
-		&matchers.HttpResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       ContainSubstring(`Not Found (go-httpbin does not handle the path /not-implemented)`),
-		},
-		time.Minute,
-	)
-}
