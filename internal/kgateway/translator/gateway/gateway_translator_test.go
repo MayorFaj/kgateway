@@ -661,6 +661,7 @@ var _ = DescribeTable("Basic GatewayTranslator Tests",
 			Expect(partiallyInvalid).NotTo(BeNil())
 			Expect(partiallyInvalid.Status).To(Equal(metav1.ConditionTrue))
 			Expect(partiallyInvalid.Reason).To(Equal(string(gwv1.RouteReasonUnsupportedValue)))
+			Expect(partiallyInvalid.Message).To(ContainSubstring("cannot be applied to route with existing action"))
 		},
 	}),
 	Entry("DirectResponse with invalid backendRef filter reports correctly", translatorTestCase{
