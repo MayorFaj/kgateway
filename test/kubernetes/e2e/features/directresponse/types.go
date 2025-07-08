@@ -15,7 +15,6 @@ var (
 	gatewayManifest                    = filepath.Join(fsutils.MustGetThisDir(), "testdata", "gateway.yaml")
 	basicDirectResponseManifests       = filepath.Join(fsutils.MustGetThisDir(), "testdata", "basic-direct-response.yaml")
 	basicDelegationManifests           = filepath.Join(fsutils.MustGetThisDir(), "testdata", "basic-delegation-direct-response.yaml")
-	invalidMissingRefManifests         = filepath.Join(fsutils.MustGetThisDir(), "testdata", "invalid-missing-ref-direct-response.yaml")
 	invalidOverlappingFiltersManifests = filepath.Join(fsutils.MustGetThisDir(), "testdata", "invalid-overlapping-filters.yaml")
 	invalidBackendRefFilterManifests   = filepath.Join(fsutils.MustGetThisDir(), "testdata", "invalid-backendRef-filter.yaml")
 	// TODO: Re-enable this test once the issue with conflicting filters is resolved or the expected behavior is clarified.

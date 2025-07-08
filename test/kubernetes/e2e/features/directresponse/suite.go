@@ -63,12 +63,10 @@ func (s *testingSuite) SetupSuite() {
 		LabelSelector: "app.kubernetes.io/name=gw",
 	})
 
-	// Only include test-specific manifests (no longer include gatewayManifest for each test)
 	s.manifests = map[string][]string{
 		"TestBasicDirectResponse": {basicDirectResponseManifests},
 		"TestDelegation":          {basicDelegationManifests},
 		// "TestInvalidDelegationConflictingFilters": {invalidDelegationConflictingFiltersManifests},
-		"TestInvalidMissingRef":         {invalidMissingRefManifests},
 		"TestInvalidOverlappingFilters": {invalidOverlappingFiltersManifests},
 		// "TestInvalidMultipleRouteActions":         {invalidMultipleRouteActionsManifests},
 		"TestInvalidBackendRefFilter": {invalidBackendRefFilterManifests},
@@ -107,7 +105,6 @@ func (s *testingSuite) AfterTest(suiteName, testName string) {
 		s.ti.Assertions.ExpectObjectDeleted(manifest, err, output)
 	}
 
-	// make sure all the test-specific resources are cleaned up
 	s.ti.Assertions.EventuallyObjectTypesNotExist(s.ctx, &gwv1.HTTPRouteList{}, &v1alpha1.DirectResponseList{})
 }
 
@@ -202,26 +199,6 @@ func (s *testingSuite) TestDelegation() {
 // 	s.ti.Assertions.EventuallyHTTPRouteStatusContainsReason(s.ctx, gwRouteMeta.Name, gwRouteMeta.Namespace,
 // 		string(gwv1.RouteReasonIncompatibleFilters), 10*time.Second, 1*time.Second)
 // }
-
-func (s *testingSuite) TestInvalidMissingRef() {
-	// the route points to a DR that doesn't exist, so this should error
-	s.ti.Assertions.AssertEventualCurlResponse(
-		s.ctx,
-		testdefaults.CurlPodExecOpt,
-		[]curl.Option{
-			curl.WithHost(kubeutils.ServiceFQDN(proxyObjectMeta)),
-			curl.WithHostHeader("www.example.com"),
-			curl.WithPath("/non-existent"),
-		},
-		&matchers.HttpResponse{
-			StatusCode: http.StatusInternalServerError,
-		},
-		time.Minute,
-	)
-
-	s.ti.Assertions.EventuallyHTTPRouteStatusContainsReason(s.ctx, httpbinMeta.Name, httpbinMeta.Namespace,
-		string(gwv1.RouteReasonUnsupportedValue), 10*time.Second, 1*time.Second)
-}
 
 func (s *testingSuite) TestInvalidOverlappingFilters() {
 	// the route specifies 2 different DRs, which is invalid.

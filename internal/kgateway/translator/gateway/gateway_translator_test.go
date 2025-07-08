@@ -606,6 +606,34 @@ var _ = DescribeTable("Basic GatewayTranslator Tests",
 			Name:      "example-gateway",
 		},
 	}),
+	Entry("DirectResponse with missing reference reports correctly", translatorTestCase{
+		inputFile:  "directresponse/missing-ref.yaml",
+		outputFile: "directresponse/missing-ref.yaml",
+		gwNN: types.NamespacedName{
+			Namespace: "default",
+			Name:      "example-gateway",
+		},
+		assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
+			route := &gwv1.HTTPRoute{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "example-route",
+					Namespace: "default",
+				},
+			}
+			routeStatus := reportsMap.BuildRouteStatus(context.Background(), route, wellknown.DefaultGatewayClassName)
+			Expect(routeStatus).NotTo(BeNil())
+			Expect(routeStatus.Parents).To(HaveLen(1))
+			resolvedRefs := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionResolvedRefs))
+			Expect(resolvedRefs).NotTo(BeNil())
+			Expect(resolvedRefs.Status).To(Equal(metav1.ConditionTrue))
+			Expect(resolvedRefs.Reason).To(Equal(string(gwv1.RouteReasonResolvedRefs)))
+			partiallyInvalid := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionPartiallyInvalid))
+			Expect(partiallyInvalid).NotTo(BeNil())
+			Expect(partiallyInvalid.Status).To(Equal(metav1.ConditionTrue))
+			Expect(partiallyInvalid.Message).To(ContainSubstring("Dropped Rule"))
+			Expect(partiallyInvalid.Message).To(ContainSubstring("no action specified"))
+		},
+	}),
 	Entry("HTTPRoutes with timeout and retry", translatorTestCase{
 		inputFile:  "httproute-timeout-retry/manifest.yaml",
 		outputFile: "httproute-timeout-retry-proxy.yaml",
