@@ -63,11 +63,11 @@ func (s *testingSuite) SetupSuite() {
 		LabelSelector: "app.kubernetes.io/name=gw",
 	})
 
+	// Only include functional test manifests - negative test cases moved to gateway translator suite
 	s.manifests = map[string][]string{
-		"TestBasicDirectResponse": {basicDirectResponseManifests},
-		"TestDelegation":          {basicDelegationManifests},
+		"TestBasicDirectResponse":     {basicDirectResponseManifests},
+		"TestDelegation":              {basicDelegationManifests},
 		// "TestInvalidDelegationConflictingFilters": {invalidDelegationConflictingFiltersManifests},
-		"TestInvalidOverlappingFilters": {invalidOverlappingFiltersManifests},
 		// "TestInvalidMultipleRouteActions":         {invalidMultipleRouteActionsManifests},
 		"TestInvalidBackendRefFilter": {invalidBackendRefFilterManifests},
 	}
@@ -199,28 +199,6 @@ func (s *testingSuite) TestDelegation() {
 // 	s.ti.Assertions.EventuallyHTTPRouteStatusContainsReason(s.ctx, gwRouteMeta.Name, gwRouteMeta.Namespace,
 // 		string(gwv1.RouteReasonIncompatibleFilters), 10*time.Second, 1*time.Second)
 // }
-
-func (s *testingSuite) TestInvalidOverlappingFilters() {
-	// the route specifies 2 different DRs, which is invalid.
-	// verify that the route was replaced with a 500 direct response due to the
-	// invalid configuration.
-	s.ti.Assertions.AssertEventualCurlResponse(
-		s.ctx,
-		testdefaults.CurlPodExecOpt,
-		[]curl.Option{
-			curl.WithHost(kubeutils.ServiceFQDN(proxyObjectMeta)),
-			curl.WithHostHeader("www.example.com"),
-			curl.WithPath("/"),
-		},
-		&matchers.HttpResponse{
-			StatusCode: http.StatusInternalServerError,
-		},
-		time.Minute,
-	)
-
-	s.ti.Assertions.EventuallyHTTPRouteStatusContainsReason(s.ctx, httpbinMeta.Name, httpbinMeta.Namespace,
-		string(gwv1.RouteReasonIncompatibleFilters), 10*time.Second, 1*time.Second)
-}
 
 // TODO: This test is commented out due to conflicting route actions in the parent HTTPRoute.
 // TODO: Re-enable this test once the issue with conflicting filters is resolved or the expected behavior is clarified.
