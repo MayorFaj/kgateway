@@ -27,7 +27,7 @@ type translatorTestCase struct {
 	assertReports translatortest.AssertReports
 }
 
-var _ = DescribeTable("Basic GatewayTranslator Tests",
+var _ = DescribeTable("Basic",
 	func(in translatorTestCase, settingOpts ...translatortest.SettingsOpts) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -258,6 +258,16 @@ var _ = DescribeTable("Basic GatewayTranslator Tests",
 			outputFile: "traffic-policy/extauth.yaml",
 			gwNN: types.NamespacedName{
 				Namespace: "infra",
+				Name:      "example-gateway",
+			},
+		}),
+	Entry(
+		"Load balancer with hash policies, route level",
+		translatorTestCase{
+			inputFile:  "loadbalancer/route.yaml",
+			outputFile: "loadbalancer/route.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
 				Name:      "example-gateway",
 			},
 		}),
@@ -719,6 +729,22 @@ var _ = DescribeTable("Basic GatewayTranslator Tests",
 			Name:      "example-gateway",
 		},
 	}),
+	Entry("HTTPListenerPolicy with healthCheck", translatorTestCase{
+		inputFile:  "httplistenerpolicy/route-and-pol.yaml",
+		outputFile: "httplistenerpolicy/route-and-pol.yaml",
+		gwNN: types.NamespacedName{
+			Namespace: "default",
+			Name:      "example-gateway",
+		},
+	}),
+	Entry("HTTPListenerPolicy merging", translatorTestCase{
+		inputFile:  "httplistenerpolicy/merge.yaml",
+		outputFile: "httplistenerpolicy/merge.yaml",
+		gwNN: types.NamespacedName{
+			Namespace: "default",
+			Name:      "example-gateway",
+		},
+	}),
 	Entry("Service with appProtocol=kubernetes.io/h2c", translatorTestCase{
 		inputFile:  "backend-protocol/svc-h2c.yaml",
 		outputFile: "backend-protocol/svc-h2c.yaml",
@@ -845,7 +871,7 @@ var _ = DescribeTable("Basic GatewayTranslator Tests",
 	//	}),
 )
 
-var _ = DescribeTable("Route Replacement Tests",
+var _ = DescribeTable("Route Replacement",
 	func(in translatorTestCase, settingOpts ...translatortest.SettingsOpts) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -1220,7 +1246,7 @@ var _ = DescribeTable("Route Replacement Tests",
 		}),
 )
 
-var _ = DescribeTable("Route Delegation translator",
+var _ = DescribeTable("Route Delegation",
 	func(inputFile string, errors map[types.NamespacedName]string) {
 		dir := fsutils.MustGetThisDir()
 		translatortest.TestTranslation(
@@ -1306,6 +1332,7 @@ var _ = DescribeTable("Route Delegation translator",
 			{Name: "route-a", Namespace: "a"}:           "BackendNotFound gateway.networking.k8s.io/HTTPRoute/a-c/: unresolved reference",
 		},
 	),
+	Entry("Policy deep merge", "policy_deep_merge.yaml", nil),
 )
 
 var _ = DescribeTable("Discovery Namespace Selector",
