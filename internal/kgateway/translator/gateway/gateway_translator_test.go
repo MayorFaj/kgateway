@@ -294,6 +294,16 @@ var _ = DescribeTable("Basic",
 			},
 		}),
 	Entry(
+		"TrafficPolicy with rate limiting",
+		translatorTestCase{
+			inputFile:  "traffic-policy/ratelimit.yaml",
+			outputFile: "traffic-policy/ratelimit.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "infra",
+				Name:      "example-gateway",
+			},
+		}),
+	Entry(
 		"Load balancer with hash policies, route level",
 		translatorTestCase{
 			inputFile:  "loadbalancer/route.yaml",
