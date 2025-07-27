@@ -68,7 +68,9 @@ func KubeGatewaySuiteRunner() e2e.SuiteRunner {
 	kubeGatewaySuiteRunner.Register("Metrics", metrics.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("CSRF", csrf.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("Tracing", tracing.NewTestingSuite)
-	kubeGatewaySuiteRunner.Register("LoadTesting", loadtesting.NewTestingSuite)
+	kubeGatewaySuiteRunner.Register("AttachedRoutes", loadtesting.NewAttachedRoutesSuite)
+	// kubeGatewaySuiteRunner.Register("RouteProbe", loadtesting.NewRouteProbeSuite)
+	// kubeGatewaySuiteRunner.Register("RouteChange", loadtesting.NewRouteChangeSuite)
 	kubeGatewaySuiteRunner.Register("DirectResponse", directresponse.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("PathMatching", path_matching.NewTestingSuite)
 
