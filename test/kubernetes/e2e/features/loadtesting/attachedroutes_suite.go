@@ -15,6 +15,31 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e"
 )
 
+// Timeout constants for the AttachedRoutes test suite
+const (
+	// General operation timeouts
+	gatewayReadinessTimeout      = 60 * time.Second
+	routeConditionTimeout        = 60 * time.Second
+	translationCompletionTimeout = 5 * time.Minute
+
+	// Cleanup and sleep intervals
+	cleanupSleepInterval    = 2 * time.Second
+	monitoringSleepInterval = 500 * time.Millisecond
+
+	// Polling intervals
+	translationPollingInterval = 5 * time.Second
+	gatewayPollingInterval     = 1 * time.Second
+	teardownPollingInterval    = 100 * time.Millisecond
+
+	// Performance threshold timeouts
+	baselineMaxUserTime       = 30 * time.Second
+	baselineMaxTeardownTime   = 10 * time.Second
+	productionMaxUserTime     = 90 * time.Second
+	productionMaxTeardownTime = 20 * time.Second
+	largeScaleMaxUserTime     = 2 * time.Minute
+	largeScaleMaxTeardownTime = 30 * time.Second
+)
+
 var _ e2e.NewSuiteFunc = NewAttachedRoutesSuite
 
 func NewAttachedRoutesSuite(ctx context.Context, testInst *e2e.TestInstallation) suite.TestingSuite {
@@ -92,7 +117,7 @@ func (s *AttachedRoutesSuite) forceCleanupTestResources() {
 		}
 	}
 
-	time.Sleep(2 * time.Second)
+	time.Sleep(cleanupSleepInterval)
 }
 
 func (s *AttachedRoutesSuite) TestAttachedRoutesBaseline() {
@@ -134,7 +159,7 @@ func (s *AttachedRoutesSuite) runIncrementalRouteTestWithSimulation(config *Atta
 	s.setupInfrastructure()
 	s.createAndWaitForGateways(config)
 	s.createBaselineRoutes(config)
-	s.waitForTranslationCompletion(config.Gateways, config.Routes, 5*time.Minute)
+	s.waitForTranslationCompletion(config.Gateways, config.Routes, translationCompletionTimeout)
 	s.verifyRouteValid(config.Gateways[0])
 
 	// Monitoring and incremental test
@@ -142,7 +167,7 @@ func (s *AttachedRoutesSuite) runIncrementalRouteTestWithSimulation(config *Atta
 	defer cancelMonitor()
 
 	s.startAttachedRoutesWatchers(monitorCtx, config.Gateways, results)
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(monitoringSleepInterval)
 
 	// Measure incremental route performance
 	s.measureIncrementalRoutePerformance(config, results)
@@ -152,7 +177,7 @@ func (s *AttachedRoutesSuite) runIncrementalRouteTestWithSimulation(config *Atta
 	results.SimulatedCluster = s.loadTestManager.GetSimulationMetrics()
 
 	cancelMonitor()
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(monitoringSleepInterval)
 
 	results.EndTime = time.Now()
 	results.Duration = results.EndTime.Sub(results.StartTime)
@@ -187,7 +212,7 @@ func (s *AttachedRoutesSuite) createAndWaitForGateways(config *AttachedRoutesCon
 	err := s.loadTestManager.CreateGateways(config.Gateways)
 	s.Require().NoError(err, "Should create gateways")
 
-	err = s.loadTestManager.WaitForGatewayReadiness(60 * time.Second)
+	err = s.loadTestManager.WaitForGatewayReadiness(gatewayReadinessTimeout)
 	s.Require().NoError(err, "Gateways should be ready")
 }
 
@@ -291,7 +316,7 @@ func (s *AttachedRoutesSuite) waitForTranslationCompletion(gateways []string, ex
 	s.T().Logf("Waiting for translation completion: expecting %d routes", expectedRoutes)
 
 	timeoutCh := time.After(timeout)
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(translationPollingInterval)
 	defer ticker.Stop()
 
 	for {
@@ -416,8 +441,8 @@ func (s *AttachedRoutesSuite) waitForRouteTeardown(gateways []string, expectedCo
 
 func (s *AttachedRoutesSuite) waitForGatewayCondition(gatewayName string, expectedCount int, conditionType string) time.Duration {
 	probeStart := time.Now()
-	timeout := time.After(60 * time.Second)
-	ticker := time.NewTicker(1 * time.Second)
+	timeout := time.After(routeConditionTimeout)
+	ticker := time.NewTicker(gatewayPollingInterval)
 	defer ticker.Stop()
 
 	for {
@@ -453,8 +478,8 @@ func (s *AttachedRoutesSuite) waitForGatewayCondition(gatewayName string, expect
 }
 
 func (s *AttachedRoutesSuite) waitForAllGatewaysCondition(gateways []string, expectedCount int, startTime time.Time, conditionType string) time.Duration {
-	timeout := time.After(60 * time.Second)
-	ticker := time.NewTicker(100 * time.Millisecond)
+	timeout := time.After(routeConditionTimeout)
+	ticker := time.NewTicker(teardownPollingInterval)
 	defer ticker.Stop()
 
 	for {
@@ -524,17 +549,16 @@ func (s *AttachedRoutesSuite) validateIncrementalPerformanceThresholds(results *
 
 	switch {
 	case baselineRoutes <= 1000:
-		// Baseline test: expect faster performance
-		maxUserTime = 30 * time.Second
-		maxTeardownTime = 10 * time.Second
+		// Baseline test
+		maxUserTime = baselineMaxUserTime
+		maxTeardownTime = baselineMaxTeardownTime
 	case baselineRoutes <= 5000:
 		// Production scale test: allow more time due to complexity
-		maxUserTime = 90 * time.Second // Increased from 30s
-		maxTeardownTime = 20 * time.Second
+		maxUserTime = productionMaxUserTime
+		maxTeardownTime = productionMaxTeardownTime
 	default:
-		// Large scale test: even more generous thresholds
-		maxUserTime = 2 * time.Minute
-		maxTeardownTime = 30 * time.Second
+		maxUserTime = largeScaleMaxUserTime
+		maxTeardownTime = largeScaleMaxTeardownTime
 	}
 
 	s.T().Logf("Performance validation: %d baseline routes, maxUserTime=%v, maxTeardownTime=%v",

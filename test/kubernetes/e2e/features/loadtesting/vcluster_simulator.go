@@ -44,11 +44,11 @@ func (vcs *VClusterSimulator) GenerateSimulationConfig(routeCount int, scenario 
 	var fakeNodeCount, servicesPerNode int
 
 	if routeCount <= BaselineRoutes {
-		fakeNodeCount = max(2, routeCount/200)
-		servicesPerNode = max(20, routeCount/(fakeNodeCount*3))
+		fakeNodeCount = maxInt(2, routeCount/200)
+		servicesPerNode = maxInt(20, routeCount/(fakeNodeCount*3))
 	} else {
-		fakeNodeCount = max(3, routeCount/100)
-		servicesPerNode = max(15, routeCount/(fakeNodeCount*2))
+		fakeNodeCount = maxInt(3, routeCount/100)
+		servicesPerNode = maxInt(15, routeCount/(fakeNodeCount*2))
 	}
 
 	timestamp := time.Now().UnixNano()
@@ -305,7 +305,7 @@ func (vcs *VClusterSimulator) Cleanup() error {
 	return nil
 }
 
-func max(a, b int) int {
+func maxInt(a, b int) int {
 	if a > b {
 		return a
 	}

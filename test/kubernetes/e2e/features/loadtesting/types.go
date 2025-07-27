@@ -4,9 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e"
 	"github.com/stretchr/testify/suite"
 	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e"
 )
 
 type LoadTestingSuite struct {

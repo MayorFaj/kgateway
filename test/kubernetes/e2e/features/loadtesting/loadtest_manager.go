@@ -193,7 +193,7 @@ func (ltm *LoadTestManager) CreateRoutesBatched(config *AttachedRoutesConfig) er
 
 	for _, gatewayName := range config.Gateways {
 		for batchStart := 0; batchStart < routesPerGateway; batchStart += config.BatchSize {
-			batchEnd := min(batchStart+config.BatchSize, routesPerGateway)
+			batchEnd := minInt(batchStart+config.BatchSize, routesPerGateway)
 
 			if err := ltm.createRouteBatch(gatewayName, batchStart, batchEnd); err != nil {
 				return fmt.Errorf("failed to create route batch %d-%d for gateway %s: %w",
@@ -428,7 +428,7 @@ func (ltm *LoadTestManager) CleanupAll() error {
 	return nil
 }
 
-func min(a, b int) int {
+func minInt(a, b int) int {
 	if a < b {
 		return a
 	}
