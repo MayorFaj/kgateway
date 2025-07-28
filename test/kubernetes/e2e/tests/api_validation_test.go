@@ -409,6 +409,138 @@ spec:
 `,
 			wantErrors: []string{"spec.body in body should be at least 1 chars long"},
 		},
+		{
+			name: "TrafficPolicy: empty header name in rate limit descriptor",
+			input: `---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: traffic-policy-empty-header
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: test-route
+  rateLimit:
+    global:
+      descriptors:
+      - entries:
+        - type: Header
+          header: ""
+      extensionRef:
+        name: test-extension
+`,
+			wantErrors: []string{"Header name cannot be empty when type is Header"},
+		},
+		{
+			name: "TrafficPolicy: empty generic key in rate limit descriptor",
+			input: `---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: traffic-policy-empty-generic-key
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: test-route
+  rateLimit:
+    global:
+      descriptors:
+      - entries:
+        - type: Generic
+          generic:
+            key: ""
+            value: "test-value"
+      extensionRef:
+        name: test-extension
+`,
+			wantErrors: []string{"Generic key cannot be empty when type is Generic"},
+		},
+		{
+			name: "TrafficPolicy: empty generic value in rate limit descriptor",
+			input: `---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: traffic-policy-empty-generic-value
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: test-route
+  rateLimit:
+    global:
+      descriptors:
+      - entries:
+        - type: Generic
+          generic:
+            key: "test-key"
+            value: ""
+      extensionRef:
+        name: test-extension
+`,
+			wantErrors: []string{"Generic value cannot be empty when type is Generic"},
+		},
+		{
+			name: "TrafficPolicy: multiple empty values in rate limit descriptor",
+			input: `---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: traffic-policy-multiple-empty-values
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: test-route
+  rateLimit:
+    global:
+      descriptors:
+      - entries:
+        - type: Generic
+          generic:
+            key: ""
+            value: ""
+      extensionRef:
+        name: test-extension
+`,
+			wantErrors: []string{
+				"Generic key cannot be empty when type is Generic",
+				"Generic value cannot be empty when type is Generic",
+			},
+		},
+		{
+			name: "TrafficPolicy: valid rate limit descriptor with non-empty values",
+			input: `---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: traffic-policy-valid-rate-limit
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: test-route
+  rateLimit:
+    global:
+      descriptors:
+      - entries:
+        - type: Generic
+          generic:
+            key: "service"
+            value: "api"
+      - entries:
+        - type: Header
+          header: "X-User-ID"
+      - entries:
+        - type: RemoteAddress
+      - entries:
+        - type: Path
+      extensionRef:
+        name: test-extension
+`,
+		},
 	}
 
 	t.Cleanup(func() {
