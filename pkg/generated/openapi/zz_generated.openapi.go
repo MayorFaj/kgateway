@@ -1155,13 +1155,6 @@ func schema_kgateway_v2_api_v1alpha1_AiExtensionTrace(ref common.ReferenceCallba
 							Format:      "",
 						},
 					},
-					"transportSecurity": {
-						SchemaProps: spec.SchemaProps{
-							Description: "TransportSecurity controls the TLS (Transport Layer Security) settings when connecting to the tracing server. It determines whether certificate verification should be skipped.",
-							Type:        []string{"string"},
-							Format:      "",
-						},
-					},
 				},
 				Required: []string{"endpoint"},
 			},
@@ -6545,6 +6538,13 @@ func schema_kgateway_v2_api_v1alpha1_TLS(ref common.ReferenceCallback) common.Op
 						SchemaProps: spec.SchemaProps{
 							Description: "File paths to certificates local to the proxy.",
 							Ref:         ref("github.com/kgateway-dev/kgateway/v2/api/v1alpha1.TLSFiles"),
+						},
+					},
+					"insecureSkipVerify": {
+						SchemaProps: spec.SchemaProps{
+							Description: "InsecureSkipVerify originates TLS but skips verification of the backend's certificate. WARNING: This is an insecure option that should only be used if the risks are understood.",
+							Type:        []string{"boolean"},
+							Format:      "",
 						},
 					},
 					"sni": {

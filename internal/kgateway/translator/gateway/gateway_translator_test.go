@@ -13,6 +13,7 @@ import (
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gwv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
+	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/reporter"
 	"github.com/kgateway-dev/kgateway/v2/pkg/reports"
@@ -71,11 +72,61 @@ var _ = DescribeTable("Basic",
 	Entry(
 		"https gateway with basic routing",
 		translatorTestCase{
-			inputFile:  "https-routing",
+			inputFile:  "https-routing/gateway.yaml",
 			outputFile: "https-routing-proxy.yaml",
 			gwNN: types.NamespacedName{
 				Namespace: "default",
 				Name:      "example-gateway",
+			},
+		}),
+	Entry(
+		"https gateway with invalid certificate ref",
+		translatorTestCase{
+			inputFile:  "https-routing/invalid-cert.yaml",
+			outputFile: "https-invalid-cert-proxy.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+			assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
+				gateway := &gwv1.Gateway{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "example-gateway",
+						Namespace: "default",
+					},
+					Spec: gwv1.GatewaySpec{
+						Listeners: []gwv1.Listener{
+							{
+								Name: "https",
+							},
+							{
+								Name: "https2",
+							},
+						},
+					},
+				}
+				gatewayStatus := reportsMap.BuildGWStatus(context.Background(), *gateway)
+				Expect(gatewayStatus).NotTo(BeNil())
+				Expect(gatewayStatus.Listeners).To(HaveLen(2))
+				httpsListener := gatewayStatus.Listeners[0]
+				resolvedRefs := meta.FindStatusCondition(httpsListener.Conditions, string(gwv1.ListenerConditionResolvedRefs))
+				Expect(resolvedRefs).NotTo(BeNil())
+				Expect(resolvedRefs.Status).To(Equal(metav1.ConditionFalse))
+				Expect(resolvedRefs.Reason).To(Equal(string(gwv1.ListenerReasonInvalidCertificateRef)))
+				Expect(resolvedRefs.Message).To(Equal("Secret default/missing-cert not found."))
+
+				programmed := meta.FindStatusCondition(httpsListener.Conditions, string(gwv1.ListenerConditionProgrammed))
+				Expect(programmed).NotTo(BeNil())
+				Expect(programmed.Status).To(Equal(metav1.ConditionFalse))
+				Expect(programmed.Reason).To(Equal(string(gwv1.ListenerReasonInvalid)))
+				Expect(programmed.Message).To(Equal("Secret default/missing-cert not found."))
+
+				https2Listener := gatewayStatus.Listeners[1]
+				resolvedRefs = meta.FindStatusCondition(https2Listener.Conditions, string(gwv1.ListenerConditionResolvedRefs))
+				Expect(resolvedRefs).NotTo(BeNil())
+				Expect(resolvedRefs.Status).To(Equal(metav1.ConditionFalse))
+				Expect(resolvedRefs.Reason).To(Equal(string(gwv1.ListenerReasonInvalidCertificateRef)))
+				Expect(resolvedRefs.Message).To(Equal("invalid TLS secret default/invalid-cert: tls: failed to find any PEM data in key input"))
 			},
 		}),
 	Entry(
@@ -891,6 +942,14 @@ var _ = DescribeTable("Basic",
 			Name:      "example-gateway",
 		},
 	}),
+	Entry("Backend Config Policy with TLS and insecure skip verify", translatorTestCase{
+		inputFile:  "backendconfigpolicy/tls-insecureskipverify.yaml",
+		outputFile: "backendconfigpolicy/tls-insecureskipverify.yaml",
+		gwNN: types.NamespacedName{
+			Namespace: "default",
+			Name:      "example-gateway",
+		},
+	}),
 	Entry(
 		"TrafficPolicy with explicit generation",
 		translatorTestCase{
@@ -1021,7 +1080,7 @@ var _ = DescribeTable("Route Replacement",
 				Expect(accepted).NotTo(BeNil())
 				Expect(accepted.Status).To(Equal(metav1.ConditionTrue))
 				Expect(accepted.Reason).To(Equal(string(gwv1.RouteReasonAccepted)))
-				Expect(accepted.Message).To(Equal(""))
+				Expect(accepted.Message).To(Equal("Route is accepted"))
 				Expect(accepted.ObservedGeneration).To(Equal(int64(0)))
 
 				// Expect no PartiallyInvalid condition since template validation is skipped in standard mode
@@ -1058,7 +1117,7 @@ var _ = DescribeTable("Route Replacement",
 				Expect(accepted).NotTo(BeNil())
 				Expect(accepted.Status).To(Equal(metav1.ConditionTrue))
 				Expect(accepted.Reason).To(Equal(string(gwv1.RouteReasonAccepted)))
-				Expect(accepted.Message).To(Equal(""))
+				Expect(accepted.Message).To(Equal("Route is accepted"))
 				Expect(accepted.ObservedGeneration).To(Equal(int64(0)))
 
 				// Expect no PartiallyInvalid condition since template validation is skipped in standard mode
@@ -1094,7 +1153,7 @@ var _ = DescribeTable("Route Replacement",
 				Expect(accepted).NotTo(BeNil())
 				Expect(accepted.Status).To(Equal(metav1.ConditionTrue))
 				Expect(accepted.Reason).To(Equal(string(gwv1.RouteReasonAccepted)))
-				Expect(accepted.Message).To(Equal(""))
+				Expect(accepted.Message).To(Equal("Route is accepted"))
 				Expect(accepted.ObservedGeneration).To(Equal(int64(0)))
 
 				// Expect no PartiallyInvalid condition since template validation is skipped in standard mode
@@ -1283,7 +1342,7 @@ var _ = DescribeTable("Route Replacement",
 				Expect(accepted).NotTo(BeNil())
 				Expect(accepted.Status).To(Equal(metav1.ConditionTrue))
 				Expect(accepted.Reason).To(Equal(string(gwv1.RouteReasonAccepted)))
-				Expect(accepted.Message).To(Equal(""))
+				Expect(accepted.Message).To(Equal("Route is accepted"))
 				Expect(accepted.ObservedGeneration).To(Equal(int64(0)))
 
 				// Template is structurally valid (passes xDS validation) but would fail at runtime
@@ -1298,11 +1357,9 @@ var _ = DescribeTable("Route Replacement",
 )
 
 var _ = DescribeTable("Route Delegation",
-	func(inputFile string, errors map[types.NamespacedName]string) {
+	func(inputFile string, wantHTTPRouteErrors map[types.NamespacedName]string) {
 		dir := fsutils.MustGetThisDir()
-		translatortest.TestTranslation(
-			GinkgoT(),
-			context.Background(),
+		test(
 			[]string{
 				filepath.Join(dir, "testutils/inputs/delegation/common.yaml"),
 				filepath.Join(dir, "testutils/inputs/delegation", inputFile),
@@ -1313,12 +1370,12 @@ var _ = DescribeTable("Route Delegation",
 				Name:      "example-gateway",
 			},
 			func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-				if errors == nil {
+				if wantHTTPRouteErrors == nil {
 					Expect(translatortest.AreReportsSuccess(gwNN, reportsMap)).NotTo(HaveOccurred())
-				} else {
-					for route, err := range errors {
-						Expect(translatortest.GetHTTPRouteStatusError(reportsMap, &route)).To(MatchError(ContainSubstring(err)))
-					}
+					return
+				}
+				for route, err := range wantHTTPRouteErrors {
+					Expect(translatortest.GetHTTPRouteStatusError(reportsMap, &route)).To(MatchError(ContainSubstring(err)))
 				}
 			},
 		)
@@ -1478,6 +1535,22 @@ var _ = DescribeTable("Discovery Namespace Selector",
 		"base.yaml", "base_select_infra.yaml", "condition error for httproute: infra/example-route"),
 )
 
+func test(
+	inputFiles []string,
+	outputFile string,
+	wantGateway types.NamespacedName,
+	wantReportsFn func(gwNN types.NamespacedName, reportsMap reports.ReportMap),
+) {
+	translatortest.TestTranslation(
+		GinkgoT(),
+		context.Background(),
+		inputFiles,
+		outputFile,
+		wantGateway,
+		wantReportsFn,
+	)
+}
+
 // assertPolicyStatusWithGeneration is a helper function to verify policy status conditions with a specific generation
 func assertPolicyStatusWithGeneration(reportsMap reports.ReportMap, policies []reports.PolicyKey, expectedGeneration int64) {
 	var currentStatus gwv1alpha2.PolicyStatus
@@ -1488,10 +1561,10 @@ func assertPolicyStatusWithGeneration(reportsMap reports.ReportMap, policies []r
 		Expect(status).NotTo(BeNil(), "status missing for policy %v", policy)
 		Expect(status.Ancestors).To(HaveLen(1), "ancestor missing for policy %v", policy) // 1 Gateway(ancestor)
 
-		acceptedCondition := meta.FindStatusCondition(status.Ancestors[0].Conditions, string(gwv1alpha2.PolicyConditionAccepted))
+		acceptedCondition := meta.FindStatusCondition(status.Ancestors[0].Conditions, string(v1alpha1.PolicyConditionAccepted))
 		Expect(acceptedCondition).NotTo(BeNil())
 		Expect(acceptedCondition.Status).To(Equal(metav1.ConditionTrue))
-		Expect(acceptedCondition.Reason).To(Equal(string(gwv1alpha2.PolicyReasonAccepted)))
+		Expect(acceptedCondition.Reason).To(Equal(string(v1alpha1.PolicyReasonValid)))
 		Expect(acceptedCondition.Message).To(Equal(reporter.PolicyAcceptedMsg))
 		Expect(acceptedCondition.ObservedGeneration).To(Equal(expectedGeneration))
 	}

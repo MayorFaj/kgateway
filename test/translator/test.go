@@ -10,11 +10,9 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"time"
 
 	envoylistenerv3 "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	envoyroutev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
-	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/onsi/ginkgo/v2"
@@ -49,6 +47,7 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk"
 	common "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/collections"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/ir"
+	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/reporter"
 	"github.com/kgateway-dev/kgateway/v2/pkg/reports"
 	"github.com/kgateway-dev/kgateway/v2/pkg/schemes"
 	"github.com/kgateway-dev/kgateway/v2/pkg/settings"
@@ -372,6 +371,25 @@ func GetHTTPRouteStatusError(
 	return nil
 }
 
+func GetPolicyStatusError(
+	reportsMap reports.ReportMap,
+	policy *reporter.PolicyKey,
+) error {
+	for key, policyReport := range reportsMap.Policies {
+		if policy != nil && *policy != key {
+			continue
+		}
+		for ancestor, report := range policyReport.Ancestors {
+			for _, c := range report.Conditions {
+				if c.Status != metav1.ConditionTrue {
+					return fmt.Errorf("condition error for policy: %v, ancestor ref: %v, condition: %v", policy, ancestor, c)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func AreReportsSuccess(gwNN types.NamespacedName, reportsMap reports.ReportMap) error {
 	err := GetHTTPRouteStatusError(reportsMap, nil)
 	if err != nil {
@@ -427,6 +445,11 @@ func AreReportsSuccess(gwNN types.NamespacedName, reportsMap reports.ReportMap) 
 				return fmt.Errorf("condition not accepted for gw %v condition: %v", nns, c)
 			}
 		}
+	}
+
+	err = GetPolicyStatusError(reportsMap, nil)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -536,7 +559,6 @@ func (tc TestCase) Run(
 		ourCli,
 		nil,
 		wellknown.DefaultGatewayControllerName,
-		logr.Discard(),
 		*settings,
 	)
 	if err != nil {
@@ -569,7 +591,7 @@ func (tc TestCase) Run(
 		Name:      "example-svc",
 	}, 80, "")
 	extensions.ContributesBackends[gk] = extensionsplug.BackendPlugin{
-		Backends: krt.NewStaticCollection([]ir.BackendObjectIR{
+		Backends: krt.NewStaticCollection(nil, []ir.BackendObjectIR{
 			testBackend,
 		}),
 		BackendInit: ir.BackendInit{
@@ -596,8 +618,6 @@ func (tc TestCase) Run(
 	for i, plug := range extraPlugs {
 		kubeclient.WaitForCacheSync(fmt.Sprintf("extra-%d", i), ctx.Done(), plug.HasSynced)
 	}
-
-	time.Sleep(1 * time.Second)
 
 	results := make(map[types.NamespacedName]ActualTestResult)
 

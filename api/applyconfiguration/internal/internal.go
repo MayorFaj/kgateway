@@ -259,9 +259,6 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: timeout
       type:
         namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Duration
-    - name: transportSecurity
-      type:
-        scalar: string
 - name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.AlwaysOnConfig
   map:
     elementType:
@@ -2145,6 +2142,9 @@ var schemaYAML = typed.YAMLObject(`types:
           elementType:
             scalar: string
           elementRelationship: atomic
+    - name: insecureSkipVerify
+      type:
+        scalar: boolean
     - name: oneWayTLS
       type:
         scalar: boolean
