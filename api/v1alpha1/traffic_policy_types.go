@@ -344,9 +344,6 @@ const (
 // RateLimitDescriptorEntry defines a single entry in a rate limit descriptor.
 // Only one entry type may be specified.
 // +kubebuilder:validation:XValidation:message="exactly one entry type must be specified",rule="(has(self.type) && (self.type == 'Generic' && has(self.generic) && !has(self.header)) || (self.type == 'Header' && has(self.header) && !has(self.generic)) || (self.type == 'RemoteAddress' && !has(self.generic) && !has(self.header)) || (self.type == 'Path' && !has(self.generic) && !has(self.header)))"
-// +kubebuilder:validation:XValidation:message="Header name cannot be empty when type is Header",rule="self.type != 'Header' || (has(self.header) && size(self.header) > 0)"
-// +kubebuilder:validation:XValidation:message="Generic key cannot be empty when type is Generic",rule="self.type != 'Generic' || (has(self.generic) && has(self.generic.key) && size(self.generic.key) > 0)"
-// +kubebuilder:validation:XValidation:message="Generic value cannot be empty when type is Generic",rule="self.type != 'Generic' || (has(self.generic) && has(self.generic.value) && size(self.generic.value) > 0)"
 type RateLimitDescriptorEntry struct {
 	// Type specifies what kind of rate limit descriptor entry this is.
 	// +required
@@ -368,10 +365,12 @@ type RateLimitDescriptorEntry struct {
 type RateLimitDescriptorEntryGeneric struct {
 	// Key is the name of this descriptor entry.
 	// +required
+	// +kubebuilder:validation:MinLength=1
 	Key string `json:"key"`
 
 	// Value is the static value for this descriptor entry.
 	// +required
+	// +kubebuilder:validation:MinLength=1
 	Value string `json:"value"`
 }
 

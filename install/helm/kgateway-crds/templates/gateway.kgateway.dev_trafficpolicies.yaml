@@ -554,8 +554,10 @@ spec:
                                   generic:
                                     properties:
                                       key:
+                                        minLength: 1
                                         type: string
                                       value:
+                                        minLength: 1
                                         type: string
                                     required:
                                     - key
@@ -583,20 +585,6 @@ spec:
                                     && !has(self.generic) && !has(self.header)) ||
                                     (self.type == 'Path' && !has(self.generic) &&
                                     !has(self.header)))
-                                - message: Header name cannot be empty when type is
-                                    Header
-                                  rule: self.type != 'Header' || (has(self.header)
-                                    && size(self.header) > 0)
-                                - message: Generic key cannot be empty when type is
-                                    Generic
-                                  rule: self.type != 'Generic' || (has(self.generic)
-                                    && has(self.generic.key) && size(self.generic.key)
-                                    > 0)
-                                - message: Generic value cannot be empty when type
-                                    is Generic
-                                  rule: self.type != 'Generic' || (has(self.generic)
-                                    && has(self.generic.value) && size(self.generic.value)
-                                    > 0)
                               minItems: 1
                               type: array
                           required:
