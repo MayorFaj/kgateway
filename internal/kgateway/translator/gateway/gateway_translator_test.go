@@ -357,8 +357,8 @@ var _ = DescribeTable("Basic",
 	Entry(
 		"TrafficPolicy with rate limiting",
 		translatorTestCase{
-			inputFile:  "traffic-policy/ratelimit.yaml",
-			outputFile: "traffic-policy/ratelimit.yaml",
+			inputFile:  "traffic-policy/global-ratelimit.yaml",
+			outputFile: "traffic-policy/global-ratelimit.yaml",
 			gwNN: types.NamespacedName{
 				Namespace: "infra",
 				Name:      "example-gateway",
