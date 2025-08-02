@@ -11,18 +11,28 @@ type autoHostRewriteIR struct {
 	enabled *wrapperspb.BoolValue
 }
 
-func (a *autoHostRewriteIR) Equals(other *autoHostRewriteIR) bool {
-	if a == nil && other == nil {
-		return true
-	}
-	if a == nil || other == nil {
+var _ PolicySubIR = &autoHostRewriteIR{}
+
+func (a *autoHostRewriteIR) Equals(other PolicySubIR) bool {
+	otherAutoHostRewrite, ok := other.(*autoHostRewriteIR)
+	if !ok {
 		return false
 	}
-	return proto.Equal(a.enabled, other.enabled)
+	if a == nil && otherAutoHostRewrite == nil {
+		return true
+	}
+	if a == nil || otherAutoHostRewrite == nil {
+		return false
+	}
+	return proto.Equal(a.enabled, otherAutoHostRewrite.enabled)
 }
 
-// applyAutoHostRewrite translates the auto host rewrite spec into an envoy auto host rewrite policy and stores it in the traffic policy IR
-func applyAutoHostRewrite(spec v1alpha1.TrafficPolicySpec, out *trafficPolicySpecIr) {
+// Validate performs validation on the auto host rewrite component. No validation is
+// needed as it's a single bool field.
+func (a *autoHostRewriteIR) Validate() error { return nil }
+
+// constructAutoHostRewrite constructs the auto host rewrite policy IR from the policy specification.
+func constructAutoHostRewrite(spec v1alpha1.TrafficPolicySpec, out *trafficPolicySpecIr) {
 	if spec.AutoHostRewrite == nil {
 		return
 	}

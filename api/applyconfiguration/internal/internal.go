@@ -474,6 +474,9 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: dynamicForwardProxy
       type:
         namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.DynamicForwardProxyBackend
+    - name: mcp
+      type:
+        namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.MCP
     - name: static
       type:
         namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.StaticBackend
@@ -490,6 +493,8 @@ var schemaYAML = typed.YAMLObject(`types:
         discriminatorValue: Aws
       - fieldName: dynamicForwardProxy
         discriminatorValue: DynamicForwardProxy
+      - fieldName: mcp
+        discriminatorValue: MCP
       - fieldName: static
         discriminatorValue: Static
 - name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.BackendStatus
@@ -1142,6 +1147,9 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: healthCheck
       type:
         namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.EnvoyHealthCheck
+    - name: preserveHttp1HeaderCase
+      type:
+        scalar: boolean
     - name: serverHeaderTransformation
       type:
         scalar: string
@@ -1270,9 +1278,6 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: string
       default: ""
-    - name: insecureSkipVerify
-      type:
-        scalar: boolean
     - name: port
       type:
         scalar: numeric
@@ -1283,9 +1288,6 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: enableTrailers
       type:
         scalar: boolean
-    - name: headerFormat
-      type:
-        scalar: string
     - name: overrideStreamErrorOnInvalidHttpMessage
       type:
         scalar: boolean
@@ -1561,6 +1563,55 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: tokenBucket
       type:
         namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.TokenBucket
+- name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.MCP
+  map:
+    fields:
+    - name: name
+      type:
+        scalar: string
+      default: ""
+    - name: targets
+      type:
+        list:
+          elementType:
+            namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.McpTargetSelector
+          elementRelationship: atomic
+- name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.McpSelector
+  map:
+    fields:
+    - name: namespaceSelector
+      type:
+        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.LabelSelector
+    - name: serviceSelector
+      type:
+        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.LabelSelector
+- name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.McpTarget
+  map:
+    fields:
+    - name: host
+      type:
+        scalar: string
+      default: ""
+    - name: name
+      type:
+        scalar: string
+      default: ""
+    - name: port
+      type:
+        scalar: numeric
+      default: 0
+    - name: protocol
+      type:
+        scalar: string
+- name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.McpTargetSelector
+  map:
+    fields:
+    - name: selectors
+      type:
+        namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.McpSelector
+    - name: static
+      type:
+        namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.McpTarget
 - name: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.Message
   map:
     fields:

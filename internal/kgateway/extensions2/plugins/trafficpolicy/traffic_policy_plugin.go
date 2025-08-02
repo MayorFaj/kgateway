@@ -67,6 +67,17 @@ var (
 	EnableFilterPerRoute = &envoyroutev3.FilterConfig{Config: &anypb.Any{}}
 )
 
+// PolicySubIR documents the expected interface that all policy sub-IRs should implement.
+type PolicySubIR interface {
+	// Equals compares this policy with another policy
+	Equals(other PolicySubIR) bool
+
+	// Validate performs PGV validation on the policy
+	Validate() error
+
+	// TODO: Merge. Just awkward as we won't be using the actual method type.
+}
+
 type TrafficPolicy struct {
 	ct   time.Time
 	spec trafficPolicySpecIr
@@ -136,8 +147,32 @@ func (d *TrafficPolicy) Equals(in any) bool {
 	if !d.spec.hashPolicies.Equals(d2.spec.hashPolicies) {
 		return false
 	}
-
 	return true
+}
+
+// Validate performs PGV (protobuf-generated validation) validation by delegating
+// to each policy sub-IR's Validate() method. This follows the exact same pattern as the Equals() method.
+// PGV validation is always performed regardless of route replacement mode.
+func (p *TrafficPolicy) Validate() error {
+	var validators []func() error
+	validators = append(validators, p.spec.ai.Validate)
+	validators = append(validators, p.spec.transformation.Validate)
+	validators = append(validators, p.spec.rustformation.Validate)
+	validators = append(validators, p.spec.localRateLimit.Validate)
+	validators = append(validators, p.spec.globalRateLimit.Validate)
+	validators = append(validators, p.spec.extProc.Validate)
+	validators = append(validators, p.spec.extAuth.Validate)
+	validators = append(validators, p.spec.csrf.Validate)
+	validators = append(validators, p.spec.cors.Validate)
+	validators = append(validators, p.spec.buffer.Validate)
+	validators = append(validators, p.spec.hashPolicies.Validate)
+	validators = append(validators, p.spec.autoHostRewrite.Validate)
+	for _, validator := range validators {
+		if err := validator(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type trafficPolicyPluginGwPass struct {
@@ -185,7 +220,7 @@ func NewPlugin(ctx context.Context, commoncol *common.CommonCollections) extensi
 	), commoncol.KrtOpts.ToOptions("TrafficPolicy")...)
 	gk := wellknown.TrafficPolicyGVK.GroupKind()
 
-	translator := NewTrafficPolicyBuilder(ctx, commoncol)
+	translator := NewTrafficPolicyConstructor(ctx, commoncol)
 	v := validator.New()
 
 	// TrafficPolicy IR will have TypedConfig -> implement backendroute method to add prompt guard, etc.
@@ -197,8 +232,8 @@ func NewPlugin(ctx context.Context, commoncol *common.CommonCollections) extensi
 			Name:      policyCR.Name,
 		}
 
-		policyIR, errors := translator.Translate(krtctx, policyCR)
-		if err := policyIR.Validate(ctx, v, commoncol.Settings.RouteReplacementMode); err != nil {
+		policyIR, errors := translator.ConstructIR(krtctx, policyCR)
+		if err := validateWithRouteReplacementMode(ctx, policyIR, v, commoncol.Settings.RouteReplacementMode); err != nil {
 			logger.Error("validation failed", "policy", policyCR.Name, "error", err)
 			errors = append(errors, err)
 		}
@@ -352,22 +387,31 @@ func (p *trafficPolicyPluginGwPass) ApplyForRoute(ctx context.Context, pCtx *ir.
 		}
 	}
 
-	if policy.spec.hashPolicies != nil {
-		outputRoute.GetRoute().HashPolicy = policy.spec.hashPolicies.policies
-	}
-
-	if policy.spec.autoHostRewrite != nil && policy.spec.autoHostRewrite.enabled != nil && policy.spec.autoHostRewrite.enabled.GetValue() {
-		// Only apply TrafficPolicy's AutoHostRewrite if built-in policy's AutoHostRewrite is not already set
-		if ra := outputRoute.GetRoute(); ra != nil && ra.GetHostRewriteSpecifier() == nil {
-			ra.HostRewriteSpecifier = &envoyroutev3.RouteAction_AutoHostRewrite{
-				AutoHostRewrite: policy.spec.autoHostRewrite.enabled,
-			}
-		}
-	}
+	handleRoutePolicies(outputRoute.GetRoute(), policy.spec)
 
 	p.handlePolicies(pCtx.FilterChainName, &pCtx.TypedFilterConfig, policy.spec)
 
 	return nil
+}
+
+func handleRoutePolicies(routeAction *envoyroutev3.RouteAction, spec trafficPolicySpecIr) {
+	// A parent route rule with a delegated backend will not have RouteAction set
+	if routeAction == nil {
+		return
+	}
+
+	if spec.hashPolicies != nil {
+		routeAction.HashPolicy = spec.hashPolicies.policies
+	}
+
+	if spec.autoHostRewrite != nil && spec.autoHostRewrite.enabled != nil && spec.autoHostRewrite.enabled.GetValue() {
+		// Only apply TrafficPolicy's AutoHostRewrite if built-in policy's AutoHostRewrite is not already set
+		if routeAction.GetHostRewriteSpecifier() == nil {
+			routeAction.HostRewriteSpecifier = &envoyroutev3.RouteAction_AutoHostRewrite{
+				AutoHostRewrite: spec.autoHostRewrite.enabled,
+			}
+		}
+	}
 }
 
 func (p *trafficPolicyPluginGwPass) ApplyForRouteBackend(
