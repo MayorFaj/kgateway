@@ -13,7 +13,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"testing"
 	"time"
 
@@ -67,11 +67,15 @@ func getAssetsDir(t *testing.T) string {
 
 // testingWriter is a WriteSyncer that writes logs to testing.T.
 type testingWriter struct {
-	t atomic.Value
+	sync.RWMutex
+	t *testing.T
 }
 
 func (w *testingWriter) Write(p []byte) (n int, err error) {
-	w.t.Load().(*testing.T).Log(string(p)) // Write the log to testing.T
+	w.RLock()
+	defer w.RUnlock()
+
+	w.t.Log(string(p)) // Write the log to testing.T
 	return len(p), nil
 }
 
@@ -80,7 +84,10 @@ func (w *testingWriter) Sync() error {
 }
 
 func (w *testingWriter) set(t *testing.T) {
-	w.t.Store(t)
+	w.Lock()
+	defer w.Unlock()
+
+	w.t = t
 }
 
 var (
@@ -341,6 +348,8 @@ func setupEnvTestAndRun(t *testing.T, globalSettings *settings.Settings, run fun
 		ErrorIfCRDPathMissing: true,
 		// set assets dir so we can run without the makefile
 		BinaryAssetsDirectory: getAssetsDir(t),
+		// This often hangs (for unknown reasons); we don't need cleanup so just kill it almost instantly
+		ControlPlaneStopTimeout: time.Millisecond,
 		// web hook to add cluster ips to services
 	}
 	envtestutil.RunController(t, logger, globalSettings, testEnv,
@@ -414,10 +423,6 @@ func testScenario(
 	}
 	t.Log("applied yamls", t.Name())
 
-	// wait at least a second before the first check
-	// to give the CP time to process
-	time.Sleep(time.Second)
-
 	t.Cleanup(func() {
 		if t.Failed() {
 			logKrtState(t, fmt.Sprintf("krt state for failed test: %s", t.Name()), kdbg)
@@ -447,7 +452,7 @@ func testScenario(
 			return fmt.Errorf("wrote out file - nothing to test")
 		}
 		return dump.Compare(expectedXdsDump)
-	}, retry.Converge(2), retry.BackoffDelay(2*time.Second), retry.Timeout(10*time.Second))
+	}, retry.Converge(2), retry.Timeout(10*time.Second))
 	t.Logf("%s finished", t.Name())
 }
 
