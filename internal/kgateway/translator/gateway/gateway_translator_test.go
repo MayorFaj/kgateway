@@ -267,15 +267,15 @@ var _ = DescribeTable("Basic",
 				Expect(routeStatus).NotTo(BeNil())
 				Expect(routeStatus.Parents).To(HaveLen(1))
 
-				partiallyInvalid := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionPartiallyInvalid))
-				Expect(partiallyInvalid).NotTo(BeNil())
-				Expect(partiallyInvalid.Status).To(Equal(metav1.ConditionTrue))
-				Expect(partiallyInvalid.Reason).To(Equal(string(gwv1.RouteReasonUnsupportedValue)))
-				Expect(strings.Count(partiallyInvalid.Message, `field invalid_object contains invalid JSON string: "model":"gpt-4"}`)).To(Equal(2),
+				acceptedCond := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionAccepted))
+				Expect(acceptedCond).NotTo(BeNil())
+				Expect(acceptedCond.Status).To(Equal(metav1.ConditionFalse))
+				Expect(acceptedCond.Reason).To(Equal(reporter.RouteRuleDroppedReason))
+				Expect(strings.Count(acceptedCond.Message, `field invalid_object contains invalid JSON string: "model":"gpt-4"}`)).To(Equal(2),
 					"Expected 'invalid_object' message to appear exactly twice")
-				Expect(strings.Count(partiallyInvalid.Message, `field invalid_slices contains invalid JSON string: [1,2,3`)).To(Equal(2),
+				Expect(strings.Count(acceptedCond.Message, `field invalid_slices contains invalid JSON string: [1,2,3`)).To(Equal(2),
 					"Expected 'invalid_slices' message to appear exactly twice")
-				Expect(partiallyInvalid.ObservedGeneration).To(Equal(int64(0)))
+				Expect(acceptedCond.ObservedGeneration).To(Equal(int64(0)))
 			},
 		}),
 	Entry(
@@ -335,13 +335,33 @@ var _ = DescribeTable("Basic",
 		},
 	),
 	Entry(
-		"TrafficPolicy edge cases",
+		"TrafficPolicy ExtAuth different attachment points",
 		translatorTestCase{
 			inputFile:  "traffic-policy/extauth.yaml",
 			outputFile: "traffic-policy/extauth.yaml",
 			gwNN: types.NamespacedName{
 				Namespace: "infra",
 				Name:      "example-gateway",
+			},
+			assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
+				expectedPolicies := []reports.PolicyKey{
+					{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "infra", Name: "extauth-for-gateway-section-name"},
+					{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "infra", Name: "extauth-for-gateway"},
+					{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "infra", Name: "extauth-for-http-route"},
+					{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "infra", Name: "extauth-for-extension-ref"},
+					{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "infra", Name: "extauth-for-route-section-name"},
+				}
+				assertAcceptedPolicyStatus(reportsMap, expectedPolicies)
+			},
+		}),
+	Entry(
+		"TrafficPolicy ExtProc different attachment points",
+		translatorTestCase{
+			inputFile:  "traffic-policy/extproc.yaml",
+			outputFile: "traffic-policy/extproc.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "test",
 			},
 		}),
 	Entry(
@@ -421,7 +441,7 @@ var _ = DescribeTable("Basic",
 				resolvedRefs := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionResolvedRefs))
 				Expect(resolvedRefs).NotTo(BeNil())
 				Expect(resolvedRefs.Status).To(Equal(metav1.ConditionFalse))
-				Expect(resolvedRefs.Message).To(Equal("Service \"example-tcp-svc\" not found"))
+				Expect(resolvedRefs.Message).To(Equal(`Service "example-tcp-svc" not found`))
 			},
 		}),
 	Entry(
@@ -700,30 +720,7 @@ var _ = DescribeTable("Basic",
 			Namespace: "default",
 			Name:      "example-gateway",
 		},
-		assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-			route := &gwv1.HTTPRoute{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "example-route",
-					Namespace: "default",
-				},
-			}
-			routeStatus := reportsMap.BuildRouteStatus(context.Background(), route, wellknown.DefaultGatewayClassName)
-			Expect(routeStatus).NotTo(BeNil())
-			Expect(routeStatus.Parents).To(HaveLen(1))
-
-			// The route itself is considered resolved, but there should be a condition indicating the DirectResponse issue
-			resolvedRefs := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionResolvedRefs))
-			Expect(resolvedRefs).NotTo(BeNil())
-			Expect(resolvedRefs.Status).To(Equal(metav1.ConditionTrue))
-			Expect(resolvedRefs.Reason).To(Equal(string(gwv1.RouteReasonResolvedRefs)))
-
-			// Check if there's a PartiallyInvalid condition that reports the missing DirectResponse
-			partiallyInvalid := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionPartiallyInvalid))
-			Expect(partiallyInvalid).NotTo(BeNil())
-			Expect(partiallyInvalid.Status).To(Equal(metav1.ConditionTrue))
-			Expect(partiallyInvalid.Message).To(ContainSubstring("Dropped Rule"))
-			Expect(partiallyInvalid.Message).To(ContainSubstring("no action specified"))
-		},
+		assertReports: assertRouteInvalidDropped("example-route", "default", "no action specified"),
 	}),
 	Entry("DirectResponse with overlapping filters reports correctly", translatorTestCase{
 		inputFile:  "directresponse/overlapping-filters.yaml",
@@ -732,24 +729,7 @@ var _ = DescribeTable("Basic",
 			Namespace: "default",
 			Name:      "example-gateway",
 		},
-		assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-			route := &gwv1.HTTPRoute{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "example-route",
-					Namespace: "default",
-				},
-			}
-			routeStatus := reportsMap.BuildRouteStatus(context.Background(), route, wellknown.DefaultGatewayClassName)
-			Expect(routeStatus).NotTo(BeNil())
-			Expect(routeStatus.Parents).To(HaveLen(1))
-
-			// Check for PartiallyInvalid condition due to overlapping filters
-			partiallyInvalid := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionPartiallyInvalid))
-			Expect(partiallyInvalid).NotTo(BeNil())
-			Expect(partiallyInvalid.Status).To(Equal(metav1.ConditionTrue))
-			Expect(partiallyInvalid.Reason).To(Equal(string(gwv1.RouteReasonUnsupportedValue)))
-			Expect(partiallyInvalid.Message).To(ContainSubstring("cannot be applied to route with existing action"))
-		},
+		assertReports: assertRouteInvalidDropped("example-route", "default", "cannot be applied to route with existing action"),
 	}),
 	Entry("DirectResponse with invalid backendRef filter reports correctly", translatorTestCase{
 		inputFile:  "directresponse/invalid-backendref-filter.yaml",
@@ -815,6 +795,14 @@ var _ = DescribeTable("Basic",
 	Entry("HTTPListenerPolicy with healthCheck", translatorTestCase{
 		inputFile:  "httplistenerpolicy/route-and-pol.yaml",
 		outputFile: "httplistenerpolicy/route-and-pol.yaml",
+		gwNN: types.NamespacedName{
+			Namespace: "default",
+			Name:      "example-gateway",
+		},
+	}),
+	Entry("HTTPListenerPolicy with preserveHttp1HeaderCase", translatorTestCase{
+		inputFile:  "httplistenerpolicy/preserve-http1-header-case.yaml",
+		outputFile: "httplistenerpolicy/preserve-http1-header-case.yaml",
 		gwNN: types.NamespacedName{
 			Namespace: "default",
 			Name:      "example-gateway",
@@ -932,6 +920,22 @@ var _ = DescribeTable("Basic",
 			Name:      "example-gateway",
 		},
 	}),
+	Entry("Backend Config Policy with TLS and insecure skip verify", translatorTestCase{
+		inputFile:  "backendconfigpolicy/tls-insecureskipverify.yaml",
+		outputFile: "backendconfigpolicy/tls-insecureskipverify.yaml",
+		gwNN: types.NamespacedName{
+			Namespace: "default",
+			Name:      "example-gateway",
+		},
+	}),
+	Entry("Backend Config Policy with simple TLS", translatorTestCase{
+		inputFile:  "backendconfigpolicy/simple-tls.yaml",
+		outputFile: "backendconfigpolicy/simple-tls.yaml",
+		gwNN: types.NamespacedName{
+			Namespace: "default",
+			Name:      "example-gateway",
+		},
+	}),
 	Entry(
 		"TrafficPolicy with explicit generation",
 		translatorTestCase{
@@ -980,34 +984,16 @@ var _ = DescribeTable("Route Replacement",
 				Namespace: "gwtest",
 				Name:      "example-gateway",
 			},
-			assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-				route := &gwv1.HTTPRoute{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "invalid-traffic-policy-route",
-						Namespace: "gwtest",
-					},
-				}
-				routeStatus := reportsMap.BuildRouteStatus(context.Background(), route, wellknown.DefaultGatewayClassName)
-				Expect(routeStatus).NotTo(BeNil())
-				Expect(routeStatus.Parents).To(HaveLen(1))
-
-				partiallyInvalid := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionPartiallyInvalid))
-				Expect(partiallyInvalid).NotTo(BeNil())
-				Expect(partiallyInvalid.Status).To(Equal(metav1.ConditionTrue))
-				Expect(partiallyInvalid.Reason).To(Equal(string(gwv1.RouteReasonUnsupportedValue)))
-				Expect(partiallyInvalid.Message).To(ContainSubstring("Dropped Rule (0)"))
-				Expect(partiallyInvalid.Message).To(ContainSubstring("the rewrite /new//../path is invalid"))
-				Expect(partiallyInvalid.ObservedGeneration).To(Equal(int64(1)))
-			},
+			assertReports: assertRouteInvalidDropped("invalid-traffic-policy-route", "gwtest", "the rewrite /new//../path is invalid"),
 		},
 		func(s *settings.Settings) {
 			s.RouteReplacementMode = settings.RouteReplacementStandard
 		}),
 
-	Entry("Standard Mode - Invalid Rate Limit Global Fields",
+	Entry("Standard Mode - HTTPRoute extensionRef to missing policy",
 		translatorTestCase{
-			inputFile:  "route-replacement/standard/invalid-ratelimit-global-empty-fields.yaml",
-			outputFile: "route-replacement/standard/invalid-ratelimit-global-empty-fields-out.yaml",
+			inputFile:  "route-replacement/standard/httproute-with-missing-extension-ref.yaml",
+			outputFile: "route-replacement/standard/httproute-with-missing-extension-ref-out.yaml",
 			gwNN: types.NamespacedName{
 				Namespace: "gwtest",
 				Name:      "example-gateway",
@@ -1023,15 +1009,27 @@ var _ = DescribeTable("Route Replacement",
 				Expect(routeStatus).NotTo(BeNil())
 				Expect(routeStatus.Parents).To(HaveLen(1))
 
-				partiallyInvalid := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionPartiallyInvalid))
-				Expect(partiallyInvalid).NotTo(BeNil())
-				Expect(partiallyInvalid.Status).To(Equal(metav1.ConditionTrue))
-				Expect(partiallyInvalid.Reason).To(Equal(string(gwv1.RouteReasonUnsupportedValue)))
-				Expect(partiallyInvalid.Message).To(ContainSubstring("Dropped Rule (0)"))
-				Expect(partiallyInvalid.Message).To(ContainSubstring("failed to create rate limit actions"))
-				Expect(partiallyInvalid.Message).To(ContainSubstring("header entry requires Header field to be set"))
-				Expect(partiallyInvalid.ObservedGeneration).To(Equal(int64(0)))
+				acceptedCond := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionAccepted))
+				Expect(acceptedCond).NotTo(BeNil())
+				Expect(acceptedCond.Status).To(Equal(metav1.ConditionFalse))
+				Expect(acceptedCond.Reason).To(Equal(reporter.RouteRuleDroppedReason))
+				Expect(acceptedCond.Message).To(ContainSubstring("Dropped Rule (0)"))
+				Expect(acceptedCond.Message).To(ContainSubstring("gateway.kgateway.dev/TrafficPolicy/gwtest/my-tp-that-doesnt-exist: policy not found"))
 			},
+		},
+		func(s *settings.Settings) {
+			s.RouteReplacementMode = settings.RouteReplacementStandard
+		}),
+
+	Entry("Standard Mode - Invalid Rate Limit Global Fields",
+		translatorTestCase{
+			inputFile:  "route-replacement/standard/invalid-ratelimit-global-empty-fields.yaml",
+			outputFile: "route-replacement/standard/invalid-ratelimit-global-empty-fields-out.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "gwtest",
+				Name:      "example-gateway",
+			},
+			assertReports: assertRouteInvalidDropped("test-route", "gwtest", "failed to create rate limit actions", "header entry requires Header field to be set"),
 		},
 		func(s *settings.Settings) {
 			s.RouteReplacementMode = settings.RouteReplacementStandard
@@ -1062,12 +1060,8 @@ var _ = DescribeTable("Route Replacement",
 				Expect(accepted).NotTo(BeNil())
 				Expect(accepted.Status).To(Equal(metav1.ConditionTrue))
 				Expect(accepted.Reason).To(Equal(string(gwv1.RouteReasonAccepted)))
-				Expect(accepted.Message).To(Equal(""))
+				Expect(accepted.Message).To(Equal("Route is accepted"))
 				Expect(accepted.ObservedGeneration).To(Equal(int64(0)))
-
-				// Expect no PartiallyInvalid condition since template validation is skipped in standard mode
-				partiallyInvalid := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionPartiallyInvalid))
-				Expect(partiallyInvalid).To(BeNil())
 			},
 		},
 		func(s *settings.Settings) {
@@ -1099,12 +1093,8 @@ var _ = DescribeTable("Route Replacement",
 				Expect(accepted).NotTo(BeNil())
 				Expect(accepted.Status).To(Equal(metav1.ConditionTrue))
 				Expect(accepted.Reason).To(Equal(string(gwv1.RouteReasonAccepted)))
-				Expect(accepted.Message).To(Equal(""))
+				Expect(accepted.Message).To(Equal("Route is accepted"))
 				Expect(accepted.ObservedGeneration).To(Equal(int64(0)))
-
-				// Expect no PartiallyInvalid condition since template validation is skipped in standard mode
-				partiallyInvalid := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionPartiallyInvalid))
-				Expect(partiallyInvalid).To(BeNil())
 			},
 		},
 		func(s *settings.Settings) {
@@ -1135,12 +1125,8 @@ var _ = DescribeTable("Route Replacement",
 				Expect(accepted).NotTo(BeNil())
 				Expect(accepted.Status).To(Equal(metav1.ConditionTrue))
 				Expect(accepted.Reason).To(Equal(string(gwv1.RouteReasonAccepted)))
-				Expect(accepted.Message).To(Equal(""))
+				Expect(accepted.Message).To(Equal("Route is accepted"))
 				Expect(accepted.ObservedGeneration).To(Equal(int64(0)))
-
-				// Expect no PartiallyInvalid condition since template validation is skipped in standard mode
-				partiallyInvalid := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionPartiallyInvalid))
-				Expect(partiallyInvalid).To(BeNil())
 			},
 		},
 		func(s *settings.Settings) {
@@ -1154,25 +1140,7 @@ var _ = DescribeTable("Route Replacement",
 				Namespace: "gwtest",
 				Name:      "example-gateway",
 			},
-			assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-				route := &gwv1.HTTPRoute{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-route",
-						Namespace: "gwtest",
-					},
-				}
-				routeStatus := reportsMap.BuildRouteStatus(context.Background(), route, wellknown.DefaultGatewayClassName)
-				Expect(routeStatus).NotTo(BeNil())
-				Expect(routeStatus.Parents).To(HaveLen(1))
-
-				partiallyInvalid := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionPartiallyInvalid))
-				Expect(partiallyInvalid).NotTo(BeNil())
-				Expect(partiallyInvalid.Status).To(Equal(metav1.ConditionTrue))
-				Expect(partiallyInvalid.Reason).To(Equal(string(gwv1.RouteReasonUnsupportedValue)))
-				Expect(partiallyInvalid.Message).To(ContainSubstring("Dropped Rule (0)"))
-				Expect(partiallyInvalid.Message).To(ContainSubstring("invalid xds configuration"))
-				Expect(partiallyInvalid.ObservedGeneration).To(Equal(int64(0)))
-			},
+			assertReports: assertRouteInvalidDropped("test-route", "gwtest", "invalid xds configuration"),
 		},
 		func(s *settings.Settings) {
 			s.RouteReplacementMode = settings.RouteReplacementStrict
@@ -1185,25 +1153,7 @@ var _ = DescribeTable("Route Replacement",
 				Namespace: "gwtest",
 				Name:      "example-gateway",
 			},
-			assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-				route := &gwv1.HTTPRoute{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "invalid-traffic-policy-route",
-						Namespace: "gwtest",
-					},
-				}
-				routeStatus := reportsMap.BuildRouteStatus(context.Background(), route, wellknown.DefaultGatewayClassName)
-				Expect(routeStatus).NotTo(BeNil())
-				Expect(routeStatus.Parents).To(HaveLen(1))
-
-				partiallyInvalid := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionPartiallyInvalid))
-				Expect(partiallyInvalid).NotTo(BeNil())
-				Expect(partiallyInvalid.Status).To(Equal(metav1.ConditionTrue))
-				Expect(partiallyInvalid.Reason).To(Equal(string(gwv1.RouteReasonUnsupportedValue)))
-				Expect(partiallyInvalid.Message).To(ContainSubstring("Dropped Rule (0)"))
-				Expect(partiallyInvalid.Message).To(ContainSubstring("extauthz: extension not found"))
-				Expect(partiallyInvalid.ObservedGeneration).To(Equal(int64(0)))
-			},
+			assertReports: assertRouteInvalidDropped("invalid-traffic-policy-route", "gwtest", "extauthz: gateway extension gwtest/non-existent-auth-extension not found"),
 		},
 		func(s *settings.Settings) {
 			s.RouteReplacementMode = settings.RouteReplacementStrict
@@ -1216,25 +1166,7 @@ var _ = DescribeTable("Route Replacement",
 				Namespace: "gwtest",
 				Name:      "example-gateway",
 			},
-			assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-				route := &gwv1.HTTPRoute{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "invalid-traffic-policy-route",
-						Namespace: "gwtest",
-					},
-				}
-				routeStatus := reportsMap.BuildRouteStatus(context.Background(), route, wellknown.DefaultGatewayClassName)
-				Expect(routeStatus).NotTo(BeNil())
-				Expect(routeStatus.Parents).To(HaveLen(1))
-
-				partiallyInvalid := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionPartiallyInvalid))
-				Expect(partiallyInvalid).NotTo(BeNil())
-				Expect(partiallyInvalid.Status).To(Equal(metav1.ConditionTrue))
-				Expect(partiallyInvalid.Reason).To(Equal(string(gwv1.RouteReasonUnsupportedValue)))
-				Expect(partiallyInvalid.Message).To(ContainSubstring("Dropped Rule (0)"))
-				Expect(partiallyInvalid.Message).To(ContainSubstring("invalid xds configuration"))
-				Expect(partiallyInvalid.ObservedGeneration).To(Equal(int64(0)))
-			},
+			assertReports: assertRouteInvalidDropped("invalid-traffic-policy-route", "gwtest", "invalid xds configuration"),
 		},
 		func(s *settings.Settings) {
 			s.RouteReplacementMode = settings.RouteReplacementStrict
@@ -1247,25 +1179,7 @@ var _ = DescribeTable("Route Replacement",
 				Namespace: "gwtest",
 				Name:      "example-gateway",
 			},
-			assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-				route := &gwv1.HTTPRoute{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "invalid-traffic-policy-route",
-						Namespace: "gwtest",
-					},
-				}
-				routeStatus := reportsMap.BuildRouteStatus(context.Background(), route, wellknown.DefaultGatewayClassName)
-				Expect(routeStatus).NotTo(BeNil())
-				Expect(routeStatus.Parents).To(HaveLen(1))
-
-				partiallyInvalid := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionPartiallyInvalid))
-				Expect(partiallyInvalid).NotTo(BeNil())
-				Expect(partiallyInvalid.Status).To(Equal(metav1.ConditionTrue))
-				Expect(partiallyInvalid.Reason).To(Equal(string(gwv1.RouteReasonUnsupportedValue)))
-				Expect(partiallyInvalid.Message).To(ContainSubstring("Dropped Rule (0)"))
-				Expect(partiallyInvalid.Message).To(ContainSubstring("invalid xds configuration"))
-				Expect(partiallyInvalid.ObservedGeneration).To(Equal(int64(0)))
-			},
+			assertReports: assertRouteInvalidDropped("invalid-traffic-policy-route", "gwtest", "invalid xds configuration"),
 		},
 		func(s *settings.Settings) {
 			s.RouteReplacementMode = settings.RouteReplacementStrict
@@ -1278,25 +1192,7 @@ var _ = DescribeTable("Route Replacement",
 				Namespace: "gwtest",
 				Name:      "example-gateway",
 			},
-			assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-				route := &gwv1.HTTPRoute{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "invalid-traffic-policy-route",
-						Namespace: "gwtest",
-					},
-				}
-				routeStatus := reportsMap.BuildRouteStatus(context.Background(), route, wellknown.DefaultGatewayClassName)
-				Expect(routeStatus).NotTo(BeNil())
-				Expect(routeStatus.Parents).To(HaveLen(1))
-
-				partiallyInvalid := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionPartiallyInvalid))
-				Expect(partiallyInvalid).NotTo(BeNil())
-				Expect(partiallyInvalid.Status).To(Equal(metav1.ConditionTrue))
-				Expect(partiallyInvalid.Reason).To(Equal(string(gwv1.RouteReasonUnsupportedValue)))
-				Expect(partiallyInvalid.Message).To(ContainSubstring("Dropped Rule (0)"))
-				Expect(partiallyInvalid.Message).To(ContainSubstring("invalid xds configuration"))
-				Expect(partiallyInvalid.ObservedGeneration).To(Equal(int64(0)))
-			},
+			assertReports: assertRouteInvalidDropped("invalid-traffic-policy-route", "gwtest", "invalid xds configuration"),
 		},
 		func(s *settings.Settings) {
 			s.RouteReplacementMode = settings.RouteReplacementStrict
@@ -1322,15 +1218,12 @@ var _ = DescribeTable("Route Replacement",
 
 				accepted := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionAccepted))
 				Expect(accepted).NotTo(BeNil())
+				// Template is structurally valid (passes xDS validation) but would fail at runtime
+				// Accepted=true condition should be set since it passes validation
 				Expect(accepted.Status).To(Equal(metav1.ConditionTrue))
 				Expect(accepted.Reason).To(Equal(string(gwv1.RouteReasonAccepted)))
-				Expect(accepted.Message).To(Equal(""))
+				Expect(accepted.Message).To(Equal("Route is accepted"))
 				Expect(accepted.ObservedGeneration).To(Equal(int64(0)))
-
-				// Template is structurally valid (passes xDS validation) but would fail at runtime
-				// No PartiallyInvalid condition should be set since it passes validation
-				partiallyInvalid := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionPartiallyInvalid))
-				Expect(partiallyInvalid).To(BeNil())
 			},
 		},
 		func(s *settings.Settings) {
@@ -1339,6 +1232,7 @@ var _ = DescribeTable("Route Replacement",
 )
 
 var _ = DescribeTable("Route Delegation",
+	// wantStatusErrors is an optional list of route,policy errors in that order
 	func(inputFile string, wantHTTPRouteErrors map[types.NamespacedName]string) {
 		dir := fsutils.MustGetThisDir()
 		test(
@@ -1353,8 +1247,8 @@ var _ = DescribeTable("Route Delegation",
 			},
 			func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
 				if wantHTTPRouteErrors == nil {
-					Expect(translatortest.AreReportsSuccess(gwNN, reportsMap)).NotTo(HaveOccurred())
-					return
+					// validate status on all routes
+					Expect(translatortest.GetHTTPRouteStatusError(reportsMap, nil)).NotTo(HaveOccurred())
 				}
 				for route, err := range wantHTTPRouteErrors {
 					Expect(translatortest.GetHTTPRouteStatusError(reportsMap, &route)).To(MatchError(ContainSubstring(err)))
@@ -1408,6 +1302,7 @@ var _ = DescribeTable("Route Delegation",
 	Entry("Child route matcher does not match parent", "discard_invalid_child_matches.yaml", nil),
 	Entry("Multi-level multiple parents delegation", "multi_level_multiple_parents.yaml", nil),
 	Entry("TrafficPolicy only on child", "traffic_policy.yaml", nil),
+	Entry("TrafficPolicy with policy applied to output route", "traffic_policy_route_policy.yaml", nil),
 	Entry("TrafficPolicy inheritance from parent", "traffic_policy_inheritance.yaml", nil),
 	Entry("TrafficPolicy ignore child override on conflict", "traffic_policy_inheritance_child_override_ignore.yaml", nil),
 	Entry("TrafficPolicy merge child override on no conflict", "traffic_policy_inheritance_child_override_ok.yaml", nil),
@@ -1533,6 +1428,11 @@ func test(
 	)
 }
 
+// assertAcceptedPolicyStatus is a helper function to verify policy status conditions
+func assertAcceptedPolicyStatus(reportsMap reports.ReportMap, policies []reports.PolicyKey) {
+	assertPolicyStatusWithGeneration(reportsMap, policies, 0)
+}
+
 // assertPolicyStatusWithGeneration is a helper function to verify policy status conditions with a specific generation
 func assertPolicyStatusWithGeneration(reportsMap reports.ReportMap, policies []reports.PolicyKey, expectedGeneration int64) {
 	var currentStatus gwv1alpha2.PolicyStatus
@@ -1552,7 +1452,34 @@ func assertPolicyStatusWithGeneration(reportsMap reports.ReportMap, policies []r
 	}
 }
 
-// assertAcceptedPolicyStatus is a helper function to verify policy status conditions
-func assertAcceptedPolicyStatus(reportsMap reports.ReportMap, policies []reports.PolicyKey) {
-	assertPolicyStatusWithGeneration(reportsMap, policies, 0)
+// assertRouteInvalidDropped is a helper for asserting that a route has the Accepted=false status condition
+// for dropped rules with variadic expected message substrings.
+func assertRouteInvalidDropped(routeName, namespace string, expectedMsgSubstrings ...string) translatortest.AssertReports {
+	return func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
+		route := &gwv1.HTTPRoute{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      routeName,
+				Namespace: namespace,
+			},
+		}
+		routeStatus := reportsMap.BuildRouteStatus(context.Background(), route, wellknown.DefaultGatewayClassName)
+		Expect(routeStatus).NotTo(BeNil())
+		Expect(routeStatus.Parents).To(HaveLen(1))
+
+		resolvedRefs := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionResolvedRefs))
+		Expect(resolvedRefs).NotTo(BeNil())
+		Expect(resolvedRefs.Status).To(Equal(metav1.ConditionTrue))
+		Expect(resolvedRefs.Reason).To(Equal(string(gwv1.RouteReasonResolvedRefs)))
+		Expect(resolvedRefs.Message).NotTo(BeEmpty())
+
+		accepted := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionAccepted))
+		Expect(accepted).NotTo(BeNil())
+		Expect(accepted.Status).To(Equal(metav1.ConditionFalse))
+		Expect(accepted.Reason).To(Equal(string(reporter.RouteRuleDroppedReason)))
+		Expect(accepted.Message).To(ContainSubstring("Dropped Rule"))
+		for _, msgSubstring := range expectedMsgSubstrings {
+			Expect(accepted.Message).To(ContainSubstring(msgSubstring))
+		}
+		Expect(accepted.ObservedGeneration).To(Equal(int64(0)))
+	}
 }

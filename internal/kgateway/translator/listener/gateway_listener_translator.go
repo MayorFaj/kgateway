@@ -19,6 +19,7 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/krtcollections"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/query"
 	route "github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/httproute"
+	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/metrics"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/routeutils"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/sslutils"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils"
@@ -32,7 +33,7 @@ type ListenerTranslatorConfig struct {
 	ListenerBindIpv6 bool
 }
 
-// TranslateListeners translates the set of gloo listeners required to produce a full output proxy (either form one Gateway or multiple merged Gateways)
+// TranslateListeners translates the set of ListenerIRs required to produce a full output proxy (either from one Gateway or multiple merged Gateways)
 func TranslateListeners(
 	kctx krt.HandlerContext,
 	ctx context.Context,
@@ -42,6 +43,12 @@ func TranslateListeners(
 	reporter reports.Reporter,
 	settings ListenerTranslatorConfig,
 ) []ir.ListenerIR {
+	defer metrics.CollectTranslationMetrics(metrics.TranslatorMetricLabels{
+		Name:       gateway.Name,
+		Namespace:  gateway.Namespace,
+		Translator: "TranslateListeners",
+	})(nil)
+
 	validatedListeners := validateGateway(gateway, reporter)
 
 	mergedListeners := mergeGWListeners(queries, gateway.Namespace, validatedListeners, *gateway, routesForGw, reporter, settings)
@@ -280,19 +287,6 @@ func (ml *MergedListeners) translateListeners(
 	var listeners []ir.ListenerIR
 	for _, mergedListener := range ml.Listeners {
 		listener := mergedListener.TranslateListener(kctx, ctx, queries, reporter)
-
-		// run listener plugins
-		//		panic("TODO: handle listener policy attachment")
-		// for _, listenerPlugin := range pluginRegistry.GetListenerPlugins() {
-		// err := listenerPlugin.ApplyListenerPlugin(ctx, &plugins.ListenerContext{
-		// 	Gateway:    &ml.parentGw,
-		// 	GwListener: &mergedListener.listener,
-		// }, listener)
-		// if err != nil {
-		// 	contextutils.LoggerFrom(ctx).Errorf("error in ListenerPlugin: %v", err)
-		// }
-		// }
-
 		listeners = append(listeners, listener)
 	}
 	return listeners
