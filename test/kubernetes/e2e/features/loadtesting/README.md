@@ -5,6 +5,7 @@ This directory contains the KGateway load testing framework that implements perf
 ## Overview
 
 The load testing framework provides:
+
 - **Attached Routes Test**: Measures Gateway API route attachment performance
 - **VCluster Simulation**: Creates fake cluster resources to simulate production-scale environments
 - **Scale-Aware Testing**: Automatically adjusts thresholds based on route count (1000 vs 5000+ routes)
@@ -13,12 +14,11 @@ The load testing framework provides:
 ## Prerequisites
 
 Before running the load tests, you need a properly configured Kubernetes cluster with:
+
 - Gateway API CRDs installed
 - KGateway controller deployed
-- Appropriate Docker images loaded
 
 ## 🚀 Setup Options
-
 
 ```bash
 # Navigate to the project root
@@ -56,15 +56,13 @@ kubectl config current-context
 
 ```bash
 # Run baseline test (1000 routes)
-cd <project-root>
-SKIP_INSTALL=true CLUSTER_NAME=kind INSTALL_NAMESPACE=kgateway-system go test -v ./test/kubernetes/e2e/tests -run "^TestKgateway$/^AttachedRoutes$/^TestAttachedRoutesBaseline$"
+make run-load-tests-baseline
 
-# Run production test (5000 routes) with existing installation
-SKIP_INSTALL=true CLUSTER_NAME=kind INSTALL_NAMESPACE=kgateway-system go test -v ./test/kubernetes/e2e/tests -run "^TestKgateway$/^AttachedRoutes$/^TestAttachedRoutesProduction$"
+# Run production test (5000 routes)
+make run-load-tests-production
 
-# Run all AttachedRoutes tests with existing installation
-SKIP_INSTALL=true CLUSTER_NAME=kind INSTALL_NAMESPACE=kgateway-system go test -v ./test/kubernetes/e2e/tests -run "^TestKgateway$/^AttachedRoutes$"
-
+# Run all load tests (baseline + production)
+make run-load-tests
 ```
 
 ### VS Code Debug Configuration
@@ -131,6 +129,7 @@ Add this configuration to your `.vscode/launch.json` file:
 ```
 
 #### Environment Variables Explained:
+
 - `SKIP_INSTALL=true`: Skips KGateway installation (assumes it's already installed)
 - `CLUSTER_NAME=kind`: Targets the kind cluster named "kind"
 - `INSTALL_NAMESPACE=kgateway-system`: Specifies where KGateway is installed
@@ -138,16 +137,19 @@ Add this configuration to your `.vscode/launch.json` file:
 ## Test Types and Metrics
 
 ### Baseline Test (1000 routes)
+
 - **Purpose**: Tests performance with moderate scale
 - **Thresholds**: Setup <30s, Teardown <10s
 - **Batch Size**: 100 routes per batch
 
 ### Production Test (5000 routes)
+
 - **Purpose**: Tests performance at production scale
 - **Thresholds**: Setup <90s, Teardown <20s
 - **Batch Size**: 500 routes per batch
 
-### Key Metrics Measured:
+### Key Metrics Measured
+
 - **Setup Time**: Time to add 1 incremental route to existing baseline
 - **Route Ready Time**: Time until route accepts traffic
 - **Teardown Time**: Time to remove 1 route
@@ -156,13 +158,15 @@ Add this configuration to your `.vscode/launch.json` file:
 
 ## Framework Architecture
 
-### Components:
+### Components
+
 - **`types.go`**: Data structures and configuration thresholds
 - **`vcluster_simulator.go`**: Simulates fake cluster resources (nodes, services, endpoints)
 - **`loadtest_manager.go`**: Orchestrates test execution and resource management
 - **`attachedroutes_suite.go`**: Implements the Attached Routes performance test
 
-### Test Methodology:
+### Test Methodology
+
 1. Create simulated cluster with appropriate scale
 2. Set up test infrastructure (namespaces, services, gateways)
 3. Create baseline routes (1000 or 5000) in batches
