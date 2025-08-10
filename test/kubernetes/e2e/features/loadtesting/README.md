@@ -2,7 +2,7 @@
 
 This directory contains the KGateway load testing framework that implements performance tests based on the gateway-api-bench methodology. The framework focuses on **control plane performance** testing rather than data plane traffic.
 
-## 🎯 Overview
+## Overview
 
 The load testing framework provides:
 - **Attached Routes Test**: Measures Gateway API route attachment performance
@@ -10,7 +10,7 @@ The load testing framework provides:
 - **Scale-Aware Testing**: Automatically adjusts thresholds based on route count (1000 vs 5000+ routes)
 - **Performance Monitoring**: Tracks setup time, teardown time, and status propagation
 
-## 📋 Prerequisites
+## Prerequisites
 
 Before running the load tests, you need a properly configured Kubernetes cluster with:
 - Gateway API CRDs installed
@@ -50,7 +50,7 @@ kubectl get pods -n kgateway-system
 kubectl config current-context
 ```
 
-## 🧪 Running Tests
+## Running Tests
 
 ### Command Line
 
@@ -135,7 +135,7 @@ Add this configuration to your `.vscode/launch.json` file:
 - `CLUSTER_NAME=kind`: Targets the kind cluster named "kind"
 - `INSTALL_NAMESPACE=kgateway-system`: Specifies where KGateway is installed
 
-## 📊 Test Types and Metrics
+## Test Types and Metrics
 
 ### Baseline Test (1000 routes)
 - **Purpose**: Tests performance with moderate scale
@@ -154,7 +154,7 @@ Add this configuration to your `.vscode/launch.json` file:
 - **Total Writes**: Number of status updates during test
 - **Resource Usage**: CPU, memory, and API call metrics
 
-## 🏗️ Framework Architecture
+## Framework Architecture
 
 ### Components:
 - **`types.go`**: Data structures and configuration thresholds
@@ -172,7 +172,7 @@ Add this configuration to your `.vscode/launch.json` file:
 7. **Stop stopwatch** → Record performance metrics
 8. Measure teardown time for incremental route cleanup
 
-## 🧪 The "Attached Routes" Test Methodology
+## The "Attached Routes" Test Methodology
 
 This test follows a specific methodology inspired by gateway-api-bench and implements the exact approach recommended by the KGateway team for measuring real-world Gateway API performance.
 
@@ -185,9 +185,9 @@ This test follows a specific methodology inspired by gateway-api-bench and imple
 5. **Translation Wait**: Wait for all routes to be "attached" to gateways (status propagation)
 6. **Route Validation**: Verify baseline routes are accepted and valid
 7. **Monitoring Start**: Begin watching gateway status changes with event-driven handlers
-8. **⏱️ STOPWATCH START**: Create 1 additional incremental route
+8. **STOPWATCH START**: Create 1 additional incremental route
 9. **Route Ready**: Curl the gateway until it returns 200 (real traffic validation)
-10. **⏱️ STOPWATCH STOP**: Record "User Time" - the actual time users would experience
+10. **STOPWATCH STOP**: Record "User Time" - the actual time users would experience
 11. **Teardown**: Delete the incremental route and measure teardown time
 
 ### Why This Methodology
