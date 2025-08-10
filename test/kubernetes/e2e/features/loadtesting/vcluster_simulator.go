@@ -14,6 +14,11 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e"
 )
 
+const (
+	// MemoryFootprintPerService represents the estimated memory footprint per service in bytes
+	MemoryFootprintPerService = 1024
+)
+
 type VClusterSimulator struct {
 	ctx              context.Context
 	testInstallation *e2e.TestInstallation
@@ -276,7 +281,7 @@ func (vcs *VClusterSimulator) calculateMetrics(setupDuration time.Duration) {
 		TotalFakeServices:  totalServices,
 		TotalFakeEndpoints: totalEndpoints,
 		SetupDuration:      setupDuration,
-		MemoryFootprint:    int64(totalServices * 1024),
+		MemoryFootprint:    int64(totalServices * MemoryFootprintPerService),
 		APICallsGenerated:  int64(vcs.config.FakeNodeCount + (totalServices * 2)),
 	}
 }
