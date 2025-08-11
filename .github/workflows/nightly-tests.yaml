@@ -12,7 +12,6 @@ on:
   # Day of the week ([0,6] with 0=Sunday)
   schedule:
     - cron: "0 5 * * *" # every day @ 05:00 UTC, run tests against latest main
-    - cron: "0 2 * * *" # every day @ 02:00 UTC, run load tests against latest main
   workflow_dispatch:
     inputs:
       branch:
@@ -55,7 +54,7 @@ jobs:
 
   kube_gateway_api_load_tests:
     name: Load Tests (branch=main, type=Kubernetes Gateway API, version=${{matrix.kube-version.node}} )
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run-load-tests && inputs.branch == 'main') || github.event.schedule == '0 2 * * *' }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run-load-tests && inputs.branch == 'main') || github.event.schedule == '0 5 * * *' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     strategy:
