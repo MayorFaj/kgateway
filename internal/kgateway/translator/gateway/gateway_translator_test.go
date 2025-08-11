@@ -371,20 +371,17 @@ func TestBasic(t *testing.T) {
 				}
 				translatortest.AssertAcceptedPolicyStatus(t, reportsMap, expectedPolicies)
 			},
-		}),
-	Entry(
-		"TrafficPolicy with rate limiting",
-		translatorTestCase{
+		})
+	})
+
+	t.Run("TrafficPolicy with rate limiting", func(t *testing.T) {
+		test(t, translatorTestCase{
 			inputFile:  "traffic-policy/global-ratelimit",
 			outputFile: "traffic-policy/global-ratelimit.yaml",
 			gwNN: types.NamespacedName{
 				Namespace: "infra",
 				Name:      "example-gateway",
 			},
-		}),
-	Entry(
-		"Load balancer with hash policies, route level",
-		translatorTestCase{
 		})
 	})
 
