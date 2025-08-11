@@ -54,7 +54,7 @@ jobs:
 
   kube_gateway_api_load_tests:
     name: Load Tests (branch=main, type=Kubernetes Gateway API, version=${{matrix.kube-version.node}} )
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run-load-tests && inputs.branch == 'main') || github.event.schedule == '0 5 * * *' }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run-load-tests) || github.event.schedule == '0 5 * * *' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     strategy:
@@ -65,5 +65,5 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        ref: main
+        ref: ${{ inputs.branch == 'workflow_initiating_branch' && github.ref_name || 'main' }}
     - uses: ./.github/actions/kube-gateway-api-load-tests
