@@ -14,7 +14,7 @@ import (
 
 const (
 	// test namespace for proxy resources
-	namespace = "kgateway-test"
+	namespace = "default"
 	// test service name
 	serviceName = "backend-0"
 )

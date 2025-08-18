@@ -2,7 +2,6 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
   name: super-gateway
-  namespace: kgateway-test
 spec:
   gatewayClassName: kgateway
   listeners:
@@ -17,7 +16,6 @@ apiVersion: gateway.kgateway.dev/v1alpha1
 kind: HTTPListenerPolicy
 metadata:
   name: accesslog
-  namespace: kgateway-test
 spec:
   targetRefs:
   - group: gateway.networking.k8s.io
