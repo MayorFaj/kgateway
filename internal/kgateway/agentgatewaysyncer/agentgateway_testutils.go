@@ -38,7 +38,7 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/registry"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/listener"
-	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils/krtutil"
+	krtinternal "github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils/krtutil"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
 	"github.com/kgateway-dev/kgateway/v2/pkg/client/clientset/versioned/fake"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk"
@@ -46,6 +46,7 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/pkg/schemes"
 	"github.com/kgateway-dev/kgateway/v2/pkg/settings"
 	"github.com/kgateway-dev/kgateway/v2/pkg/utils/envutils"
+	"github.com/kgateway-dev/kgateway/v2/test/testutils"
 	"github.com/kgateway-dev/kgateway/v2/test/translator"
 )
 
@@ -528,8 +529,14 @@ func (tc TestCase) Run(
 		anyObjs []runtime.Object
 		ourObjs []runtime.Object
 	)
+	gvkToStructuralSchema, err := translator.GetStructuralSchemas(
+		filepath.Join(testutils.GitRootDirectory(), translator.CRDPath))
+	if err != nil {
+		return nil, fmt.Errorf("error getting structural schemas: %w", err)
+	}
+
 	for _, file := range tc.InputFiles {
-		objs, err := translator.LoadFromFiles(file, scheme)
+		objs, err := translator.LoadFromFiles(file, scheme, gvkToStructuralSchema)
 		if err != nil {
 			return nil, err
 		}
@@ -599,7 +606,7 @@ func (tc TestCase) Run(
 		}, metav1.CreateOptions{})
 	}
 
-	krtOpts := krtutil.KrtOptions{
+	krtOpts := krtinternal.KrtOptions{
 		Stop: ctx.Done(),
 	}
 

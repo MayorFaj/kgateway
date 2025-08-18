@@ -32,9 +32,12 @@ type LocalPolicyTargetReferenceWithSectionName struct {
 	SectionName *gwv1.SectionName `json:"sectionName,omitempty"`
 }
 
-// Select the object to attach the policy by Group, Kind, and its labels.
+// LocalPolicyTargetSelector selects the object to attach the policy by Group, Kind, and MatchLabels.
 // The object must be in the same namespace as the policy and match the
 // specified labels.
+// Do not use targetSelectors when reconciliation times are critical, especially if you
+// have a large number of policies that target the same resource.
+// Instead, use targetRefs to attach the policy.
 type LocalPolicyTargetSelector struct {
 	// The API group of the target resource.
 	// For Kubernetes Gateway API resources, the group is `gateway.networking.k8s.io`.
@@ -46,6 +49,20 @@ type LocalPolicyTargetSelector struct {
 
 	// Label selector to select the target resource.
 	MatchLabels map[string]string `json:"matchLabels"`
+}
+
+// LocalPolicyTargetSelectorWithSectionName the object to attach the policy by Group, Kind, MatchLabels, and optionally SectionName.
+// The object must be in the same namespace as the policy and match the
+// specified labels.
+// Do not use targetSelectors when reconciliation times are critical, especially if you
+// have a large number of policies that target the same resource.
+// Instead, use targetRefs to attach the policy.
+type LocalPolicyTargetSelectorWithSectionName struct {
+	LocalPolicyTargetSelector `json:",inline"`
+
+	// The section name of the target resource.
+	// +optional
+	SectionName *gwv1.SectionName `json:"sectionName,omitempty"`
 }
 
 type PolicyStatus struct {

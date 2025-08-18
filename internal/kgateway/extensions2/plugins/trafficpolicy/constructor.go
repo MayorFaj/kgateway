@@ -85,12 +85,12 @@ func (c *TrafficPolicyConstructor) ConstructIR(
 		errors = append(errors, err)
 	}
 
-	// Construct hash policy specific IR
-	constructHashPolicy(policyCR.Spec, &outSpec)
 	// Construct auto host rewrite specific IR
 	constructAutoHostRewrite(policyCR.Spec, &outSpec)
 	// Construct buffer specific IR
 	constructBuffer(policyCR.Spec, &outSpec)
+	// Construct timeout and retry specific IR
+	constructTimeoutRetry(policyCR.Spec, &outSpec)
 
 	for _, err := range errors {
 		logger.Error("error translating traffic policy", "namespace", policyCR.GetNamespace(), "name", policyCR.GetName(), "error", err)
