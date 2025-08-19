@@ -111,7 +111,7 @@ func TestBasic(t *testing.T) {
 						},
 					},
 				}
-				gatewayStatus := reportsMap.BuildGWStatus(context.Background(), *gateway)
+				gatewayStatus := reportsMap.BuildGWStatus(context.Background(), *gateway, nil)
 				a.NotNil(gatewayStatus)
 				a.Len(gatewayStatus.Listeners, 2)
 				httpsListener := gatewayStatus.Listeners[0]
@@ -261,25 +261,6 @@ func TestBasic(t *testing.T) {
 				a.Equal(`unknown backend kind`, resolvedRefs.Message)
 				a.Equal(int64(0), resolvedRefs.ObservedGeneration)
 			},
-		})
-	})
-
-	t.Run("TrafficPolicy with AI invalided default values", func(t *testing.T) {
-		test(t, translatorTestCase{
-			inputFile:  "traffic-policy/ai-invalid-default-value.yaml",
-			outputFile: "traffic-policy/ai-invalid-default-value.yaml",
-			gwNN: types.NamespacedName{
-				Namespace: "infra",
-				Name:      "example-gateway",
-			},
-			assertReports: translatortest.AssertRouteInvalid(
-				t,
-				"example-route",
-				"infra",
-				reporter.RouteRuleReplacedReason,
-				`field invalid_object contains invalid JSON string: "model":"gpt-4"`,
-				`field invalid_slices contains invalid JSON string: [1,2,3`,
-			),
 		})
 	})
 
@@ -1398,6 +1379,57 @@ func TestRouteReplacement(t *testing.T) {
 				)
 			},
 		},
+		{
+			name:      "AI Invalid Default Values",
+			category:  "policy",
+			inputFile: "policy-ai-default-value-invalid.yaml",
+			minMode:   settings.RouteReplacementStandard,
+			assertStandard: func(t *testing.T) translatortest.AssertReports {
+				return translatortest.AssertRouteInvalid(
+					t,
+					"example-route",
+					"gwtest",
+					reporter.RouteRuleReplacedReason,
+					`field invalid_object contains invalid JSON string: "model":"gpt-4"`,
+				)
+			},
+			assertStrict: func(t *testing.T) translatortest.AssertReports {
+				return translatortest.AssertRouteInvalid(
+					t,
+					"example-route",
+					"gwtest",
+					reporter.RouteRuleReplacedReason,
+					`field invalid_object contains invalid JSON string: "model":"gpt-4"`,
+				)
+			},
+		},
+		// TODO(tim): Uncomment this test once #11995 is fixed.
+		// {
+		// 	name:      "Multiple Invalid Policies Conflict",
+		// 	category:  "policy",
+		// 	inputFile: "policy-multiple-invalid-conflict.yaml",
+		// 	minMode:   settings.RouteReplacementStandard,
+		// 	assertStandard: func(t *testing.T) translatortest.AssertReports {
+		// 		return translatortest.AssertRouteInvalid(
+		// 			t,
+		// 			"conflict-route",
+		// 			"gwtest",
+		// 			reporter.RouteRuleReplacedReason,
+		// 			"field config contains invalid JSON string",
+		// 			"invalid template",
+		// 		)
+		// 	},
+		// 	assertStrict: func(t *testing.T) translatortest.AssertReports {
+		// 		return translatortest.AssertRouteInvalid(
+		// 			t,
+		// 			"conflict-route",
+		// 			"gwtest",
+		// 			reporter.RouteRuleReplacedReason,
+		// 			"field config contains invalid JSON string",
+		// 			"invalid template",
+		// 		)
+		// 	},
+		// },
 		{
 			name:      "ExtAuth Extension Ref Invalid",
 			category:  "policy",
