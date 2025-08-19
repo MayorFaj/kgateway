@@ -276,7 +276,7 @@ type TLSFiles struct {
 	RootCA *string `json:"rootCA,omitempty"`
 }
 
-// +kubebuilder:validation:AtMostOneOf=leastRequest;roundRobin;ringHash;maglev;random
+// +kubebuilder:validation:ExactlyOneOf=leastRequest;roundRobin;ringHash;maglev;random
 type LoadBalancer struct {
 	// HealthyPanicThreshold configures envoy's panic threshold percentage between 0-100. Once the number of non-healthy hosts
 	// reaches this percentage, envoy disregards health information.
@@ -368,6 +368,12 @@ type LoadBalancerRingHashConfig struct {
 	// Defaults to false.
 	// +optional
 	UseHostnameForHashing *bool `json:"useHostnameForHashing,omitempty"`
+
+	// HashPolicies specifies the hash policies for hashing load balancers (RingHash, Maglev).
+	// +optional
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=16
+	HashPolicies []*HashPolicy `json:"hashPolicies,omitempty"`
 }
 
 type LoadBalancerMaglevConfig struct {
@@ -375,37 +381,45 @@ type LoadBalancerMaglevConfig struct {
 	// Defaults to false.
 	// +optional
 	UseHostnameForHashing *bool `json:"useHostnameForHashing,omitempty"`
+
+	// HashPolicies specifies the hash policies for hashing load balancers (RingHash, Maglev).
+	// +optional
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=16
+	HashPolicies []*HashPolicy `json:"hashPolicies,omitempty"`
 }
 
-type LoadBalancerRandomConfig struct{}
-type SlowStart struct {
-	// Represents the size of slow start window.
-	// If set, the newly created host remains in slow start mode starting from its creation time
-	// for the duration of slow start window.
-	// +optional
-	// +kubebuilder:validation:XValidation:rule="matches(self, '^([0-9]{1,5}(h|m|s|ms)){1,4}$')",message="invalid duration value"
-	Window *metav1.Duration `json:"window,omitempty"`
+type (
+	LoadBalancerRandomConfig struct{}
+	SlowStart                struct {
+		// Represents the size of slow start window.
+		// If set, the newly created host remains in slow start mode starting from its creation time
+		// for the duration of slow start window.
+		// +optional
+		// +kubebuilder:validation:XValidation:rule="matches(self, '^([0-9]{1,5}(h|m|s|ms)){1,4}$')",message="invalid duration value"
+		Window *metav1.Duration `json:"window,omitempty"`
 
-	// This parameter controls the speed of traffic increase over the slow start window. Defaults to 1.0,
-	// so that endpoint would get linearly increasing amount of traffic.
-	// When increasing the value for this parameter, the speed of traffic ramp-up increases non-linearly.
-	// The value of aggression parameter should be greater than 0.0.
-	// By tuning the parameter, is possible to achieve polynomial or exponential shape of ramp-up curve.
-	//
-	// During slow start window, effective weight of an endpoint would be scaled with time factor and aggression:
-	// `new_weight = weight * max(min_weight_percent, time_factor ^ (1 / aggression))`,
-	// where `time_factor=(time_since_start_seconds / slow_start_time_seconds)`.
-	//
-	// As time progresses, more and more traffic would be sent to endpoint, which is in slow start window.
-	// Once host exits slow start, time_factor and aggression no longer affect its weight.
-	// +optional
-	// +kubebuilder:validation:XValidation:rule="(self.matches('^-?(?:[0-9]+(?:\\\\.[0-9]*)?|\\\\.[0-9]+)$') && double(self) > 0.0)",message="Aggression, if specified, must be a string representing a number greater than 0.0"
-	Aggression *string `json:"aggression,omitempty"`
+		// This parameter controls the speed of traffic increase over the slow start window. Defaults to 1.0,
+		// so that endpoint would get linearly increasing amount of traffic.
+		// When increasing the value for this parameter, the speed of traffic ramp-up increases non-linearly.
+		// The value of aggression parameter should be greater than 0.0.
+		// By tuning the parameter, is possible to achieve polynomial or exponential shape of ramp-up curve.
+		//
+		// During slow start window, effective weight of an endpoint would be scaled with time factor and aggression:
+		// `new_weight = weight * max(min_weight_percent, time_factor ^ (1 / aggression))`,
+		// where `time_factor=(time_since_start_seconds / slow_start_time_seconds)`.
+		//
+		// As time progresses, more and more traffic would be sent to endpoint, which is in slow start window.
+		// Once host exits slow start, time_factor and aggression no longer affect its weight.
+		// +optional
+		// +kubebuilder:validation:XValidation:rule="(self.matches('^-?(?:[0-9]+(?:\\\\.[0-9]*)?|\\\\.[0-9]+)$') && double(self) > 0.0)",message="Aggression, if specified, must be a string representing a number greater than 0.0"
+		Aggression *string `json:"aggression,omitempty"`
 
-	// Minimum weight percentage of an endpoint during slow start.
-	// +optional
-	MinWeightPercent *uint32 `json:"minWeightPercent,omitempty"`
-}
+		// Minimum weight percentage of an endpoint during slow start.
+		// +optional
+		MinWeightPercent *uint32 `json:"minWeightPercent,omitempty"`
+	}
+)
 
 type LocalityType string
 
@@ -482,3 +496,55 @@ type HealthCheckGrpc struct {
 	// +optional
 	Authority *string `json:"authority,omitempty"`
 }
+
+// +kubebuilder:validation:ExactlyOneOf=header;cookie;sourceIP
+type HashPolicy struct {
+	// Header specifies a header's value as a component of the hash key.
+	// +optional
+	Header *Header `json:"header,omitempty"`
+
+	// Cookie specifies a given cookie as a component of the hash key.
+	// +optional
+	Cookie *Cookie `json:"cookie,omitempty"`
+
+	// SourceIP specifies whether to use the request's source IP address as a component of the hash key.
+	// +optional
+	SourceIP *SourceIP `json:"sourceIP,omitempty"`
+
+	// Terminal, if set, and a hash key is available after evaluating this policy, will cause Envoy to skip the subsequent policies and
+	// use the key as it is.
+	// This is useful for defining "fallback" policies and limiting the time Envoy spends generating hash keys.
+	// +optional
+	Terminal *bool `json:"terminal,omitempty"`
+}
+
+type Header struct {
+	// Name is the name of the header to use as a component of the hash key.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+}
+
+type Cookie struct {
+	// Name of the cookie.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// Path is the name of the path for the cookie.
+	// +optional
+	Path *string `json:"path,omitempty"`
+
+	// TTL specifies the time to live of the cookie.
+	// If specified, a cookie with the TTL will be generated if the cookie is not present.
+	// If the TTL is present and zero, the generated cookie will be a session cookie.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="matches(self, '^([0-9]{1,5}(h|m|s|ms)){1,4}$')",message="invalid duration value"
+	TTL *metav1.Duration `json:"ttl,omitempty"`
+
+	// Attributes are additional attributes for the cookie.
+	// +optional
+	// +kubebuilder:validation:MinProperties=1
+	// +kubebuilder:validation:MaxProperties=10
+	Attributes map[string]string `json:"attributes,omitempty"`
+}
+
+type SourceIP struct{}
