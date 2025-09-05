@@ -440,6 +440,95 @@ func TestProcessAIBackend_MultiPool(t *testing.T) {
 	assert.Equal(t, "gpt-3.5-turbo", metadata1.Fields["model"].GetStringValue())
 }
 
+func TestProcessAIBackend_MultiPoolWithPathOverrides(t *testing.T) {
+	cluster := &envoyclusterv3.Cluster{
+		Name: "multi-pool-path-override-cluster",
+	}
+
+	// Create a multi-pool with different path overrides for each provider
+	model1 := "gpt-4"
+	model2 := "gpt-3.5-turbo"
+	customPath1 := "/api/v1/custom/completions"
+	customPath2 := "/api/v2/fallback/completions"
+
+	aiBackend := &v1alpha1.AIBackend{
+		MultiPool: &v1alpha1.MultiPoolConfig{
+			Priorities: []v1alpha1.Priority{
+				{
+					Pool: []v1alpha1.LLMProvider{
+						{
+							PathOverride: &v1alpha1.PathOverride{
+								FullPath: &customPath1,
+							},
+							Provider: v1alpha1.SupportedLLMProvider{
+								OpenAI: &v1alpha1.OpenAIConfig{
+									Model: &model1,
+									AuthToken: v1alpha1.SingleAuthToken{
+										Kind:   v1alpha1.Inline,
+										Inline: ptr.To("primary-token"),
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Pool: []v1alpha1.LLMProvider{
+						{
+							PathOverride: &v1alpha1.PathOverride{
+								FullPath: &customPath2,
+							},
+							Provider: v1alpha1.SupportedLLMProvider{
+								OpenAI: &v1alpha1.OpenAIConfig{
+									Model: &model2,
+									AuthToken: v1alpha1.SingleAuthToken{
+										Kind:   v1alpha1.Inline,
+										Inline: ptr.To("fallback-token"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	secrets := &ir.Secret{}
+	multiSecrets := map[string]*ir.Secret{}
+
+	err := ProcessAIBackend(aiBackend, secrets, multiSecrets, cluster)
+
+	require.NoError(t, err)
+
+	// Verify we have 2 locality endpoints (priorities)
+	require.Len(t, cluster.LoadAssignment.Endpoints, 2)
+
+	// Verify first priority has custom path
+	priority0 := cluster.LoadAssignment.Endpoints[0]
+	assert.Equal(t, uint32(0), priority0.Priority)
+	require.Len(t, priority0.LbEndpoints, 1)
+
+	endpoint0 := priority0.LbEndpoints[0]
+	metadata0 := endpoint0.Metadata.FilterMetadata["io.solo.transformation"]
+	require.NotNil(t, metadata0)
+	assert.Equal(t, "primary-token", metadata0.Fields["auth_token"].GetStringValue())
+	assert.Equal(t, "gpt-4", metadata0.Fields["model"].GetStringValue())
+	assert.Equal(t, customPath1, metadata0.Fields["path_override"].GetStringValue())
+
+	// Verify second priority has different custom path
+	priority1 := cluster.LoadAssignment.Endpoints[1]
+	assert.Equal(t, uint32(1), priority1.Priority)
+	require.Len(t, priority1.LbEndpoints, 1)
+
+	endpoint1 := priority1.LbEndpoints[0]
+	metadata1 := endpoint1.Metadata.FilterMetadata["io.solo.transformation"]
+	require.NotNil(t, metadata1)
+	assert.Equal(t, "fallback-token", metadata1.Fields["auth_token"].GetStringValue())
+	assert.Equal(t, "gpt-3.5-turbo", metadata1.Fields["model"].GetStringValue())
+	assert.Equal(t, customPath2, metadata1.Fields["path_override"].GetStringValue())
+}
+
 // findTransportSocketMatchByPrefix finds a transport socket match with a name starting with prefix
 func findTransportSocketMatchByPrefix(matches []*envoyclusterv3.Cluster_TransportSocketMatch, prefix string) *envoyclusterv3.Cluster_TransportSocketMatch {
 	for _, match := range matches {

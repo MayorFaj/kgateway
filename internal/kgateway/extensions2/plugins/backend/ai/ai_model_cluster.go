@@ -80,35 +80,35 @@ func buildModelCluster(aiUs *v1alpha1.AIBackend, aiSecret *ir.Secret, multiSecre
 						secretRef := ep.Provider.OpenAI.AuthToken.SecretRef
 						secretForMultiPool = multiSecrets[GetMultiPoolSecretKey(idx, jdx, secretRef.Name)]
 					}
-					result, err = buildOpenAIEndpoint(ep.Provider.OpenAI, ep.HostOverride, secretForMultiPool)
+					result, err = buildOpenAIEndpointWithLLM(ep.Provider.OpenAI, ep.HostOverride, secretForMultiPool, &ep)
 				} else if ep.Provider.Anthropic != nil {
 					var secretForMultiPool *ir.Secret
 					if ep.Provider.Anthropic.AuthToken.Kind == v1alpha1.SecretRef {
 						secretRef := ep.Provider.Anthropic.AuthToken.SecretRef
 						secretForMultiPool = multiSecrets[GetMultiPoolSecretKey(idx, jdx, secretRef.Name)]
 					}
-					result, err = buildAnthropicEndpoint(ep.Provider.Anthropic, ep.HostOverride, secretForMultiPool)
+					result, err = buildAnthropicEndpointWithLLM(ep.Provider.Anthropic, ep.HostOverride, secretForMultiPool, &ep)
 				} else if ep.Provider.AzureOpenAI != nil {
 					var secretForMultiPool *ir.Secret
 					if ep.Provider.AzureOpenAI.AuthToken.Kind == v1alpha1.SecretRef {
 						secretRef := ep.Provider.AzureOpenAI.AuthToken.SecretRef
 						secretForMultiPool = multiSecrets[GetMultiPoolSecretKey(idx, jdx, secretRef.Name)]
 					}
-					result, err = buildAzureOpenAIEndpoint(ep.Provider.AzureOpenAI, ep.HostOverride, secretForMultiPool)
+					result, err = buildAzureOpenAIEndpointWithLLM(ep.Provider.AzureOpenAI, ep.HostOverride, secretForMultiPool, &ep)
 				} else if ep.Provider.Gemini != nil {
 					var secretForMultiPool *ir.Secret
 					if ep.Provider.Gemini.AuthToken.Kind == v1alpha1.SecretRef {
 						secretRef := ep.Provider.Gemini.AuthToken.SecretRef
 						secretForMultiPool = multiSecrets[GetMultiPoolSecretKey(idx, jdx, secretRef.Name)]
 					}
-					result, err = buildGeminiEndpoint(ep.Provider.Gemini, ep.HostOverride, secretForMultiPool)
+					result, err = buildGeminiEndpointWithLLM(ep.Provider.Gemini, ep.HostOverride, secretForMultiPool, &ep)
 				} else if ep.Provider.VertexAI != nil {
 					var secretForMultiPool *ir.Secret
 					if ep.Provider.VertexAI.AuthToken.Kind == v1alpha1.SecretRef {
 						secretRef := ep.Provider.VertexAI.AuthToken.SecretRef
 						secretForMultiPool = multiSecrets[GetMultiPoolSecretKey(idx, jdx, secretRef.Name)]
 					}
-					result, err = buildVertexAIEndpoint(ep.Provider.VertexAI, ep.HostOverride, secretForMultiPool)
+					result, err = buildVertexAIEndpointWithLLM(ep.Provider.VertexAI, ep.HostOverride, secretForMultiPool, &ep)
 				} else if ep.Provider.Bedrock != nil {
 					// currently only supported in agentgateway
 					slog.Error("bedrock on the AI backend are not supported yet, switch to agentgateway class")
@@ -224,6 +224,10 @@ func buildLLMEndpoint(aiUs *v1alpha1.AIBackend, aiSecrets *ir.Secret) ([]*envoye
 }
 
 func buildOpenAIEndpoint(data *v1alpha1.OpenAIConfig, hostOverride *v1alpha1.Host, aiSecrets *ir.Secret) (*envoyendpointv3.LbEndpoint, error) {
+	return buildOpenAIEndpointWithLLM(data, hostOverride, aiSecrets, nil)
+}
+
+func buildOpenAIEndpointWithLLM(data *v1alpha1.OpenAIConfig, hostOverride *v1alpha1.Host, aiSecrets *ir.Secret, llm *v1alpha1.LLMProvider) (*envoyendpointv3.LbEndpoint, error) {
 	token, err := aiutils.GetAuthToken(data.AuthToken, aiSecrets)
 	if err != nil {
 		return nil, err
@@ -232,15 +236,25 @@ func buildOpenAIEndpoint(data *v1alpha1.OpenAIConfig, hostOverride *v1alpha1.Hos
 	if data.Model != nil {
 		model = *data.Model
 	}
+
+	var pathOverride string
+	if llm != nil && llm.PathOverride != nil && llm.PathOverride.FullPath != nil {
+		pathOverride = *llm.PathOverride.FullPath
+	}
+
 	return buildLocalityLbEndpoint(
 		OpenAIHost,
 		tlsPort,
 		hostOverride,
-		buildEndpointMeta(token, model, nil),
+		buildEndpointMetaWithPath(token, model, pathOverride, nil),
 	), nil
 }
 
 func buildAnthropicEndpoint(data *v1alpha1.AnthropicConfig, hostOverride *v1alpha1.Host, aiSecrets *ir.Secret) (*envoyendpointv3.LbEndpoint, error) {
+	return buildAnthropicEndpointWithLLM(data, hostOverride, aiSecrets, nil)
+}
+
+func buildAnthropicEndpointWithLLM(data *v1alpha1.AnthropicConfig, hostOverride *v1alpha1.Host, aiSecrets *ir.Secret, llm *v1alpha1.LLMProvider) (*envoyendpointv3.LbEndpoint, error) {
 	token, err := aiutils.GetAuthToken(data.AuthToken, aiSecrets)
 	if err != nil {
 		return nil, err
@@ -249,41 +263,71 @@ func buildAnthropicEndpoint(data *v1alpha1.AnthropicConfig, hostOverride *v1alph
 	if data.Model != nil {
 		model = *data.Model
 	}
+
+	var pathOverride string
+	if llm != nil && llm.PathOverride != nil && llm.PathOverride.FullPath != nil {
+		pathOverride = *llm.PathOverride.FullPath
+	}
+
 	return buildLocalityLbEndpoint(
 		AnthropicHost,
 		tlsPort,
 		hostOverride,
-		buildEndpointMeta(token, model, nil),
+		buildEndpointMetaWithPath(token, model, pathOverride, nil),
 	), nil
 }
 
 func buildAzureOpenAIEndpoint(data *v1alpha1.AzureOpenAIConfig, hostOverride *v1alpha1.Host, aiSecrets *ir.Secret) (*envoyendpointv3.LbEndpoint, error) {
+	return buildAzureOpenAIEndpointWithLLM(data, hostOverride, aiSecrets, nil)
+}
+
+func buildAzureOpenAIEndpointWithLLM(data *v1alpha1.AzureOpenAIConfig, hostOverride *v1alpha1.Host, aiSecrets *ir.Secret, llm *v1alpha1.LLMProvider) (*envoyendpointv3.LbEndpoint, error) {
 	token, err := aiutils.GetAuthToken(data.AuthToken, aiSecrets)
 	if err != nil {
 		return nil, err
 	}
+
+	var pathOverride string
+	if llm != nil && llm.PathOverride != nil && llm.PathOverride.FullPath != nil {
+		pathOverride = *llm.PathOverride.FullPath
+	}
+
 	return buildLocalityLbEndpoint(
 		data.Endpoint,
 		tlsPort,
 		hostOverride,
-		buildEndpointMeta(token, data.DeploymentName, map[string]string{"api_version": data.ApiVersion}),
+		buildEndpointMetaWithPath(token, data.DeploymentName, pathOverride, map[string]string{"api_version": data.ApiVersion}),
 	), nil
 }
 
 func buildGeminiEndpoint(data *v1alpha1.GeminiConfig, hostOverride *v1alpha1.Host, aiSecrets *ir.Secret) (*envoyendpointv3.LbEndpoint, error) {
+	return buildGeminiEndpointWithLLM(data, hostOverride, aiSecrets, nil)
+}
+
+func buildGeminiEndpointWithLLM(data *v1alpha1.GeminiConfig, hostOverride *v1alpha1.Host, aiSecrets *ir.Secret, llm *v1alpha1.LLMProvider) (*envoyendpointv3.LbEndpoint, error) {
 	token, err := aiutils.GetAuthToken(data.AuthToken, aiSecrets)
 	if err != nil {
 		return nil, err
 	}
+
+	var pathOverride string
+	if llm != nil && llm.PathOverride != nil && llm.PathOverride.FullPath != nil {
+		pathOverride = *llm.PathOverride.FullPath
+	}
+
 	return buildLocalityLbEndpoint(
 		GeminiHost,
 		tlsPort,
 		hostOverride,
-		buildEndpointMeta(token, data.Model, map[string]string{"api_version": data.ApiVersion}),
+		buildEndpointMetaWithPath(token, data.Model, pathOverride, map[string]string{"api_version": data.ApiVersion}),
 	), nil
 }
 
 func buildVertexAIEndpoint(data *v1alpha1.VertexAIConfig, hostOverride *v1alpha1.Host, aiSecrets *ir.Secret) (*envoyendpointv3.LbEndpoint, error) {
+	return buildVertexAIEndpointWithLLM(data, hostOverride, aiSecrets, nil)
+}
+
+func buildVertexAIEndpointWithLLM(data *v1alpha1.VertexAIConfig, hostOverride *v1alpha1.Host, aiSecrets *ir.Secret, llm *v1alpha1.LLMProvider) (*envoyendpointv3.LbEndpoint, error) {
 	token, err := aiutils.GetAuthToken(data.AuthToken, aiSecrets)
 	if err != nil {
 		return nil, err
@@ -297,11 +341,17 @@ func buildVertexAIEndpoint(data *v1alpha1.VertexAIConfig, hostOverride *v1alpha1
 		slog.Warn("unsupported Vertex AI publisher, defaulting to Google", "publisher", string(data.Publisher))
 		publisher = "google"
 	}
+
+	var pathOverride string
+	if llm != nil && llm.PathOverride != nil && llm.PathOverride.FullPath != nil {
+		pathOverride = *llm.PathOverride.FullPath
+	}
+
 	return buildLocalityLbEndpoint(
 		fmt.Sprintf("%s-aiplatform.googleapis.com", data.Location),
 		tlsPort,
 		hostOverride,
-		buildEndpointMeta(token, data.Model, map[string]string{"api_version": data.ApiVersion, "location": data.Location, "project": data.ProjectId, "publisher": publisher}),
+		buildEndpointMetaWithPath(token, data.Model, pathOverride, map[string]string{"api_version": data.ApiVersion, "location": data.Location, "project": data.ProjectId, "publisher": publisher}),
 	), nil
 }
 
@@ -348,11 +398,20 @@ func buildLocalityLbEndpoint(
 // `buildEndpointMeta` builds the metadata for the endpoint.
 // This metadata is used by the post routing transformation filter to modify the request body.
 func buildEndpointMeta(token, model string, additionalFields map[string]string) *envoycorev3.Metadata {
+	return buildEndpointMetaWithPath(token, model, "", additionalFields)
+}
+
+// `buildEndpointMetaWithPath` builds the metadata for the endpoint with optional path override.
+// This metadata is used by the post routing transformation filter to modify the request body.
+func buildEndpointMetaWithPath(token, model, pathOverride string, additionalFields map[string]string) *envoycorev3.Metadata {
 	fields := map[string]*structpb.Value{
 		"auth_token": structpb.NewStringValue(token),
 	}
 	if model != "" {
 		fields["model"] = structpb.NewStringValue(model)
+	}
+	if pathOverride != "" {
+		fields["path_override"] = structpb.NewStringValue(pathOverride)
 	}
 	for k, v := range additionalFields {
 		fields[k] = structpb.NewStringValue(v)
@@ -385,9 +444,18 @@ func createTransformationTemplate(aiBackend *v1alpha1.AIBackend) *envoytransform
 	transformationTemplate.GetHeaders()[headerName] = &envoytransformation.InjaTemplate{
 		Text: prefix + `{% if host_metadata("auth_token") != "" %}{{host_metadata("auth_token")}}{% else %}{{dynamic_metadata("auth_token","ai.kgateway.io")}}{% endif %}`,
 	}
-	transformationTemplate.GetHeaders()[":path"] = &envoytransformation.InjaTemplate{
-		Text: path,
+
+	// For multipool configurations, check for per-endpoint path overrides first, fallback to default path
+	if aiBackend.MultiPool != nil {
+		transformationTemplate.GetHeaders()[":path"] = &envoytransformation.InjaTemplate{
+			Text: `{% if host_metadata("path_override") != "" %}{{host_metadata("path_override")}}{% else %}` + path + `{% endif %}`,
+		}
+	} else {
+		transformationTemplate.GetHeaders()[":path"] = &envoytransformation.InjaTemplate{
+			Text: path,
+		}
 	}
+
 	transformationTemplate.BodyTransformation = bodyTransformation
 	return transformationTemplate
 }

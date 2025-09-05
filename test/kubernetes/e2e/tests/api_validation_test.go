@@ -655,6 +655,40 @@ spec:
             app: mcp-app
 `,
 		},
+		{
+			name: "AI Backend: valid multipool with path overrides",
+			input: `---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: Backend
+metadata:
+  name: ai-multipool-path-overrides
+spec:
+  type: AI
+  ai:
+    multipool:
+      priorities:
+        - pool:
+            - pathOverride:
+                fullPath: "/api/v1/custom/openai"
+              provider:
+                openai:
+                  authToken:
+                    kind: SecretRef
+                    secretRef:
+                      name: openai-secret
+                  model: gpt-4
+        - pool:
+            - pathOverride:
+                fullPath: "/api/v1/custom/anthropic"
+              provider:
+                anthropic:
+                  authToken:
+                    kind: SecretRef
+                    secretRef:
+                      name: anthropic-secret
+                  model: claude-3-opus-20240229
+`,
+		},
 	}
 
 	t.Cleanup(func() {
