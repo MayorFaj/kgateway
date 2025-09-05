@@ -389,12 +389,6 @@ func buildLocalityLbEndpoint(
 	}
 }
 
-// `buildEndpointMeta` builds the metadata for the endpoint.
-// This metadata is used by the post routing transformation filter to modify the request body.
-func buildEndpointMeta(token, model string, additionalFields map[string]string) *envoycorev3.Metadata {
-	return buildEndpointMetaWithPath(token, model, "", additionalFields)
-}
-
 // `buildEndpointMetaWithPath` builds the metadata for the endpoint with optional path override.
 // This metadata is used by the post routing transformation filter to modify the request body.
 func buildEndpointMetaWithPath(token, model, pathOverride string, additionalFields map[string]string) *envoycorev3.Metadata {
