@@ -223,6 +223,15 @@ func buildLLMEndpoint(aiUs *v1alpha1.AIBackend, aiSecrets *ir.Secret) ([]*envoye
 	return prioritized, nil
 }
 
+// extractPathOverride extracts the path override from an LLMProvider if present.
+// Returns empty string if no path override is configured.
+func extractPathOverride(llm *v1alpha1.LLMProvider) string {
+	if llm != nil && llm.PathOverride != nil && llm.PathOverride.FullPath != nil {
+		return *llm.PathOverride.FullPath
+	}
+	return ""
+}
+
 func buildOpenAIEndpoint(data *v1alpha1.OpenAIConfig, hostOverride *v1alpha1.Host, aiSecrets *ir.Secret) (*envoyendpointv3.LbEndpoint, error) {
 	return buildOpenAIEndpointWithLLM(data, hostOverride, aiSecrets, nil)
 }
@@ -237,10 +246,7 @@ func buildOpenAIEndpointWithLLM(data *v1alpha1.OpenAIConfig, hostOverride *v1alp
 		model = *data.Model
 	}
 
-	var pathOverride string
-	if llm != nil && llm.PathOverride != nil && llm.PathOverride.FullPath != nil {
-		pathOverride = *llm.PathOverride.FullPath
-	}
+	pathOverride := extractPathOverride(llm)
 
 	return buildLocalityLbEndpoint(
 		OpenAIHost,
@@ -264,10 +270,7 @@ func buildAnthropicEndpointWithLLM(data *v1alpha1.AnthropicConfig, hostOverride 
 		model = *data.Model
 	}
 
-	var pathOverride string
-	if llm != nil && llm.PathOverride != nil && llm.PathOverride.FullPath != nil {
-		pathOverride = *llm.PathOverride.FullPath
-	}
+	pathOverride := extractPathOverride(llm)
 
 	return buildLocalityLbEndpoint(
 		AnthropicHost,
@@ -287,10 +290,7 @@ func buildAzureOpenAIEndpointWithLLM(data *v1alpha1.AzureOpenAIConfig, hostOverr
 		return nil, err
 	}
 
-	var pathOverride string
-	if llm != nil && llm.PathOverride != nil && llm.PathOverride.FullPath != nil {
-		pathOverride = *llm.PathOverride.FullPath
-	}
+	pathOverride := extractPathOverride(llm)
 
 	return buildLocalityLbEndpoint(
 		data.Endpoint,
@@ -310,10 +310,7 @@ func buildGeminiEndpointWithLLM(data *v1alpha1.GeminiConfig, hostOverride *v1alp
 		return nil, err
 	}
 
-	var pathOverride string
-	if llm != nil && llm.PathOverride != nil && llm.PathOverride.FullPath != nil {
-		pathOverride = *llm.PathOverride.FullPath
-	}
+	pathOverride := extractPathOverride(llm)
 
 	return buildLocalityLbEndpoint(
 		GeminiHost,
@@ -342,10 +339,7 @@ func buildVertexAIEndpointWithLLM(data *v1alpha1.VertexAIConfig, hostOverride *v
 		publisher = "google"
 	}
 
-	var pathOverride string
-	if llm != nil && llm.PathOverride != nil && llm.PathOverride.FullPath != nil {
-		pathOverride = *llm.PathOverride.FullPath
-	}
+	pathOverride := extractPathOverride(llm)
 
 	return buildLocalityLbEndpoint(
 		fmt.Sprintf("%s-aiplatform.googleapis.com", data.Location),
