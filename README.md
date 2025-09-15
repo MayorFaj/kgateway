@@ -39,7 +39,8 @@ Please refer to [devel/contributing/README.md](/devel/contributing/README.md) as
 Kgateway would not be possible without the valuable open source work of projects in the community. We would like to extend a special thank-you to [Envoy](https://www.envoyproxy.io), upon whose shoulders we stand.
 
 ## Security
-*Reporting security issues* : We take kgateway's security very seriously. If you've found a security issue or a potential security issue in kgateway, please DO NOT file a public GitHub issue. Instead follow [the directions laid out in the kgateway/community repository](https://github.com/kgateway-dev/community/blob/main/CVE.md).
+
+See our [SECURITY.md](SECURITY.md) file for details.
 
 ---
 
