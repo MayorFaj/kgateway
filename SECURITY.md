@@ -2,11 +2,11 @@
 
 ## Supported Versions
 
-Information about supported kgateway versions can be found on the [Support and Versioning](https://kgateway.dev/docs/main/reference/support/) page on kgateway's website.
+Information about supported kgateway versions can be found on the [Version support](https://kgateway.dev/docs/main/reference/versions/) page on kgateway's website.
 
 ## Reporting a Vulnerability
 
-Instructions for reporting a vulnerability can be found on the [kgateway Security Vulnerabilities](https://kgateway.dev/docs/main/reference/vulnerabilities/) page.
+Instructions for reporting a vulnerability can be found on the kgateway [Security vulnerabilities](https://kgateway.dev/docs/main/reference/vulnerabilities/) page.
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
