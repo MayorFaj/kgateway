@@ -411,6 +411,18 @@ func TestBasic(t *testing.T) {
 		})
 	})
 
+	// test the default and fully configured values for ExtAuth
+	t.Run("TrafficPolicy ExtAuth Full Config", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "traffic-policy/extauth-full-config.yaml",
+			outputFile: "traffic-policy/extauth-full-config.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "infra",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
 	t.Run("TrafficPolicy with rate limiting", func(t *testing.T) {
 		test(t, translatorTestCase{
 			inputFile:  "traffic-policy/global-ratelimit",
