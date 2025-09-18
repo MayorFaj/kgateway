@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Information about supported kgateway versions can be found on the [Version support](https://kgateway.dev/docs/main/reference/versions/) page on kgateway's website.
+Information about supported kgateway versions can be found on the [version support](https://kgateway.dev/docs/main/reference/versions/) page on kgateway's website.
 
 ## Reporting a Vulnerability
 
