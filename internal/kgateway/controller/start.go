@@ -22,7 +22,6 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/plugins/inferenceextension/endpointpicker"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/registry"
-	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/settings"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/ir"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/krtcollections"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/krtcollections/metrics"
@@ -30,19 +29,19 @@ import (
 	krtinternal "github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils/krtutil"
 	agentgatewayplugins "github.com/kgateway-dev/kgateway/v2/pkg/agentgateway/plugins"
 	"github.com/kgateway-dev/kgateway/v2/pkg/deployer"
-	"github.com/kgateway-dev/kgateway/v2/pkg/logging"
 	sdk "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk"
 	common "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/collections"
 	kgtwschemes "github.com/kgateway-dev/kgateway/v2/pkg/schemes"
+	"github.com/kgateway-dev/kgateway/v2/pkg/settings"
 	"github.com/kgateway-dev/kgateway/v2/pkg/utils/kubeutils"
 	"github.com/kgateway-dev/kgateway/v2/pkg/utils/namespaces"
+	"github.com/kgateway-dev/kgateway/v2/pkg/validator"
 )
 
 const (
 	// AutoProvision controls whether the controller will be responsible for provisioning dynamic
 	// infrastructure for the Gateway API.
-	AutoProvision           = true
-	ControllerRuntimeLogger = "controllerruntime"
+	AutoProvision = true
 )
 
 type SetupOpts struct {
@@ -77,6 +76,7 @@ type StartConfig struct {
 	ExtraAgentgatewayPlugins func(ctx context.Context, agw *agentgatewayplugins.AgwCollections) []agentgatewayplugins.AgentgatewayPlugin
 	ExtraGatewayParameters   func(cli client.Client, inputs *deployer.Inputs) []deployer.ExtraGatewayParameters
 	Client                   istiokube.Client
+	Validator                validator.Validator
 
 	AgwCollections    *agentgatewayplugins.AgwCollections
 	CommonCollections *common.CommonCollections
@@ -105,7 +105,6 @@ func NewControllerBuilder(ctx context.Context, cfg StartConfig) (*ControllerBuil
 	if cfg.Dev {
 		setupLog.Info("starting log in dev mode")
 		loggingOptions.SetDefaultOutputLevel(istiolog.OverrideScopeName, istiolog.DebugLevel)
-		logging.MustSetLevel(ControllerRuntimeLogger, slog.LevelDebug)
 	}
 	istiolog.Configure(loggingOptions)
 
@@ -158,6 +157,7 @@ func NewControllerBuilder(ctx context.Context, cfg StartConfig) (*ControllerBuil
 		cfg.CommonCollections,
 		cfg.SetupOpts.Cache,
 		cfg.AgentGatewayClassName,
+		cfg.Validator,
 	)
 	proxySyncer.Init(ctx, cfg.KrtOptions)
 	if err := cfg.Manager.Add(proxySyncer); err != nil {
@@ -210,6 +210,7 @@ func NewControllerBuilder(ctx context.Context, cfg StartConfig) (*ControllerBuil
 			agentGatewaySyncer.GatewayReportQueue(),
 			agentGatewaySyncer.ListenerSetReportQueue(),
 			agentGatewaySyncer.RouteReportQueue(),
+			agentGatewaySyncer.PolicyStatusQueue(),
 			agentGatewaySyncer.CacheSyncs(),
 		)
 		if err := cfg.Manager.Add(agentGatewayStatusSyncer); err != nil {
@@ -243,7 +244,13 @@ func NewControllerBuilder(ctx context.Context, cfg StartConfig) (*ControllerBuil
 
 func pluginFactoryWithBuiltin(cfg StartConfig) extensions2.K8sGatewayExtensionsFactory {
 	return func(ctx context.Context, commoncol *common.CommonCollections) sdk.Plugin {
-		plugins := registry.Plugins(ctx, commoncol, cfg.WaypointGatewayClassName, *cfg.SetupOpts.GlobalSettings)
+		plugins := registry.Plugins(
+			ctx,
+			commoncol,
+			cfg.WaypointGatewayClassName,
+			*cfg.SetupOpts.GlobalSettings,
+			cfg.Validator,
+		)
 		plugins = append(plugins, krtcollections.NewBuiltinPlugin(ctx))
 		if cfg.ExtraPlugins != nil {
 			plugins = append(plugins, cfg.ExtraPlugins(ctx, commoncol, cfg.SetupOpts.GlobalSettings.PolicyMerge)...)

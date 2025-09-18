@@ -52,60 +52,73 @@ spec:
 apiVersion: gateway.kgateway.dev/v1alpha1
 kind: TrafficPolicy
 metadata:
-  name: extauth-for-http-route
+  name: extproc-for-http-route
   namespace: infra
 spec:
   targetRefs:
   - group: gateway.networking.k8s.io
     kind: HTTPRoute
     name: example-route
-  extAuth:
+  extProc:
     extensionRef:
-      name: basic-extauth
+      name: full-extproc
 ---
 apiVersion: gateway.kgateway.dev/v1alpha1
 kind: TrafficPolicy
 metadata:
-  name: extauth-for-http-route-2
+  name: extproc-for-http-route-2
   namespace: infra
 spec:
   targetRefs:
   - group: gateway.networking.k8s.io
     kind: HTTPRoute
     name: example-route-2
-  extAuth:
+  extProc:
     extensionRef:
-      name: basic-extauth-2
+      name: default-extproc
 ---
 apiVersion: gateway.kgateway.dev/v1alpha1
 kind: GatewayExtension
 metadata:
-  name: basic-extauth
+  name: full-extproc
   namespace: infra
 spec:
-  type: ExtAuth
-  extAuth:
+  type: ExtProc
+  extProc:
     grpcService:
       backendRef:
-        name: ext-authz
+        name: extproc
         port: 9000
-      requestTimeout: 200ms
-    failOpen: true
+      requestTimeout: 300ms
+    failOpen: false
+    processingMode:
+      requestHeaderMode: SKIP
+      responseHeaderMode: SKIP
+      requestBodyMode: BUFFERED
+      responseBodyMode: BUFFERED
+      requestTrailerMode: SEND
+      responseTrailerMode: SEND
+    messageTimeout: 100ms
+    maxMessageTimeout: 500ms
+    statPrefix: my_extproc
+    routeCacheAction: Clear
+    metadataOptions:
+      forwarding:
+        typed:
+        - "io.transformation"
 ---
 apiVersion: gateway.kgateway.dev/v1alpha1
 kind: GatewayExtension
 metadata:
-  name: basic-extauth-2
+  name: default-extproc
   namespace: infra
 spec:
-  type: ExtAuth
-  extAuth:
+  type: ExtProc
+  extProc:
     grpcService:
       backendRef:
-        name: ext-authz
+        name: extproc
         port: 9000
-      requestTimeout: 200ms
-    failOpen: false # this is the CRD default but setting explicitly for translator tests
 ---
 apiVersion: v1
 kind: Service
@@ -124,7 +137,7 @@ apiVersion: v1
 kind: Service
 metadata:
   namespace: infra
-  name: ext-authz
+  name: extproc
 spec:
   ports:
   - port: 9000
