@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-	infextv1a2 "sigs.k8s.io/gateway-api-inference-extension/api/v1alpha2"
+	inf "sigs.k8s.io/gateway-api-inference-extension/api/v1"
 	apiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	internaldeployer "github.com/kgateway-dev/kgateway/v2/internal/kgateway/deployer"
@@ -41,18 +41,6 @@ const (
 	// InferencePoolField is the field name used for indexing HTTPRoute objects.
 	InferencePoolField = "inferencepool-index"
 )
-
-// ClassInfo describes the desired configuration for a GatewayClass.
-type ClassInfo struct {
-	// Description is a human-readable description of the GatewayClass.
-	Description string
-	// Labels are the labels to be added to the GatewayClass.
-	Labels map[string]string
-	// Annotations are the annotations to be added to the GatewayClass.
-	Annotations map[string]string
-	// ParametersRef is the reference to the GatewayParameters object.
-	ParametersRef *apiv1.ParametersReference
-}
 
 // TODO [danehans]: Refactor so controller config is organized into shared and Gateway/InferencePool-specific controllers.
 type GatewayConfig struct {
@@ -71,8 +59,6 @@ type GatewayConfig struct {
 	IstioAutoMtlsEnabled bool
 	// ImageInfo sets the default image information the deployer will use.
 	ImageInfo *deployer.ImageInfo
-	// ClassInfo sets the default configuration for GatewayClasses managed by this controller.
-	ClassInfo map[string]*ClassInfo
 	// DiscoveryNamespaceFilter filters namespaced objects based on the discovery namespace filter.
 	DiscoveryNamespaceFilter kubetypes.DynamicObjectFilter
 	// CommonCollections used to fetch ir.Gateways for the deployer to generate the ports for the proxy service
@@ -83,6 +69,8 @@ type GatewayConfig struct {
 	WaypointGatewayClassName string
 	// AgentGatewayClassName is the configured agent gateway class name.
 	AgentGatewayClassName string
+	// Additional GatewayClass definitions to support extending to other well-known gateway classes
+	AdditionalGatewayClasses map[string]*deployer.GatewayClassInfo
 }
 
 type ExtraGatewayParametersFunc func(cli client.Client, inputs *deployer.Inputs) []deployer.ExtraGatewayParameters
@@ -388,7 +376,7 @@ func (c *controllerBuilder) watchInferencePool(ctx context.Context) error {
 
 	buildr := ctrl.NewControllerManagedBy(c.cfg.Mgr).
 		WithEventFilter(discoveryNamespaceFilterPredicate).
-		For(&infextv1a2.InferencePool{}, builder.WithPredicates(
+		For(&inf.InferencePool{}, builder.WithPredicates(
 			predicate.Or(
 				predicate.AnnotationChangedPredicate{},
 				predicate.GenerationChangedPredicate{},

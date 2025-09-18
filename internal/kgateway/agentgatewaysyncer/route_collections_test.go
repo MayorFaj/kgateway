@@ -14,14 +14,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
-	inf "sigs.k8s.io/gateway-api-inference-extension/api/v1alpha2"
+	inf "sigs.k8s.io/gateway-api-inference-extension/api/v1"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gwv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
 	krtinternal "github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils/krtutil"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
-	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk"
+	agwir "github.com/kgateway-dev/kgateway/v2/pkg/agentgateway/ir"
 )
 
 var (
@@ -135,7 +135,7 @@ func TestADPRouteCollection(t *testing.T) {
 			expectedCount: 1,
 			expectedRoutes: []*api.Route{
 				{
-					Key:       "default.test-route.0.0.http",
+					Key:       "default/test-route.0.0.http",
 					RouteName: "default/test-route",
 					Hostnames: []string{"example.com"},
 					Matches: []*api.RouteMatch{
@@ -294,7 +294,7 @@ func TestADPRouteCollection(t *testing.T) {
 			expectedCount: 2,
 			expectedRoutes: []*api.Route{
 				{
-					Key:       "default.test-route-1.0.0.http",
+					Key:       "default/test-route-1.0.0.http",
 					RouteName: "default/test-route-1",
 					Hostnames: []string{"example.com"},
 					Matches: []*api.RouteMatch{
@@ -318,7 +318,7 @@ func TestADPRouteCollection(t *testing.T) {
 					},
 				},
 				{
-					Key:       "default.test-route-2.0.0.http",
+					Key:       "default/test-route-2.0.0.http",
 					RouteName: "default/test-route-2",
 					Hostnames: []string{"example2.com"},
 					Matches: []*api.RouteMatch{
@@ -472,7 +472,7 @@ func TestADPRouteCollection(t *testing.T) {
 			expectedCount: 2,
 			expectedRoutes: []*api.Route{ // TODO: consistent ordering of routes?
 				{
-					Key:       "default.multi-rule-route.0.0.http",
+					Key:       "default/multi-rule-route.0.0.http",
 					RouteName: "default/multi-rule-route",
 					Hostnames: []string{"example.com"},
 					Matches: []*api.RouteMatch{
@@ -496,7 +496,7 @@ func TestADPRouteCollection(t *testing.T) {
 					},
 				},
 				{
-					Key:       "default.multi-rule-route.1.0.http",
+					Key:       "default/multi-rule-route.1.0.http",
 					RouteName: "default/multi-rule-route",
 					Hostnames: []string{"example.com"},
 					Matches: []*api.RouteMatch{
@@ -617,7 +617,7 @@ func TestADPRouteCollection(t *testing.T) {
 			expectedCount: 1,
 			expectedRoutes: []*api.Route{
 				{
-					Key:       "default.exact-match-route.0.0.http",
+					Key:       "default/exact-match-route.0.0.http",
 					RouteName: "default/exact-match-route",
 					Hostnames: []string{"api.example.com"},
 					Matches: []*api.RouteMatch{
@@ -745,7 +745,7 @@ func TestADPRouteCollection(t *testing.T) {
 			expectedCount: 1,
 			expectedRoutes: []*api.Route{
 				{
-					Key:       "default.header-match-route.0.0.http",
+					Key:       "default/header-match-route.0.0.http",
 					RouteName: "default/header-match-route",
 					Hostnames: []string{"example.com"},
 					Matches: []*api.RouteMatch{
@@ -850,7 +850,7 @@ func TestADPRouteCollection(t *testing.T) {
 			krtopts := krtinternal.KrtOptions{}
 
 			// Call ADPRouteCollection
-			adpRoutes := ADPRouteCollection(httpRoutes, grpcRoutes, tcpRoutes, tlsRoutes, routeInputs, krtopts, pluginsdk.Plugin{})
+			adpRoutes := ADPRouteCollection(httpRoutes, grpcRoutes, tcpRoutes, tlsRoutes, routeInputs, krtopts)
 
 			// Wait for the collection to process
 			adpRoutes.WaitUntilSynced(context.Background().Done())
@@ -1047,7 +1047,7 @@ func TestADPRouteCollectionGRPC(t *testing.T) {
 			expectedCount: 1,
 			expectedRoutes: []*api.Route{
 				{
-					Key:       "default.test-grpc-route.0.grpc",
+					Key:       "default/test-grpc-route.0.grpc",
 					RouteName: "default/test-grpc-route",
 					Hostnames: []string{"grpc.example.com"},
 					Matches: []*api.RouteMatch{
@@ -1201,7 +1201,7 @@ func TestADPRouteCollectionGRPC(t *testing.T) {
 			expectedCount: 2,
 			expectedRoutes: []*api.Route{
 				{
-					Key:       "default.multi-rule-grpc-route.0.grpc",
+					Key:       "default/multi-rule-grpc-route.0.grpc",
 					RouteName: "default/multi-rule-grpc-route",
 					Hostnames: []string{"grpc.example.com"},
 					Matches: []*api.RouteMatch{
@@ -1225,7 +1225,7 @@ func TestADPRouteCollectionGRPC(t *testing.T) {
 					},
 				},
 				{
-					Key:       "default.multi-rule-grpc-route.1.grpc",
+					Key:       "default/multi-rule-grpc-route.1.grpc",
 					RouteName: "default/multi-rule-grpc-route",
 					Hostnames: []string{"grpc.example.com"},
 					Matches: []*api.RouteMatch{
@@ -1353,7 +1353,7 @@ func TestADPRouteCollectionGRPC(t *testing.T) {
 			expectedCount: 1,
 			expectedRoutes: []*api.Route{
 				{
-					Key:       "default.grpc-header-route.0.grpc",
+					Key:       "default/grpc-header-route.0.grpc",
 					RouteName: "default/grpc-header-route",
 					Hostnames: []string{"grpc.example.com"},
 					Matches: []*api.RouteMatch{
@@ -1458,7 +1458,7 @@ func TestADPRouteCollectionGRPC(t *testing.T) {
 			krtopts := krtinternal.KrtOptions{}
 
 			// Call ADPRouteCollection
-			adpRoutes := ADPRouteCollection(httpRoutes, grpcRoutes, tcpRoutes, tlsRoutes, routeInputs, krtopts, pluginsdk.Plugin{})
+			adpRoutes := ADPRouteCollection(httpRoutes, grpcRoutes, tcpRoutes, tlsRoutes, routeInputs, krtopts)
 
 			// Wait for the collection to process
 			adpRoutes.WaitUntilSynced(context.Background().Done())
@@ -1904,7 +1904,7 @@ func TestADPRouteCollectionWithFilters(t *testing.T) {
 			krtopts := krtinternal.KrtOptions{}
 
 			// Call ADPRouteCollection
-			adpRoutes := ADPRouteCollection(httpRoutes, grpcRoutes, tcpRoutes, tlsRoutes, routeInputs, krtopts, pluginsdk.Plugin{})
+			adpRoutes := ADPRouteCollection(httpRoutes, grpcRoutes, tcpRoutes, tlsRoutes, routeInputs, krtopts)
 
 			// Wait for the collection to process
 			adpRoutes.WaitUntilSynced(context.Background().Done())
@@ -2006,7 +2006,7 @@ func TestADPRouteCollectionEquals(t *testing.T) {
 		Namespace: "default",
 	}
 
-	adpResource1 := ADPResourcesForGateway{
+	adpResource1 := agwir.ADPResourcesForGateway{
 		Resources: []*api.Resource{
 			{
 				Kind: &api.Resource_Route{
@@ -2017,7 +2017,7 @@ func TestADPRouteCollectionEquals(t *testing.T) {
 		Gateway: gateway,
 	}
 
-	adpResource2 := ADPResourcesForGateway{
+	adpResource2 := agwir.ADPResourcesForGateway{
 		Resources: []*api.Resource{
 			{
 				Kind: &api.Resource_Route{
@@ -2028,7 +2028,7 @@ func TestADPRouteCollectionEquals(t *testing.T) {
 		Gateway: gateway,
 	}
 
-	adpResource3 := ADPResourcesForGateway{
+	adpResource3 := agwir.ADPResourcesForGateway{
 		Resources: []*api.Resource{
 			{
 				Kind: &api.Resource_Route{

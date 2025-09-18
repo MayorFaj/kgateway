@@ -292,7 +292,7 @@ spec:
     kind: Deployment
     name: test-deployment
 `,
-			wantErrors: []string{"targetRefs may only reference Gateway, HTTPRoute, or XListenerSet resources"},
+			wantErrors: []string{"targetRefs may only reference Gateway, HTTPRoute, XListenerSet, or Backend resources"},
 		},
 		{
 			name: "TrafficPolicy: policy with autoHostRewrite can only target HTTPRoute",
@@ -564,6 +564,133 @@ spec:
 			wantErrors: []string{
 				"spec.timeouts.streamIdle: Invalid value: \"string\": invalid duration value",
 			},
+		},
+		{
+			name: "TrafficPolicy Buffer maxRequestSize with integer",
+			input: `---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: test
+spec:
+  buffer:
+    maxRequestSize: 65536
+`,
+		},
+		{
+			name: "TrafficPolicy Buffer maxRequestSize with string",
+			input: `---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: test
+spec:
+  buffer:
+    maxRequestSize: 64Ki
+`,
+		},
+		{
+			name: "TrafficPolicy Buffer maxRequestSize with invalid value",
+			input: `---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: test
+spec:
+  buffer:
+    maxRequestSize: 4Gi
+`,
+			wantErrors: []string{"maxRequestSize must be greater than 0 and less than 4Gi"},
+		},
+		{
+			name: "ProxyDeployment: enforce ExactlyOneOf for replicas and omitReplicas",
+			input: `---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: GatewayParameters
+metadata:
+  name: test-proxy-deployment
+spec:
+  kube:
+    deployment:
+      replicas: 3
+      omitReplicas: true
+`,
+			wantErrors: []string{"at most one of the fields in [replicas omitReplicas] may be set"},
+		},
+		{
+			name: "ProxyDeployment: neither replicas nor omitReplicas set (should pass)",
+			input: `---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: GatewayParameters
+metadata:
+  name: test-proxy-deployment-empty
+spec:
+  kube:
+    deployment: {}
+`,
+			wantErrors: []string{},
+		},
+		{
+			name: "ProxyDeployment: only replicas set (should pass)",
+			input: `---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: GatewayParameters
+metadata:
+  name: test-proxy-deployment-replicas-only
+spec:
+  kube:
+    deployment:
+      replicas: 3
+`,
+			wantErrors: []string{},
+		},
+		{
+			name: "ProxyDeployment: only omitReplicas set (should pass)",
+			input: `---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: GatewayParameters
+metadata:
+  name: test-proxy-deployment-omit-only
+spec:
+  kube:
+    deployment:
+      omitReplicas: true
+`,
+			wantErrors: []string{},
+		},
+		{
+			name: "MCP backend selector requires namespace|service to be set",
+			input: `---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: Backend
+metadata:
+  name: mcp-backend
+spec:
+  type: MCP
+  mcp:
+    targets:
+    - name: mcp-app
+      selector: {}
+`,
+			wantErrors: []string{`spec.mcp.targets[0].selector: Invalid value: "object": at least one of namespace or service must be set`},
+		},
+		{
+			name: "MCP backend namespace selector resolves to the reserved CEL keyword __namespace__",
+			input: `---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: Backend
+metadata:
+  name: mcp-backend
+spec:
+  type: MCP
+  mcp:
+    targets:
+    - name: mcp-app
+      selector:
+        namespace:
+          matchLabels:
+            app: mcp-app
+`,
 		},
 	}
 

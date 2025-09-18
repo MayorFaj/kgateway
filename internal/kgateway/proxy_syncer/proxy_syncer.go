@@ -22,6 +22,7 @@ import (
 
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/common"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/ir"
+	kmetrics "github.com/kgateway-dev/kgateway/v2/internal/kgateway/krtcollections/metrics"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/irtranslator"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils"
@@ -31,6 +32,7 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/pkg/logging"
 	plug "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk"
 	"github.com/kgateway-dev/kgateway/v2/pkg/reports"
+	"github.com/kgateway-dev/kgateway/v2/pkg/validator"
 )
 
 var _ manager.LeaderElectionRunnable = &ProxySyncer{}
@@ -139,6 +141,7 @@ func NewProxySyncer(
 	commonCols *common.CommonCollections,
 	xdsCache envoycache.SnapshotCache,
 	agentGatewayClassName string,
+	validator validator.Validator,
 ) *ProxySyncer {
 	return &ProxySyncer{
 		controllerName:           controllerName,
@@ -148,7 +151,7 @@ func NewProxySyncer(
 		istioClient:              client,
 		proxyTranslator:          NewProxyTranslator(xdsCache),
 		uniqueClients:            uniqueClients,
-		translator:               translator.NewCombinedTranslator(ctx, mergedPlugins, commonCols),
+		translator:               translator.NewCombinedTranslator(ctx, mergedPlugins, commonCols, validator),
 		plugins:                  mergedPlugins,
 		reportQueue:              utils.NewAsyncQueue[reports.ReportMap](),
 		backendPolicyReportQueue: utils.NewAsyncQueue[reports.ReportMap](),
@@ -249,7 +252,7 @@ func (s *ProxySyncer) Init(ctx context.Context, krtopts krtinternal.KrtOptions) 
 
 	s.backendPolicyReport = krt.NewSingleton(func(kctx krt.HandlerContext) *report {
 		backends := krt.Fetch(kctx, finalBackends)
-		merged := generateBackendPolicyReport(backends)
+		merged := GenerateBackendPolicyReport(backends)
 		return &report{merged}
 	}, krtopts.ToOptions("BackendsPolicyReport")...)
 
@@ -386,6 +389,8 @@ func (s *ProxySyncer) Start(ctx context.Context) error {
 
 	s.perclientSnapCollection.RegisterBatch(func(o []krt.Event[XdsSnapWrapper]) {
 		for _, e := range o {
+			cd := getDetailsFromXDSClientResourceName(e.Latest().ResourceName())
+
 			if e.Event != controllers.EventDelete {
 				snapWrap := e.Latest()
 				s.proxyTranslator.syncXds(ctx, snapWrap)
@@ -395,6 +400,12 @@ func (s *ProxySyncer) Start(ctx context.Context) error {
 				// 	s.proxyTranslator.xdsCache.ClearSnapshot(e.Latest().proxyKey)
 				// }
 			}
+
+			kmetrics.EndResourceXDSSync(kmetrics.ResourceSyncDetails{
+				Namespace:    cd.Namespace,
+				Gateway:      cd.Gateway,
+				ResourceName: cd.Gateway,
+			})
 		}
 	}, true)
 

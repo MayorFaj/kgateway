@@ -13,6 +13,7 @@ func mergePolicies(
 	p2MergeOrigins ir.MergeOrigins,
 	mergeOpts policy.MergeOptions,
 	mergeOrigins ir.MergeOrigins,
+	_ string, // no merge settings
 ) {
 	if p1 == nil || p2 == nil {
 		return
@@ -26,8 +27,11 @@ func mergePolicies(
 		mergeXffNumTrustedHops,
 		mergeServerHeaderTransformation,
 		mergeStreamIdleTimeout,
+		mergeIdleTimeout,
 		mergeHealthCheckPolicy,
 		mergePreserveHttp1HeaderCase,
+		mergeAcceptHttp10,
+		mergeDefaultHostForHttp10,
 	}
 
 	for _, mergeFunc := range mergeFuncs {
@@ -119,6 +123,36 @@ func mergePreserveHttp1HeaderCase(
 	mergeOrigins.SetOne("preserveHttp1HeaderCase", p2Ref, p2MergeOrigins)
 }
 
+func mergeAcceptHttp10(
+	p1, p2 *httpListenerPolicy,
+	p2Ref *ir.AttachedPolicyRef,
+	p2MergeOrigins ir.MergeOrigins,
+	opts policy.MergeOptions,
+	mergeOrigins ir.MergeOrigins,
+) {
+	if !policy.IsMergeable(p1.acceptHttp10, p2.acceptHttp10, opts) {
+		return
+	}
+
+	p1.acceptHttp10 = p2.acceptHttp10
+	mergeOrigins.SetOne("acceptHttp10", p2Ref, p2MergeOrigins)
+}
+
+func mergeDefaultHostForHttp10(
+	p1, p2 *httpListenerPolicy,
+	p2Ref *ir.AttachedPolicyRef,
+	p2MergeOrigins ir.MergeOrigins,
+	opts policy.MergeOptions,
+	mergeOrigins ir.MergeOrigins,
+) {
+	if !policy.IsMergeable(p1.defaultHostForHttp10, p2.defaultHostForHttp10, opts) {
+		return
+	}
+
+	p1.defaultHostForHttp10 = p2.defaultHostForHttp10
+	mergeOrigins.SetOne("defaultHostForHttp10", p2Ref, p2MergeOrigins)
+}
+
 func mergeXffNumTrustedHops(
 	p1, p2 *httpListenerPolicy,
 	p2Ref *ir.AttachedPolicyRef,
@@ -162,6 +196,21 @@ func mergeStreamIdleTimeout(
 
 	p1.streamIdleTimeout = p2.streamIdleTimeout
 	mergeOrigins.SetOne("mergeStreamIdleTimeout", p2Ref, p2MergeOrigins)
+}
+
+func mergeIdleTimeout(
+	p1, p2 *httpListenerPolicy,
+	p2Ref *ir.AttachedPolicyRef,
+	p2MergeOrigins ir.MergeOrigins,
+	opts policy.MergeOptions,
+	mergeOrigins ir.MergeOrigins,
+) {
+	if !policy.IsMergeable(p1.idleTimeout, p2.idleTimeout, opts) {
+		return
+	}
+
+	p1.idleTimeout = p2.idleTimeout
+	mergeOrigins.SetOne("mergeIdleTimeout", p2Ref, p2MergeOrigins)
 }
 
 func mergeHealthCheckPolicy(

@@ -26,7 +26,7 @@ import (
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/common"
-	tmetrics "github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/metrics"
+	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/krtcollections/metrics"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
 	plug "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk"
@@ -102,6 +102,7 @@ func (s *StatusSyncer) Start(ctx context.Context) error {
 		for {
 			latestReport, err := s.latestReportQueue.Dequeue(ctx)
 			if err != nil {
+				logger.Error("failed to dequeue gateway reports", "error", err)
 				return
 			}
 			s.syncGatewayStatus(ctx, gatewayStatusLogger, latestReport)
@@ -114,6 +115,7 @@ func (s *StatusSyncer) Start(ctx context.Context) error {
 		for {
 			latestReport, err := s.latestBackendPolicyReportQueue.Dequeue(ctx)
 			if err != nil {
+				logger.Error("failed to dequeue backend policy reports", "error", err)
 				return
 			}
 			s.syncPolicyStatus(ctx, latestReport)
@@ -194,12 +196,12 @@ func (s *StatusSyncer) syncRouteStatus(ctx context.Context, logger *slog.Logger,
 
 				defer func() {
 					for _, gatewayName := range gatewayNames {
-						tmetrics.EndResourceSync(tmetrics.ResourceSyncDetails{
+						metrics.EndResourceStatusSync(metrics.ResourceSyncDetails{
 							Namespace:    routeKey.Namespace,
 							Gateway:      gatewayName,
 							ResourceType: routeType,
 							ResourceName: routeKey.Name,
-						}, false, resourcesStatusSyncsCompletedTotal, resourcesStatusSyncDuration)
+						})
 
 						if finish, exists := finishMetrics[gatewayName]; exists {
 							finish.finishFunc(errors.Join(rErr, finish.statusError))
@@ -366,11 +368,13 @@ func (s *StatusSyncer) syncGatewayStatus(ctx context.Context, logger *slog.Logge
 			// Skip agentgateway classes, they are handled by agentgateway syncer
 			if string(gw.Spec.GatewayClassName) == s.agentGatewayClassName {
 				logger.Debug("skipping status sync for agentgateway", "gateway", gwnn.String())
+				return nil
 			}
 
 			// Build the desired status
 			newStatus := rm.BuildGWStatus(ctx, gw, nil)
 			if newStatus == nil {
+				logger.Debug("new status is nil; skipping status update", "gateway", gwnn.String())
 				return nil
 			}
 
@@ -400,6 +404,8 @@ func (s *StatusSyncer) syncGatewayStatus(ctx context.Context, logger *slog.Logge
 				if cond.Reason != string(gwv1.GatewayReasonAccepted) &&
 					cond.Reason != string(gwv1.GatewayReasonProgrammed) &&
 					cond.Reason != string(gwv1.GatewayReasonPending) {
+					logger.Debug("invalid status condition reason", "reason", cond.Reason, "gateway", gwnn.String())
+
 					statusErr = fmt.Errorf("invalid gateway condition")
 
 					break
@@ -413,12 +419,12 @@ func (s *StatusSyncer) syncGatewayStatus(ctx context.Context, logger *slog.Logge
 		}
 
 		// Record metrics for this gateway
-		tmetrics.EndResourceSync(tmetrics.ResourceSyncDetails{
+		metrics.EndResourceStatusSync(metrics.ResourceSyncDetails{
 			Namespace:    gwnn.Namespace,
 			Gateway:      gwnn.Name,
 			ResourceType: wellknown.GatewayKind,
 			ResourceName: gwnn.Name,
-		}, false, resourcesStatusSyncsCompletedTotal, resourcesStatusSyncDuration)
+		})
 
 		finishMetrics(errors.Join(err, statusErr))
 	}
@@ -484,12 +490,12 @@ func (s *StatusSyncer) syncListenerSetStatus(ctx context.Context, logger *slog.L
 					logger.Debug("skipping k8s ls status update, status equal", "listenerset", lsnn.String())
 				}
 
-				tmetrics.EndResourceSync(tmetrics.ResourceSyncDetails{
+				metrics.EndResourceStatusSync(metrics.ResourceSyncDetails{
 					Namespace:    ls.Namespace,
 					Gateway:      string(ls.Spec.ParentRef.Name),
 					ResourceType: "XListenerSet",
 					ResourceName: ls.Name,
-				}, false, resourcesStatusSyncsCompletedTotal, resourcesStatusSyncDuration)
+				})
 			}
 		}
 		return nil
@@ -579,21 +585,12 @@ func (s *StatusSyncer) syncPolicyStatus(ctx context.Context, rm reports.ReportMa
 			continue
 		}
 
-		for _, ancestor := range status.Ancestors {
-			if ancestor.AncestorRef.Kind != nil && *ancestor.AncestorRef.Kind == "Gateway" {
-				namespace := nsName.Namespace
-				if ancestor.AncestorRef.Namespace != nil {
-					namespace = string(*ancestor.AncestorRef.Namespace)
-				}
-
-				tmetrics.EndResourceSync(tmetrics.ResourceSyncDetails{
-					Namespace:    namespace,
-					Gateway:      string(ancestor.AncestorRef.Name),
-					ResourceType: gk.Kind,
-					ResourceName: nsName.Name,
-				}, false, resourcesStatusSyncsCompletedTotal, resourcesStatusSyncDuration)
-			}
-		}
+		metrics.EndResourceStatusSync(metrics.ResourceSyncDetails{
+			Namespace:    nsName.Namespace,
+			Gateway:      "",
+			ResourceType: gk.Kind,
+			ResourceName: nsName.Name,
+		})
 
 		finishMetrics(statusErr)
 	}

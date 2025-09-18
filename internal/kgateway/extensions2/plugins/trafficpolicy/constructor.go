@@ -86,12 +86,32 @@ func (c *TrafficPolicyConstructor) ConstructIR(
 		errors = append(errors, err)
 	}
 
+	// Construct header modifiers specific IR
+	if err := constructHeaderModifiers(policyCR.Spec, &outSpec); err != nil {
+		errors = append(errors, err)
+	}
+
+	// Construct header modifiers specific IR
+	if err := constructHeaderModifiers(policyCR.Spec, &outSpec); err != nil {
+		errors = append(errors, err)
+	}
+
 	// Construct auto host rewrite specific IR
 	constructAutoHostRewrite(policyCR.Spec, &outSpec)
 	// Construct buffer specific IR
 	constructBuffer(policyCR.Spec, &outSpec)
 	// Construct timeout and retry specific IR
 	constructTimeoutRetry(policyCR.Spec, &outSpec)
+
+	// Construct rbac specific IR
+	if err := constructRBAC(policyCR, &outSpec); err != nil {
+		errors = append(errors, err)
+	}
+
+	// Construct rbac specific IR
+	if err := constructRBAC(policyCR, &outSpec); err != nil {
+		errors = append(errors, err)
+	}
 
 	for _, err := range errors {
 		logger.Error("error translating traffic policy", "namespace", policyCR.GetNamespace(), "name", policyCR.GetName(), "error", err)

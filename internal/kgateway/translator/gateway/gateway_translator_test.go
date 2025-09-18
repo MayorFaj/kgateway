@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -15,6 +16,8 @@ import (
 	gwv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 	gwxv1a1 "sigs.k8s.io/gateway-api/apisx/v1alpha1"
 
+	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
+	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/krtcollections"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/reporter"
 	"github.com/kgateway-dev/kgateway/v2/pkg/reports"
@@ -40,6 +43,43 @@ func TestBasic(t *testing.T) {
 		expectedProxyFile := filepath.Join(dir, "testutils/outputs/", in.outputFile)
 		translatortest.TestTranslation(t, ctx, inputFiles, expectedProxyFile, in.gwNN, in.assertReports, settingOpts...)
 	}
+
+	t.Run("gateway with no routes should not add empty filter chain", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "gateway-only/gateway.yaml",
+			outputFile: "gateway-only/proxy.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("gateway with no valid listeners should report correctly", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "gateway-only/gateway-invalid-listener.yaml",
+			outputFile: "gateway-only/gateway-invalid-listener-proxy.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+			assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
+				a := assert.New(t)
+				gateway := &gwv1.Gateway{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "example-gateway",
+						Namespace: "default",
+					},
+				}
+				gatewayStatus := reportsMap.BuildGWStatus(context.Background(), *gateway, nil)
+				a.NotNil(gatewayStatus)
+				condition := meta.FindStatusCondition(gatewayStatus.Conditions, string(gwv1.GatewayConditionAccepted))
+				a.NotNil(condition)
+				a.Equal(metav1.ConditionFalse, condition.Status)
+				a.Equal(string(gwv1.GatewayReasonListenersNotValid), condition.Reason)
+			},
+		})
+	})
 
 	t.Run("http gateway with per connection buffer limit", func(t *testing.T) {
 		test(t, translatorTestCase{
@@ -264,6 +304,35 @@ func TestBasic(t *testing.T) {
 		})
 	})
 
+	t.Run("httproute with backend port error reports correctly", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "backends/backend-ref-port-error.yaml",
+			outputFile: "backends/backend-ref-port-error.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+			assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
+				a := assert.New(t)
+				route := &gwv1.HTTPRoute{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "example-route",
+						Namespace: "default",
+					},
+				}
+				routeStatus := reportsMap.BuildRouteStatus(context.Background(), route, wellknown.DefaultGatewayClassName)
+				a.NotNil(routeStatus)
+				a.Len(routeStatus.Parents, 1)
+				resolvedRefs := meta.FindStatusCondition(routeStatus.Parents[0].Conditions, string(gwv1.RouteConditionResolvedRefs))
+				a.NotNil(resolvedRefs)
+				a.Equal(string(gwv1.RouteReasonBackendNotFound), resolvedRefs.Reason)
+				a.Equal(metav1.ConditionFalse, resolvedRefs.Status)
+				a.Equal((&krtcollections.BackendPortNotAllowedError{BackendName: "example-backend"}).Error(), resolvedRefs.Message)
+				a.Equal(int64(0), resolvedRefs.ObservedGeneration)
+			},
+		})
+	})
+
 	t.Run("TrafficPolicy merging", func(t *testing.T) {
 		test(t, translatorTestCase{
 			inputFile:  "traffic-policy/merge.yaml",
@@ -364,6 +433,59 @@ func TestBasic(t *testing.T) {
 		})
 	})
 
+	t.Run("TrafficPolicy ExtProc Full Config", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "traffic-policy/extproc-full-config.yaml",
+			outputFile: "traffic-policy/extproc-full-config.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "infra",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("TrafficPolicy ExtAuth deep merge", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "traffic-policy/extauth-deep-merge.yaml",
+			outputFile: "traffic-policy/extauth-deep-merge.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "test",
+			},
+		},
+			func(s *settings.Settings) {
+				s.PolicyMerge = `{"trafficPolicy":{"extAuth":"DeepMerge"}}`
+			})
+	})
+
+	t.Run("TrafficPolicy ExtProc deep merge", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "traffic-policy/extproc-deep-merge.yaml",
+			outputFile: "traffic-policy/extproc-deep-merge.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "test",
+			},
+		},
+			func(s *settings.Settings) {
+				s.PolicyMerge = `{"trafficPolicy":{"extProc":"DeepMerge"}}`
+			})
+	})
+
+	t.Run("TrafficPolicy Transformation deep merge", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "traffic-policy/transformation-deep-merge.yaml",
+			outputFile: "traffic-policy/transformation-deep-merge.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "test",
+			},
+		},
+			func(s *settings.Settings) {
+				s.PolicyMerge = `{"trafficPolicy":{"transformation":"DeepMerge"}}`
+			})
+	})
+
 	t.Run("Load balancer with hash policies", func(t *testing.T) {
 		test(t, translatorTestCase{
 			inputFile:  "loadbalancer/hash-policies.yaml",
@@ -390,6 +512,39 @@ func TestBasic(t *testing.T) {
 		test(t, translatorTestCase{
 			inputFile:  "traffic-policy/buffer-route.yaml",
 			outputFile: "traffic-policy/buffer-route.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("TrafficPolicy with header modifiers attached to gateway", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "traffic-policy/header-modifiers-gateway.yaml",
+			outputFile: "traffic-policy/header-modifiers-gateway.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("TrafficPolicy with header modifiers attached to routes", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "traffic-policy/header-modifiers-route.yaml",
+			outputFile: "traffic-policy/header-modifiers-route.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("TrafficPolicy with header modifiers attached to routes listenerset and gateway", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "traffic-policy/header-modifiers-all.yaml",
+			outputFile: "traffic-policy/header-modifiers-all.yaml",
 			gwNN: types.NamespacedName{
 				Namespace: "default",
 				Name:      "example-gateway",
@@ -882,6 +1037,17 @@ func TestBasic(t *testing.T) {
 		})
 	})
 
+	t.Run("HTTPListenerPolicy with idleTimeout", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "httplistenerpolicy/idle-timeout.yaml",
+			outputFile: "httplistenerpolicy/idle-timeout.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
 	t.Run("HTTPListenerPolicy with preserveHttp1HeaderCase", func(t *testing.T) {
 		test(t, translatorTestCase{
 			inputFile:  "httplistenerpolicy/preserve-http1-header-case.yaml",
@@ -919,6 +1085,39 @@ func TestBasic(t *testing.T) {
 		test(t, translatorTestCase{
 			inputFile:  "httplistenerpolicy/use-remote-addr-false.yaml",
 			outputFile: "httplistenerpolicy/use-remote-addr-false.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("HTTPListenerPolicy with acceptHttp10", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "httplistenerpolicy/accept-http10.yaml",
+			outputFile: "httplistenerpolicy/accept-http10.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("HTTPListenerPolicy with defaultHostForHttp10", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "httplistenerpolicy/default-host-for-http10.yaml",
+			outputFile: "httplistenerpolicy/default-host-for-http10.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("HTTPListenerPolicy with defaultHostForHttp10 and no acceptHttp10", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "httplistenerpolicy/default-host-for-http10-without-accept-http10.yaml",
+			outputFile: "httplistenerpolicy/default-host-for-http10-without-accept-http10.yaml",
 			gwNN: types.NamespacedName{
 				Namespace: "default",
 				Name:      "example-gateway",
@@ -1036,6 +1235,17 @@ func TestBasic(t *testing.T) {
 		})
 	})
 
+	t.Run("Backend Config Policy with OutlierDetection", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "backendconfigpolicy/outlierdetection.yaml",
+			outputFile: "backendconfigpolicy/outlierdetection.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
 	t.Run("Backend Config Policy with Common HTTP Protocol - HTTP backend", func(t *testing.T) {
 		test(t, translatorTestCase{
 			inputFile:  "backendconfigpolicy/commonhttpprotocol-httpbackend.yaml",
@@ -1102,6 +1312,17 @@ func TestBasic(t *testing.T) {
 		})
 	})
 
+	t.Run("Backend Config Policy with system ca TLS", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "backendconfigpolicy/tls-system-ca.yaml",
+			outputFile: "backendconfigpolicy/tls-system-ca.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
 	t.Run("TrafficPolicy with explicit generation", func(t *testing.T) {
 		test(t, translatorTestCase{
 			inputFile:  "traffic-policy/generation.yaml",
@@ -1115,6 +1336,39 @@ func TestBasic(t *testing.T) {
 					{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "infra", Name: "test-policy"},
 				}
 				translatortest.AssertPolicyStatusWithGeneration(t, reportsMap, expectedPolicies, 42)
+			},
+		})
+	})
+
+	t.Run("RBAC Policy at route level", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "rbac/route-cel-rbac.yaml",
+			outputFile: "rbac/route-cel-rbac.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("RBAC Policy at httproute level", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "rbac/httproute-cel-rbac.yaml",
+			outputFile: "rbac/httproute-cel-rbac.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("RBAC Policy at gateway level", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "rbac/gateway-cel-rbac.yaml",
+			outputFile: "rbac/gateway-cel-rbac.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
 			},
 		})
 	})
@@ -1156,10 +1410,40 @@ func TestBasic(t *testing.T) {
 		})
 	})
 
-	t.Run("TrafficPolicy: rate limit", func(t *testing.T) {
+	t.Run("listener set accepted with rejected individual listener", func(t *testing.T) {
 		test(t, translatorTestCase{
-			inputFile:  "traffic-policy/rate-limit.yaml",
-			outputFile: "traffic-policy/rate-limit.yaml",
+			inputFile:  "listener-sets/accepted-ls-rejected-listener.yaml",
+			outputFile: "listener-sets/accepted-ls-rejected-listener.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+			assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
+				// The ListenerSet should be accepted since the Gateway allows listener sets
+				expectedLS := gwxv1a1.XListenerSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "foo-listenerset",
+						Namespace: "default",
+					},
+				}
+				expectedAccepted := metav1.Condition{
+					Type:    string(gwxv1a1.ListenerSetConditionAccepted),
+					Status:  metav1.ConditionTrue,
+					Reason:  string(gwxv1a1.ListenerSetReasonAccepted),
+					Message: "ListenerSet is accepted",
+				}
+				translatortest.AssertListenerSetCondition(t, reportsMap, expectedLS, expectedAccepted)
+				// note: we can't assert on individual listener set status due to how
+				// BuildListenerSetStatus() works where it skips rejected listeners
+				// and only returns the status for accepted listeners.
+			},
+		})
+	})
+
+	t.Run("TrafficPolicy RateLimit Full Config", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "traffic-policy/rate-limit-full-config.yaml",
+			outputFile: "traffic-policy/rate-limit-full-config.yaml",
 			gwNN: types.NamespacedName{
 				Namespace: "default",
 				Name:      "example-gateway",
@@ -1204,11 +1488,10 @@ func TestRouteReplacement(t *testing.T) {
 			},
 		},
 		{
-			name:           "Regex RE2 Unsupported",
-			category:       "matcher",
-			inputFile:      "matcher-regex-re2-unsupported.yaml",
-			minMode:        settings.RouteReplacementStandard,
-			assertStandard: nil,
+			name:      "Regex RE2 Unsupported",
+			category:  "matcher",
+			inputFile: "matcher-regex-re2-unsupported.yaml",
+			minMode:   settings.RouteReplacementStandard,
 			assertStrict: func(t *testing.T) translatortest.AssertReports {
 				return translatortest.AssertRouteInvalid(
 					t,
@@ -1220,11 +1503,10 @@ func TestRouteReplacement(t *testing.T) {
 			},
 		},
 		{
-			name:           "Path Regex Invalid",
-			category:       "matcher",
-			inputFile:      "matcher-path-regex-invalid.yaml",
-			minMode:        settings.RouteReplacementStandard,
-			assertStandard: nil,
+			name:      "Path Regex Invalid",
+			category:  "matcher",
+			inputFile: "matcher-path-regex-invalid.yaml",
+			minMode:   settings.RouteReplacementStandard,
 			assertStrict: func(t *testing.T) translatortest.AssertReports {
 				return translatortest.AssertRouteInvalid(
 					t,
@@ -1236,11 +1518,10 @@ func TestRouteReplacement(t *testing.T) {
 			},
 		},
 		{
-			name:           "Header Regex Invalid",
-			category:       "matcher",
-			inputFile:      "matcher-header-regex-invalid.yaml",
-			minMode:        settings.RouteReplacementStandard,
-			assertStandard: nil,
+			name:      "Header Regex Invalid",
+			category:  "matcher",
+			inputFile: "matcher-header-regex-invalid.yaml",
+			minMode:   settings.RouteReplacementStandard,
 			assertStrict: func(t *testing.T) translatortest.AssertReports {
 				return translatortest.AssertRouteInvalid(
 					t,
@@ -1276,52 +1557,83 @@ func TestRouteReplacement(t *testing.T) {
 			},
 		},
 		{
-			name:      "Gateway Wide Invalid Attachment",
-			category:  "policy",
-			inputFile: "policy-gateway-wide-invalid.yaml",
+			name:      "Gateway",
+			category:  "attachment",
+			inputFile: "gateway-invalid.yaml",
 			minMode:   settings.RouteReplacementStandard,
-			assertStandard: func(t *testing.T) translatortest.AssertReports {
-				return func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-					translatortest.AssertAcceptedPolicyStatus(t, reportsMap, []reports.PolicyKey{
-						{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "gwtest", Name: "gateway-level-invalid-policy"},
-					})
-				}
-			},
 			assertStrict: func(t *testing.T) translatortest.AssertReports {
 				return translatortest.AssertPolicyNotAccepted(t, "gateway-level-invalid-policy", "test-route")
 			},
 		},
 		{
-			name:      "Listener Wide Invalid Attachment",
-			category:  "policy",
-			inputFile: "policy-listener-wide-invalid.yaml",
+			name:      "Gateway/Listener",
+			category:  "attachment",
+			inputFile: "gateway-listener-invalid.yaml",
 			minMode:   settings.RouteReplacementStandard,
-			assertStandard: func(t *testing.T) translatortest.AssertReports {
-				return func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-					translatortest.AssertAcceptedPolicyStatus(t, reportsMap, []reports.PolicyKey{
-						{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "gwtest", Name: "listener-level-invalid-policy"},
-					})
-				}
-			},
 			assertStrict: func(t *testing.T) translatortest.AssertReports {
 				return translatortest.AssertPolicyNotAccepted(t, "listener-level-invalid-policy", "test-route")
 			},
 		},
 		{
-			name:      "HTTPRoute Wide Invalid Attachment",
-			category:  "policy",
-			inputFile: "policy-httproute-wide-invalid.yaml",
+			name:      "XListenerSet",
+			category:  "attachment",
+			inputFile: "xlistenerset-invalid.yaml",
+			minMode:   settings.RouteReplacementStandard,
+			assertStrict: func(t *testing.T) translatortest.AssertReports {
+				return translatortest.AssertPolicyNotAccepted(t, "invalid-traffic-policy", "test-route")
+			},
+		},
+		{
+			name:      "XListenerSet/Listener",
+			category:  "attachment",
+			inputFile: "xlistenerset-listener-invalid.yaml",
+			minMode:   settings.RouteReplacementStandard,
+			assertStrict: func(t *testing.T) translatortest.AssertReports {
+				return translatortest.AssertPolicyNotAccepted(t, "invalid-traffic-policy", "test-route")
+			},
+		},
+		{
+			name:      "HTTPRoute",
+			category:  "attachment",
+			inputFile: "httproute-invalid.yaml",
+			minMode:   settings.RouteReplacementStandard,
+			assertStrict: func(t *testing.T) translatortest.AssertReports {
+				return func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
+					translatortest.AssertPolicyNotAccepted(t, "invalid-traffic-policy", "test-route")
+				}
+			},
+		},
+		{
+			name:      "Multi-Target",
+			category:  "attachment",
+			inputFile: "multi-target-invalid.yaml",
 			minMode:   settings.RouteReplacementStandard,
 			assertStandard: func(t *testing.T) translatortest.AssertReports {
 				return func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-					translatortest.AssertAcceptedPolicyStatus(t, reportsMap, []reports.PolicyKey{
-						{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "gwtest", Name: "invalid-traffic-policy"},
-					})
+					translatortest.AssertPolicyNotAccepted(t, "xlistenerset-wide-invalid-policy", "test-route")
 				}
 			},
 			assertStrict: func(t *testing.T) translatortest.AssertReports {
 				return func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-					translatortest.AssertPolicyNotAccepted(t, "invalid-traffic-policy", "test-route")
+					// just assert on the gateway-wide policy to appease translator test.go logic
+					// that verifies all status' are in Accepted=true state when assertReports is nil.
+					// we already have coverage for output status written to golden file.
+					r := require.New(t)
+					policy := reports.PolicyKey{
+						Group:     "gateway.kgateway.dev",
+						Kind:      "TrafficPolicy",
+						Namespace: "gwtest",
+						Name:      "gateway-wide-invalid-policy",
+					}
+					policyStatus := reportsMap.BuildPolicyStatus(context.Background(), policy, wellknown.DefaultGatewayControllerName, gwv1alpha2.PolicyStatus{})
+					r.NotNil(policyStatus, "Policy status should not be nil")
+					r.Len(policyStatus.Ancestors, 2, "Policy should have two ancestors")
+
+					acceptedCondition := meta.FindStatusCondition(policyStatus.Ancestors[0].Conditions, string(v1alpha1.PolicyConditionAccepted))
+					r.NotNil(acceptedCondition, "Accepted condition should not be nil")
+					r.Equal(metav1.ConditionFalse, acceptedCondition.Status, "Policy should have Accepted=false")
+					r.Equal(string(v1alpha1.PolicyReasonInvalid), acceptedCondition.Reason, "Policy should have Invalid reason")
+					r.Contains(acceptedCondition.Message, "invalid xds configuration", "Policy message should contain validation error")
 				}
 			},
 		},
@@ -1539,6 +1851,15 @@ func TestRouteReplacement(t *testing.T) {
 					reporter.RouteRuleReplacedReason,
 					"Incorrect configuration: %RESPONSE(Invalid-Variable",
 				)
+			},
+		},
+		{
+			name:      "Gateway/Listener/Merge",
+			category:  "attachment",
+			inputFile: "gateway-listener-merge-invalid.yaml",
+			minMode:   settings.RouteReplacementStandard,
+			assertStrict: func(t *testing.T) translatortest.AssertReports {
+				return translatortest.AssertPolicyNotAccepted(t, "listener-merge-invalid-policy", "")
 			},
 		},
 	}

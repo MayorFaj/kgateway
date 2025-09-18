@@ -2,41 +2,47 @@ package agentgatewaysyncer
 
 import (
 	"github.com/agentgateway/agentgateway/go/api"
+	"istio.io/istio/pkg/kube/controllers"
 	"istio.io/istio/pkg/kube/krt"
 	"istio.io/istio/pkg/slices"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/gateway-api/apis/v1alpha2"
 
-	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils/krtutil"
+	"github.com/kgateway-dev/kgateway/v2/pkg/agentgateway/ir"
 	"github.com/kgateway-dev/kgateway/v2/pkg/agentgateway/plugins"
 )
 
-func ADPPolicyCollection(agw *plugins.AgwCollections, binds krt.Collection[ADPResourcesForGateway], krtopts krtutil.KrtOptions, policyManager *plugins.DefaultPolicyManager) krt.Collection[ADPResourcesForGateway] {
+func ADPPolicyCollection(binds krt.Collection[ir.ADPResourcesForGateway], agwPlugins plugins.AgentgatewayPlugin) (krt.Collection[ir.ADPResourcesForGateway], map[schema.GroupKind]krt.StatusCollection[controllers.Object, v1alpha2.PolicyStatus]) {
+	var allPolicies []krt.Collection[plugins.ADPPolicy]
+	policyStatusMap := map[schema.GroupKind]krt.StatusCollection[controllers.Object, v1alpha2.PolicyStatus]{}
+	// Collect all policies from registered plugins.
+	// Note: Only one plugin should be used per source GVK.
+	// Avoid joining collections per-GVK before passing them to a plugin.
+	for gvk, plugin := range agwPlugins.ContributesPolicies {
+		policy, policyStatus := plugin.ApplyPolicies()
+		allPolicies = append(allPolicies, policy)
+		if policyStatus != nil {
+			// some plugins may not have a status collection (a2a services, etc.)
+			policyStatusMap[gvk] = policyStatus
+		}
+	}
+	joinPolicies := krt.JoinCollection(allPolicies, krt.WithName("AllPolicies"))
+
 	// Generate all policies using the plugin system
-	allPoliciesCol := krt.NewCollection(binds, func(ctx krt.HandlerContext, i ADPResourcesForGateway) *ADPResourcesForGateway {
+	allPoliciesCol := krt.NewCollection(binds, func(ctx krt.HandlerContext, i ir.ADPResourcesForGateway) *ir.ADPResourcesForGateway {
 		logger.Debug("generating policies for gateway", "gateway", i.Gateway)
 
-		// Generate all policies from all registered plugins using contributed policies
-		allPolicies, err := policyManager.GenerateAllPolicies(ctx, agw)
-		if err != nil {
-			logger.Error("failed to generate policies", "error", err)
-			// Return empty resources but don't fail completely
-			return &ADPResourcesForGateway{
-				Resources: []*api.Resource{},
-				Gateway:   i.Gateway,
-			}
-		}
-
 		// Convert all plugins.ADPPolicy structs to api.Resource structs
-		allResources := slices.Map(allPolicies, func(policy plugins.ADPPolicy) *api.Resource {
+		fetchedPolicies := krt.Fetch(ctx, joinPolicies)
+		allResources := slices.Map(fetchedPolicies, func(policy plugins.ADPPolicy) *api.Resource {
 			return toADPResource(ADPPolicy{policy.Policy})
 		})
 
-		logger.Info("generated policies for gateway", "gateway", i.Gateway, "policy_count", len(allResources))
-
-		return &ADPResourcesForGateway{
+		return &ir.ADPResourcesForGateway{
 			Resources: allResources,
 			Gateway:   i.Gateway,
 		}
 	})
 
-	return allPoliciesCol
+	return allPoliciesCol, policyStatusMap
 }

@@ -15,13 +15,16 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/directresponse"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/extauth"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/extproc"
+	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/header_modifiers"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/http_listener_policy"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/lambda"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/leaderelection"
-	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/local_rate_limit"
+	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/loadtesting"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/path_matching"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/policyselector"
-	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/rate_limit"
+	global_rate_limit "github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/rate_limit/global"
+	local_rate_limit "github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/rate_limit/local"
+	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/rbac"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/route_delegation"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/routereplacement"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/features/services/grpcroute"
@@ -64,17 +67,22 @@ func KubeGatewaySuiteRunner() e2e.SuiteRunner {
 	kubeGatewaySuiteRunner.Register("Transforms", transformation.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("ExtProc", extproc.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("LocalRateLimit", local_rate_limit.NewTestingSuite)
-	kubeGatewaySuiteRunner.Register("GlobalRateLimit", rate_limit.NewTestingSuite)
+	kubeGatewaySuiteRunner.Register("GlobalRateLimit", global_rate_limit.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("PolicySelector", policyselector.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("Cors", cors.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("BackendConfigPolicy", backendconfigpolicy.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("CSRF", csrf.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("AutoHostRewrite", auto_host_rewrite.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("Tracing", tracing.NewTestingSuite)
+	kubeGatewaySuiteRunner.Register("AttachedRoutes", loadtesting.NewAttachedRoutesSuite)
+	// kubeGatewaySuiteRunner.Register("RouteProbe", loadtesting.NewRouteProbeSuite)
+	// kubeGatewaySuiteRunner.Register("RouteChange", loadtesting.NewRouteChangeSuite)
 	kubeGatewaySuiteRunner.Register("DirectResponse", directresponse.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("PathMatching", path_matching.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("LeaderElection", leaderelection.NewTestingSuite)
 	kubeGatewaySuiteRunner.Register("TimeoutRetry", timeoutretry.NewTestingSuite)
+	kubeGatewaySuiteRunner.Register("HeaderModifiers", header_modifiers.NewTestingSuite)
+	kubeGatewaySuiteRunner.Register("RBAC", rbac.NewTestingSuite)
 
 	// kubeGatewaySuiteRunner.Register("HttpListenerOptions", http_listener_options.NewTestingSuite)
 	// kubeGatewaySuiteRunner.Register("ListenerOptions", listener_options.NewTestingSuite)

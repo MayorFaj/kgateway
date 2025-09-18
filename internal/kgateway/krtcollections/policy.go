@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
+	"strings"
 
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/kube/krt"
@@ -22,15 +22,16 @@ import (
 	apiannotations "github.com/kgateway-dev/kgateway/v2/api/annotations"
 	apilabels "github.com/kgateway-dev/kgateway/v2/api/labels"
 	extensionsplug "github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/plugin"
-	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/settings"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/ir"
+	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/krtcollections/metrics"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/backendref"
-	tmetrics "github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/metrics"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/utils"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils/delegation"
 	krtinternal "github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils/krtutil"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
 	pluginsdkir "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/ir"
+	pluginsdk "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/utils"
+	"github.com/kgateway-dev/kgateway/v2/pkg/settings"
 	krtpkg "github.com/kgateway-dev/kgateway/v2/pkg/utils/krtutil"
 )
 
@@ -47,6 +48,14 @@ type NotFoundError struct {
 
 func (n *NotFoundError) Error() string {
 	return fmt.Sprintf("%s \"%s\" not found", n.NotFoundObj.Kind, n.NotFoundObj.Name)
+}
+
+type BackendPortNotAllowedError struct {
+	BackendName string
+}
+
+func (e *BackendPortNotAllowedError) Error() string {
+	return fmt.Sprintf("BackendRef to \"%s\" includes a port. Do not specify a port when referencing a Backend resource, as it defines its own port configuration", e.BackendName)
 }
 
 // MARK: BackendIndex
@@ -158,6 +167,11 @@ func (i *BackendIndex) getBackend(kctx krt.HandlerContext, gk schema.GroupKind, 
 		Kind:      gk.Kind,
 		Namespace: n.Namespace,
 		Name:      n.Name,
+	}
+
+	// Check if this is a Backend reference and validate that it doesn't specify a port
+	if gk.Group == wellknown.BackendGVK.Group && gk.Kind == wellknown.BackendGVK.Kind && gwport != nil {
+		return nil, &BackendPortNotAllowedError{BackendName: key.Name}
 	}
 
 	var port int32
@@ -352,19 +366,31 @@ func NewGatewayIndex(
 			Namespace: gw.GetNamespace(),
 		}))
 
+		// Sort by listener precedence
+		// Ref: https://gateway-api.sigs.k8s.io/geps/gep-1713/#listener-precedence
+		// - ListenerSet ordered by creation time (oldest first)
+		// - ListenerSet ordered alphabetically by “{namespace}/{name}”
 		slices.SortFunc(listenerSets, func(a, b *gwxv1a1.XListenerSet) int {
-			return a.GetCreationTimestamp().Compare(b.GetCreationTimestamp().Time)
+			// primary sort: creation timestamp (oldest first)
+			if cmp := a.GetCreationTimestamp().Compare(b.GetCreationTimestamp().Time); cmp != 0 {
+				return cmp
+			}
+			// secondary sort: alphabetically by "{namespace}/{name}"
+			nnsString := func(ls *gwxv1a1.XListenerSet) string {
+				return fmt.Sprintf("%s/%s", ls.Namespace, ls.Name)
+			}
+			return strings.Compare(nnsString(a), nnsString(b))
 		})
 
 		// Start the resource sync metrics for all XListenerSets before they are processed,
 		// so they do not have staggered start times.
 		for _, ls := range listenerSets {
-			tmetrics.StartResourceSync(ls.Name,
-				tmetrics.ResourceMetricLabels{
-					Namespace: ls.Namespace,
-					Gateway:   gw.GetName(),
-					Resource:  wellknown.XListenerSetKind,
-				})
+			metrics.StartResourceStatusSync(metrics.ResourceSyncDetails{
+				Namespace:    ls.Namespace,
+				Gateway:      gw.GetName(),
+				ResourceType: wellknown.XListenerSetKind,
+				ResourceName: ls.Name,
+			})
 		}
 
 		for _, ls := range listenerSets {
@@ -732,11 +758,21 @@ func (p *PolicyIndex) getTargetingPoliciesMaybeForBackends(
 				Namespace:   p.Namespace,
 				SectionName: sectionName,
 			},
-			Errors: p.Errors,
+			PrecedenceWeight: p.PrecedenceWeight,
+			Errors:           p.Errors,
 		})
 	}
 
 	slices.SortFunc(ret, func(a, b ir.PolicyAtt) int {
+		// Sort policies by their PrecedenceWeight for the same kind if the weights are different,
+		// otherwise sort by creation time
+		if a.GroupKind == b.GroupKind {
+			if a.PrecedenceWeight > b.PrecedenceWeight {
+				return -1
+			} else if a.PrecedenceWeight < b.PrecedenceWeight {
+				return 1
+			}
+		}
 		return a.PolicyIr.CreationTime().Compare(b.PolicyIr.CreationTime())
 	})
 	return ret
@@ -1110,7 +1146,7 @@ func (h *RoutesIndex) transformHttpRoute(kctx krt.HandlerContext, i *gwv1.HTTPRo
 	var precedenceWeight int32
 	var err error
 	if h.weightedRoutePrecedence {
-		precedenceWeight, err = parseRoutePrecedenceWeight(i.Annotations)
+		precedenceWeight, err = pluginsdk.ParsePrecedenceWeightAnnotation(i.Annotations, apiannotations.RoutePrecedenceWeight)
 		if err != nil {
 			logger.Error("error parsing route weight; defaulting to 0", "resource_ref", src, "error", err)
 		}
@@ -1238,11 +1274,12 @@ func (h *RoutesIndex) resolveExtension(kctx krt.HandlerContext, ns string, ext g
 			Namespace: ns,
 		}
 		policyAtt := &ir.PolicyAtt{
-			Generation: policy.Policy.GetGeneration(),
-			GroupKind:  gk,
-			PolicyIr:   policy.PolicyIR,
-			PolicyRef:  policyRef,
-			Errors:     policy.Errors,
+			Generation:       policy.Policy.GetGeneration(),
+			GroupKind:        gk,
+			PolicyIr:         policy.PolicyIR,
+			PolicyRef:        policyRef,
+			Errors:           policy.Errors,
+			PrecedenceWeight: policy.PrecedenceWeight,
 		}
 		return policyAtt, nil
 	}
@@ -1365,11 +1402,12 @@ func toAttachedPolicies(policies []ir.PolicyAtt, opts ...ir.PolicyAttachmentOpts
 		// Create a new PolicyAtt instead of using `p` because the PolicyAttchmentOpts are per-route
 		// and not encoded in `p`
 		polAtt := ir.PolicyAtt{
-			PolicyIr:   p.PolicyIr,
-			PolicyRef:  p.PolicyRef,
-			GroupKind:  gk,
-			Errors:     p.Errors,
-			Generation: p.Generation,
+			PolicyIr:         p.PolicyIr,
+			PolicyRef:        p.PolicyRef,
+			GroupKind:        gk,
+			Errors:           p.Errors,
+			Generation:       p.Generation,
+			PrecedenceWeight: p.PrecedenceWeight,
 		}
 		for _, o := range opts {
 			o(&polAtt)
@@ -1449,18 +1487,6 @@ func (i *BackendIndex) normalizeInfPoolBackendPort(
 	correct := gwv1.PortNumber(resolvedPort)
 	ref.Port = &correct
 	return nil
-}
-
-func parseRoutePrecedenceWeight(annotations map[string]string) (int32, error) {
-	val, ok := annotations[apiannotations.RoutePrecedenceWeight]
-	if !ok {
-		return 0, nil
-	}
-	weight, err := strconv.ParseInt(val, 10, 32)
-	if err != nil {
-		return 0, fmt.Errorf("invalid value for annotation %s: %s; must be a valid integer", apiannotations.RoutePrecedenceWeight, val)
-	}
-	return int32(weight), nil
 }
 
 func getInheritedPolicyPriority(annotations map[string]string) apiannotations.InheritedPolicyPriorityValue {

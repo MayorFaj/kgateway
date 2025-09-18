@@ -23,11 +23,10 @@ type HelmGateway struct {
 	FullnameOverride *string `json:"fullnameOverride,omitempty"`
 
 	// deployment/service values
-	ReplicaCount   *uint32          `json:"replicaCount,omitempty"`
-	Autoscaling    *HelmAutoscaling `json:"autoscaling,omitempty"`
-	Ports          []HelmPort       `json:"ports,omitempty"`
-	Service        *HelmService     `json:"service,omitempty"`
-	FloatingUserId *bool            `json:"floatingUserId,omitempty"`
+	ReplicaCount   *uint32      `json:"replicaCount,omitempty"`
+	Ports          []HelmPort   `json:"ports,omitempty"`
+	Service        *HelmService `json:"service,omitempty"`
+	FloatingUserId *bool        `json:"floatingUserId,omitempty"`
 
 	// serviceaccount values
 	ServiceAccount *HelmServiceAccount `json:"serviceAccount,omitempty"`
@@ -42,6 +41,7 @@ type HelmGateway struct {
 	Tolerations                   []corev1.Toleration               `json:"tolerations,omitempty"`
 	ReadinessProbe                *corev1.Probe                     `json:"readinessProbe,omitempty"`
 	LivenessProbe                 *corev1.Probe                     `json:"livenessProbe,omitempty"`
+	ExtraVolumes                  []corev1.Volume                   `json:"extraVolumes,omitempty"`
 	GracefulShutdown              *v1alpha1.GracefulShutdownSpec    `json:"gracefulShutdown,omitempty"`
 	TerminationGracePeriodSeconds *int                              `json:"terminationGracePeriodSeconds,omitempty"`
 	TopologySpreadConstraints     []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
@@ -58,10 +58,13 @@ type HelmGateway struct {
 	ComponentLogLevel *string `json:"componentLogLevel,omitempty"`
 
 	// envoy or agentgateway container values
-	Image           *HelmImage                   `json:"image,omitempty"`
-	Resources       *corev1.ResourceRequirements `json:"resources,omitempty"`
-	SecurityContext *corev1.SecurityContext      `json:"securityContext,omitempty"`
-	Env             []corev1.EnvVar              `json:"env,omitempty"`
+	// Note: ideally, these should be mapped to container specific values, but right now they
+	// map the the proxy container
+	Image             *HelmImage                   `json:"image,omitempty"`
+	Resources         *corev1.ResourceRequirements `json:"resources,omitempty"`
+	SecurityContext   *corev1.SecurityContext      `json:"securityContext,omitempty"`
+	Env               []corev1.EnvVar              `json:"env,omitempty"`
+	ExtraVolumeMounts []corev1.VolumeMount         `json:"extraVolumeMounts,omitempty"`
 
 	// xds values
 	Xds *HelmXds `json:"xds,omitempty"`
@@ -94,10 +97,11 @@ type HelmImage struct {
 }
 
 type HelmService struct {
-	Type             *string           `json:"type,omitempty"`
-	ClusterIP        *string           `json:"clusterIP,omitempty"`
-	ExtraAnnotations map[string]string `json:"extraAnnotations,omitempty"`
-	ExtraLabels      map[string]string `json:"extraLabels,omitempty"`
+	Type                  *string           `json:"type,omitempty"`
+	ClusterIP             *string           `json:"clusterIP,omitempty"`
+	ExtraAnnotations      map[string]string `json:"extraAnnotations,omitempty"`
+	ExtraLabels           map[string]string `json:"extraLabels,omitempty"`
+	ExternalTrafficPolicy *string           `json:"externalTrafficPolicy,omitempty"`
 }
 
 type HelmServiceAccount struct {
@@ -110,14 +114,6 @@ type HelmServiceAccount struct {
 type HelmXds struct {
 	Host *string `json:"host,omitempty"`
 	Port *uint32 `json:"port,omitempty"`
-}
-
-type HelmAutoscaling struct {
-	Enabled                           *bool   `json:"enabled,omitempty"`
-	MinReplicas                       *uint32 `json:"minReplicas,omitempty"`
-	MaxReplicas                       *uint32 `json:"maxReplicas,omitempty"`
-	TargetCPUUtilizationPercentage    *uint32 `json:"targetCPUUtilizationPercentage,omitempty"`
-	TargetMemoryUtilizationPercentage *uint32 `json:"targetMemoryUtilizationPercentage,omitempty"`
 }
 
 type HelmIstio struct {

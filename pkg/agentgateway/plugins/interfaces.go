@@ -2,41 +2,75 @@ package plugins
 
 import (
 	"github.com/agentgateway/agentgateway/go/api"
+	"istio.io/istio/pilot/pkg/util/protoconv"
+	"istio.io/istio/pkg/kube/controllers"
 	"istio.io/istio/pkg/kube/krt"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/gateway-api/apis/v1alpha2"
+
+	"github.com/kgateway-dev/kgateway/v2/pkg/agentgateway/ir"
 )
 
-// PolicyPlugin defines the base interface for all policy plugins
-type PolicyPlugin interface {
-	// GroupKind returns the GroupKind of the policy this plugin handles
-	GroupKind() schema.GroupKind
+type PolicyPlugin struct {
+	Policies       krt.Collection[ADPPolicy]
+	PolicyStatuses krt.StatusCollection[controllers.Object, v1alpha2.PolicyStatus]
+}
 
-	// Name returns the name of the plugin
-	Name() string
-
-	// GeneratePolicies generates ADP policies for the given common collections
-	GeneratePolicies(ctx krt.HandlerContext, agentgatewayCol *AgwCollections) ([]ADPPolicy, error)
+// ApplyPolicies extracts all policies from the collection
+func (p *PolicyPlugin) ApplyPolicies() (krt.Collection[ADPPolicy], krt.StatusCollection[controllers.Object, v1alpha2.PolicyStatus]) {
+	return p.Policies, p.PolicyStatuses
 }
 
 // ADPPolicy wraps an ADP policy for collection handling
 type ADPPolicy struct {
 	Policy *api.Policy
+	// TODO: track errors per policy
 }
 
-// ContributesPolicies follows the pattern used in pluginsdk
-type ContributesPolicies map[schema.GroupKind]PolicyPlugin
+func (p ADPPolicy) Equals(in ADPPolicy) bool {
+	return protoconv.Equals(p.Policy, in.Policy)
+}
 
-// PolicyManager coordinates all policy plugins
-type PolicyManager interface {
-	// RegisterPlugin registers a policy plugin by its GroupKind
-	RegisterPlugin(plugin PolicyPlugin) error
+func (p ADPPolicy) ResourceName() string {
+	return p.Policy.Name + attachmentName(p.Policy.Target)
+}
 
-	// GetPluginByGroupKind returns the plugin for a specific GroupKind
-	GetPluginByGroupKind(gk schema.GroupKind) (PolicyPlugin, bool)
+func attachmentName(target *api.PolicyTarget) string {
+	if target == nil {
+		return ""
+	}
+	switch v := target.Kind.(type) {
+	case *api.PolicyTarget_Gateway:
+		return ":" + v.Gateway
+	case *api.PolicyTarget_Listener:
+		return ":" + v.Listener
+	case *api.PolicyTarget_Route:
+		return ":" + v.Route
+	case *api.PolicyTarget_RouteRule:
+		return ":" + v.RouteRule
+	case *api.PolicyTarget_Backend:
+		return ":" + v.Backend
+	default:
+		return ""
+	}
+}
 
-	// GetContributesPolicies returns the map of all registered plugins
-	GetContributesPolicies() ContributesPolicies
+type AddResourcesPlugin struct {
+	Binds     krt.Collection[ir.ADPResourcesForGateway]
+	Listeners krt.Collection[ir.ADPResourcesForGateway]
+	Routes    krt.Collection[ir.ADPResourcesForGateway]
+}
 
-	// GenerateAllPolicies generates policies from all registered ADP plugins
-	GenerateAllPolicies(ctx krt.HandlerContext, agw *AgwCollections) ([]ADPPolicy, error)
+// AddBinds extracts all bind resources from the collection
+func (p *AddResourcesPlugin) AddBinds() krt.Collection[ir.ADPResourcesForGateway] {
+	return p.Binds
+}
+
+// AddListeners extracts all routes resources from the collection
+func (p *AddResourcesPlugin) AddListeners() krt.Collection[ir.ADPResourcesForGateway] {
+	return p.Listeners
+}
+
+// AddRoutes extracts all routes resources from the collection
+func (p *AddResourcesPlugin) AddRoutes() krt.Collection[ir.ADPResourcesForGateway] {
+	return p.Routes
 }

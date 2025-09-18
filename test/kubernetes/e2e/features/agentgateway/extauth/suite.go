@@ -6,7 +6,6 @@ import (
 
 	"github.com/onsi/gomega"
 	"github.com/stretchr/testify/suite"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/kgateway-dev/kgateway/v2/pkg/utils/kubeutils"
 	"github.com/kgateway-dev/kgateway/v2/pkg/utils/requestutils/curl"
@@ -29,31 +28,17 @@ func NewTestingSuite(ctx context.Context, testInst *e2e.TestInstallation) suite.
 		Manifests: []string{
 			testdefaults.CurlPodManifest,
 			simpleServiceManifest,
-			gatewayWithRouteManifest,
 			extAuthManifest,
-		},
-		Resources: []client.Object{
-			// resources from curl manifest
-			testdefaults.CurlPod,
-			// resources from service manifest
-			basicSecureRoute, simpleSvc, simpleDeployment,
-			// deployer-generated resources
-			proxyDeployment, proxyService,
-			// extauth resources
-			extAuthSvc, extAuthExtension,
+			gatewayWithRouteManifest,
 		},
 	}
 
 	// Define test-specific TestCases
-	testCases := map[string]base.TestCase{
+	testCases := map[string]*base.TestCase{
 		"TestExtAuthPolicy": {
 			Manifests: []string{
 				securedGatewayPolicyManifest,
 				insecureRouteManifest,
-			},
-			Resources: []client.Object{
-				gatewayAttachedTrafficPolicy,
-				insecureRoute,
 			},
 		},
 		"TestRouteTargetedExtAuthPolicy": {
@@ -61,15 +46,11 @@ func NewTestingSuite(ctx context.Context, testInst *e2e.TestInstallation) suite.
 				securedRouteManifest,
 				insecureRouteManifest,
 			},
-			Resources: []client.Object{
-				secureRoute, secureTrafficPolicy,
-				insecureRoute, insecureTrafficPolicy,
-			},
 		},
 	}
 
 	return &testingSuite{
-		BaseTestingSuite: base.NewBaseTestingSuiteWithoutUpgrades(ctx, testInst, setupTestCase, testCases),
+		BaseTestingSuite: base.NewBaseTestingSuite(ctx, testInst, setupTestCase, testCases),
 	}
 }
 
@@ -154,13 +135,12 @@ func (s *testingSuite) TestRouteTargetedExtAuthPolicy() {
 		expectedStatus               int
 		expectedUpstreamBodyContents string
 	}{
-		// TODO(npolshak): re-enable once add route rule support once agentgateway release with https://github.com/agentgateway/agentgateway/pull/323 is pulled in
-		//{
-		//	name:           "request allowed by default",
-		//	headers:        map[string]string{},
-		//	hostname:       "example.com",
-		//	expectedStatus: http.StatusOK,
-		//},
+		{
+			name:           "request allowed by default",
+			headers:        map[string]string{},
+			hostname:       "example.com",
+			expectedStatus: http.StatusOK,
+		},
 		// TODO(npolshak): re-enable once we can disable filters on agentgateway: https://github.com/agentgateway/agentgateway/issues/330
 		//{
 		//	name:           "request allowed on insecure route",

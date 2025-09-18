@@ -147,6 +147,7 @@ func deepMergePodTemplate(dst, src *v1alpha1.Pod) *v1alpha1.Pod {
 	dst.ReadinessProbe = deepMergeProbe(dst.GetReadinessProbe(), src.GetReadinessProbe())
 	dst.LivenessProbe = deepMergeProbe(dst.GetLivenessProbe(), src.GetLivenessProbe())
 	dst.TopologySpreadConstraints = DeepMergeSlices(dst.GetTopologySpreadConstraints(), src.GetTopologySpreadConstraints())
+	dst.ExtraVolumes = DeepMergeSlices(dst.GetExtraVolumes(), src.GetExtraVolumes())
 
 	return dst
 }
@@ -446,6 +447,9 @@ func deepMergeService(dst, src *v1alpha1.Service) *v1alpha1.Service {
 	dst.ExtraLabels = DeepMergeMaps(dst.GetExtraLabels(), src.GetExtraLabels())
 	dst.ExtraAnnotations = DeepMergeMaps(dst.GetExtraAnnotations(), src.GetExtraAnnotations())
 	dst.Ports = DeepMergeSlices(dst.GetPorts(), src.GetPorts())
+	if src.GetExternalTrafficPolicy() != nil {
+		dst.ExternalTrafficPolicy = src.GetExternalTrafficPolicy()
+	}
 
 	return dst
 }
@@ -575,6 +579,7 @@ func deepMergeEnvoyContainer(dst, src *v1alpha1.EnvoyContainer) *v1alpha1.EnvoyC
 	dst.SecurityContext = deepMergeSecurityContext(dst.GetSecurityContext(), src.GetSecurityContext())
 	dst.Resources = DeepMergeResourceRequirements(dst.GetResources(), src.GetResources())
 	dst.Env = DeepMergeSlices(dst.GetEnv(), src.GetEnv())
+	dst.ExtraVolumeMounts = DeepMergeSlices(dst.ExtraVolumeMounts, src.ExtraVolumeMounts)
 
 	return dst
 }
@@ -697,7 +702,18 @@ func deepMergeDeployment(dst, src *v1alpha1.ProxyDeployment) *v1alpha1.ProxyDepl
 		return src
 	}
 
-	dst.Replicas = MergePointers(dst.GetReplicas(), src.GetReplicas())
+	// Handle AtMostOneOf constraint for replicas and omitReplicas
+	// If src has either field set, it takes precedence and we clear the other field
+	if src.GetReplicas() != nil {
+		dst.Replicas = src.GetReplicas()
+		dst.OmitReplicas = nil // Clear omitReplicas when replicas is set
+	} else if src.GetOmitReplicas() != nil {
+		dst.OmitReplicas = src.GetOmitReplicas()
+		dst.Replicas = nil // Clear replicas when omitReplicas is set
+	} else {
+		// src has neither field set, keep dst as is
+		// (dst.Replicas and dst.OmitReplicas remain unchanged)
+	}
 
 	return dst
 }
@@ -770,6 +786,7 @@ func deepMergeAgentGateway(dst, src *v1alpha1.AgentGateway) *v1alpha1.AgentGatew
 	dst.Resources = DeepMergeResourceRequirements(dst.GetResources(), src.GetResources())
 	dst.Env = DeepMergeSlices(dst.GetEnv(), src.GetEnv())
 	dst.CustomConfigMapName = MergePointers(dst.GetCustomConfigMapName(), src.GetCustomConfigMapName())
+	dst.ExtraVolumeMounts = DeepMergeSlices(dst.ExtraVolumeMounts, src.ExtraVolumeMounts)
 
 	return dst
 }

@@ -10,6 +10,9 @@ import (
 // +kubebuilder:rbac:groups=gateway.kgateway.dev,resources=httplistenerpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups=gateway.kgateway.dev,resources=httplistenerpolicies/status,verbs=get;update;patch
 
+// +kubebuilder:printcolumn:name="Accepted",type=string,JSONPath=".status.ancestors[*].conditions[?(@.type=='Accepted')].status",description="HTTP listener policy acceptance status"
+// +kubebuilder:printcolumn:name="Attached",type=string,JSONPath=".status.ancestors[*].conditions[?(@.type=='Attached')].status",description="HTTP listener policy attachment status"
+
 // +genclient
 // +kubebuilder:object:root=true
 // +kubebuilder:metadata:labels={app=kgateway,app.kubernetes.io/name=kgateway}
@@ -96,6 +99,12 @@ type HTTPListenerPolicySpec struct {
 	// +kubebuilder:validation:XValidation:rule="matches(self, '^([0-9]{1,5}(h|m|s|ms)){1,4}$')",message="invalid duration value"
 	StreamIdleTimeout *metav1.Duration `json:"streamIdleTimeout,omitempty"`
 
+	// IdleTimeout is the idle timeout for connnections.
+	// See here for more information: https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/core/v3/protocol.proto#envoy-v3-api-msg-config-core-v3-httpprotocoloptions
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="matches(self, '^([0-9]{1,5}(h|m|s|ms)){1,4}$')",message="invalid duration value"
+	IdleTimeout *metav1.Duration `json:"idleTimeout,omitempty"`
+
 	// HealthCheck configures [Envoy health checks](https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/http/health_check/v3/health_check.proto)
 	// +optional
 	HealthCheck *EnvoyHealthCheck `json:"healthCheck,omitempty"`
@@ -104,6 +113,17 @@ type HTTPListenerPolicySpec struct {
 	// See here for more information: https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_conn_man/header_casing
 	// +optional
 	PreserveHttp1HeaderCase *bool `json:"preserveHttp1HeaderCase,omitempty"`
+
+	// AcceptHTTP10 determines whether to accept incoming HTTP/1.0 and HTTP 0.9 requests.
+	// See here for more information: https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/core/v3/protocol.proto#config-core-v3-http1protocoloptions
+	// +optional
+	AcceptHttp10 *bool `json:"acceptHttp10,omitempty"`
+
+	// DefaultHostForHttp10 specifies a default host for HTTP/1.0 requests. This is highly suggested if acceptHttp10 is true and a no-op if acceptHttp10 is false.
+	// See here for more information: https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/core/v3/protocol.proto#config-core-v3-http1protocoloptions
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	DefaultHostForHttp10 *string `json:"defaultHostForHttp10,omitempty"`
 }
 
 // AccessLog represents the top-level access log configuration.

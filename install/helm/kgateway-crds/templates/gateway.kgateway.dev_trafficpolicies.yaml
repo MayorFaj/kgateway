@@ -20,7 +20,16 @@ spec:
     singular: trafficpolicy
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - description: Traffic policy acceptance status
+      jsonPath: .status.ancestors[*].conditions[?(@.type=='Accepted')].status
+      name: Accepted
+      type: string
+    - description: Traffic policy attachment status
+      jsonPath: .status.ancestors[*].conditions[?(@.type=='Attached')].status
+      name: Attached
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         properties:
@@ -156,7 +165,7 @@ spec:
                             type: object
                           webhook:
                             properties:
-                              forwardHeaders:
+                              forwardHeaderMatches:
                                 items:
                                   properties:
                                     name:
@@ -225,7 +234,7 @@ spec:
                             type: object
                           webhook:
                             properties:
-                              forwardHeaders:
+                              forwardHeaderMatches:
                                 items:
                                   properties:
                                     name:
@@ -289,7 +298,9 @@ spec:
                     x-kubernetes-validations:
                     - message: maxRequestSize must be greater than 0 and less than
                         4Gi
-                      rule: quantity(self).isGreaterThan(quantity('0')) && quantity(self).isLessThan(quantity('4Gi'))
+                      rule: (type(self) == int && int(self) > 0 && int(self) < 4294967296)
+                        || (type(self) == string && quantity(self).isGreaterThan(quantity('0'))
+                        && quantity(self).isLessThan(quantity('4Gi')))
                 type: object
                 x-kubernetes-validations:
                 - message: exactly one of the fields in [maxRequestSize disable] must
@@ -427,12 +438,14 @@ spec:
                   withRequestBody:
                     properties:
                       allowPartialMessage:
+                        default: false
                         type: boolean
                       maxRequestBytes:
                         format: int32
                         minimum: 1
                         type: integer
                       packAsBytes:
+                        default: false
                         type: boolean
                     required:
                     - maxRequestBytes
@@ -516,6 +529,114 @@ spec:
                     be set
                   rule: '[has(self.extensionRef),has(self.disable)].filter(x,x==true).size()
                     == 1'
+              headerModifiers:
+                properties:
+                  request:
+                    properties:
+                      add:
+                        items:
+                          properties:
+                            name:
+                              maxLength: 256
+                              minLength: 1
+                              pattern: ^[A-Za-z0-9!#$%&'*+\-.^_\x60|~]+$
+                              type: string
+                            value:
+                              maxLength: 4096
+                              minLength: 1
+                              type: string
+                          required:
+                          - name
+                          - value
+                          type: object
+                        maxItems: 16
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      remove:
+                        items:
+                          type: string
+                        maxItems: 16
+                        type: array
+                        x-kubernetes-list-type: set
+                      set:
+                        items:
+                          properties:
+                            name:
+                              maxLength: 256
+                              minLength: 1
+                              pattern: ^[A-Za-z0-9!#$%&'*+\-.^_\x60|~]+$
+                              type: string
+                            value:
+                              maxLength: 4096
+                              minLength: 1
+                              type: string
+                          required:
+                          - name
+                          - value
+                          type: object
+                        maxItems: 16
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                    type: object
+                  response:
+                    properties:
+                      add:
+                        items:
+                          properties:
+                            name:
+                              maxLength: 256
+                              minLength: 1
+                              pattern: ^[A-Za-z0-9!#$%&'*+\-.^_\x60|~]+$
+                              type: string
+                            value:
+                              maxLength: 4096
+                              minLength: 1
+                              type: string
+                          required:
+                          - name
+                          - value
+                          type: object
+                        maxItems: 16
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      remove:
+                        items:
+                          type: string
+                        maxItems: 16
+                        type: array
+                        x-kubernetes-list-type: set
+                      set:
+                        items:
+                          properties:
+                            name:
+                              maxLength: 256
+                              minLength: 1
+                              pattern: ^[A-Za-z0-9!#$%&'*+\-.^_\x60|~]+$
+                              type: string
+                            value:
+                              maxLength: 4096
+                              minLength: 1
+                              type: string
+                          required:
+                          - name
+                          - value
+                          type: object
+                        maxItems: 16
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: At least one of request or response must be provided.
+                  rule: has(self.request) || has(self.response)
               rateLimit:
                 properties:
                   global:
@@ -594,6 +715,8 @@ spec:
                             x-kubernetes-validations:
                             - message: invalid duration value
                               rule: matches(self, '^([0-9]{1,5}(h|m|s|ms)){1,4}$')
+                            - message: must be at least 50ms
+                              rule: duration(self) >= duration('50ms')
                           maxTokens:
                             format: int32
                             minimum: 1
@@ -608,6 +731,25 @@ spec:
                         - maxTokens
                         type: object
                     type: object
+                type: object
+              rbac:
+                properties:
+                  action:
+                    default: Allow
+                    enum:
+                    - Allow
+                    - Deny
+                    type: string
+                  policy:
+                    properties:
+                      matchExpressions:
+                        items:
+                          type: string
+                        minItems: 1
+                        type: array
+                    type: object
+                required:
+                - policy
                 type: object
               retry:
                 properties:
@@ -693,12 +835,13 @@ spec:
                 minItems: 1
                 type: array
                 x-kubernetes-validations:
-                - message: targetRefs may only reference Gateway, HTTPRoute, or XListenerSet
-                    resources
-                  rule: self.all(r, (r.kind == 'Gateway' || r.kind == 'HTTPRoute'
-                    || (r.kind == 'XListenerSet' && r.group == 'gateway.networking.x-k8s.io'))
-                    && (!has(r.group) || r.group == 'gateway.networking.k8s.io' ||
-                    r.group == 'gateway.networking.x-k8s.io'))
+                - message: targetRefs may only reference Gateway, HTTPRoute, XListenerSet,
+                    or Backend resources
+                  rule: self.all(r, (r.kind == 'Backend' || r.kind == 'Gateway' ||
+                    r.kind == 'HTTPRoute' || (r.kind == 'XListenerSet' && r.group
+                    == 'gateway.networking.x-k8s.io')) && (!has(r.group) || r.group
+                    == 'gateway.networking.k8s.io' || r.group == 'gateway.networking.x-k8s.io'
+                    || r.group == 'gateway.kgateway.dev' ))
               targetSelectors:
                 items:
                   properties:

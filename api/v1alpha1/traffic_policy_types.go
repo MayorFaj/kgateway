@@ -10,6 +10,9 @@ import (
 // +kubebuilder:rbac:groups=gateway.kgateway.dev,resources=trafficpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups=gateway.kgateway.dev,resources=trafficpolicies/status,verbs=get;update;patch
 
+// +kubebuilder:printcolumn:name="Accepted",type=string,JSONPath=".status.ancestors[*].conditions[?(@.type=='Accepted')].status",description="Traffic policy acceptance status"
+// +kubebuilder:printcolumn:name="Attached",type=string,JSONPath=".status.ancestors[*].conditions[?(@.type=='Attached')].status",description="Traffic policy attachment status"
+
 // +genclient
 // +kubebuilder:object:root=true
 // +kubebuilder:metadata:labels={app=kgateway,app.kubernetes.io/name=kgateway}
@@ -35,6 +38,7 @@ type TrafficPolicyList struct {
 }
 
 // TrafficPolicySpec defines the desired state of a traffic policy.
+// Note: Backend attachment is only supported for agentgateway.
 // +kubebuilder:validation:XValidation:rule="!has(self.autoHostRewrite) || ((has(self.targetRefs) && self.targetRefs.all(r, r.kind == 'HTTPRoute')) || (has(self.targetSelectors) && self.targetSelectors.all(r, r.kind == 'HTTPRoute')))",message="autoHostRewrite can only be used when targeting HTTPRoute resources"
 // +kubebuilder:validation:XValidation:rule="has(self.retry) && has(self.timeouts) ? (has(self.retry.perTryTimeout) && has(self.timeouts.request) ? duration(self.retry.perTryTimeout) < duration(self.timeouts.request) : true) : true",message="retry.perTryTimeout must be lesser than timeouts.request"
 // +kubebuilder:validation:XValidation:rule="has(self.retry) && has(self.targetRefs) ? self.targetRefs.all(r, (r.kind == 'Gateway' ? has(r.sectionName) : true )) : true",message="targetRefs[].sectionName must be set when targeting Gateway resources with retry policy"
@@ -45,7 +49,7 @@ type TrafficPolicySpec struct {
 	//
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=16
-	// +kubebuilder:validation:XValidation:rule="self.all(r, (r.kind == 'Gateway' || r.kind == 'HTTPRoute' || (r.kind == 'XListenerSet' && r.group == 'gateway.networking.x-k8s.io')) && (!has(r.group) || r.group == 'gateway.networking.k8s.io' || r.group == 'gateway.networking.x-k8s.io'))",message="targetRefs may only reference Gateway, HTTPRoute, or XListenerSet resources"
+	// +kubebuilder:validation:XValidation:rule="self.all(r, (r.kind == 'Backend' || r.kind == 'Gateway' || r.kind == 'HTTPRoute' || (r.kind == 'XListenerSet' && r.group == 'gateway.networking.x-k8s.io')) && (!has(r.group) || r.group == 'gateway.networking.k8s.io' || r.group == 'gateway.networking.x-k8s.io' || r.group == 'gateway.kgateway.dev' ))",message="targetRefs may only reference Gateway, HTTPRoute, XListenerSet, or Backend resources"
 	TargetRefs []LocalPolicyTargetReferenceWithSectionName `json:"targetRefs,omitempty"`
 
 	// TargetSelectors specifies the target selectors to select resources to attach the policy to.
@@ -84,6 +88,10 @@ type TrafficPolicySpec struct {
 	// +optional
 	Csrf *CSRFPolicy `json:"csrf,omitempty"`
 
+	// HeaderModifiers defines the policy to modify request and response headers.
+	// +optional
+	HeaderModifiers *HeaderModifiers `json:"headerModifiers,omitempty"`
+
 	// AutoHostRewrite rewrites the Host header to the DNS name of the selected upstream.
 	// NOTE: This field is only honoured for HTTPRoute targets.
 	// NOTE: If `autoHostRewrite` is set on a route that also has a [URLRewrite filter](https://gateway-api.sigs.k8s.io/reference/spec/#httpurlrewritefilter)
@@ -105,6 +113,15 @@ type TrafficPolicySpec struct {
 	// It is applicable to HTTPRoutes, Gateway listeners and XListenerSets, and ignored for other targeted kinds.
 	// +optional
 	Retry *Retry `json:"retry,omitempty"`
+
+	// RBAC specifies the role-based access control configuration for the policy.
+	// This defines the rules for authorization based on roles and permissions.
+	// With an Envoy-based Gateway, RBAC policies applied at different attachment points in the configuration
+	// hierarchy are not cumulative, and only the most specific policy is enforced. In Envoy, this means an RBAC policy
+	// attached to a route will override any RBAC policies applied to the gateway or listener. In contrast, an
+	// Agentgateway-based Gateway supports cumulative RBAC policies across different attachment points, such that
+	// an RBAC policy attached to a route augments policies applied to the gateway or listener without overriding them.
+	RBAC *RBAC `json:"rbac,omitempty"`
 }
 
 // TransformationPolicy config is used to modify envoy behavior at a route level.
@@ -150,7 +167,7 @@ type Transform struct {
 	Body *BodyTransformation `json:"body,omitempty"`
 }
 
-type InjaTemplate string
+type Template string
 
 // EnvoyHeaderName is the name of a header or pseudo header
 // Based on gateway api v1.Headername but allows a singular : at the start
@@ -166,7 +183,10 @@ type (
 		// +required
 		Name HeaderName `json:"name,omitempty"`
 		// Value is the template to apply to generate the output value for the header.
-		Value InjaTemplate `json:"value,omitempty"`
+		// Inja templates are supported for Envoy-based data planes only.
+		// CEL expressions are supported for agentgateway data plane only.
+		// The system will auto-detect the appropriate template format based on the data plane.
+		Value Template `json:"value,omitempty"`
 	}
 )
 
@@ -186,61 +206,17 @@ const (
 type BodyTransformation struct {
 	// ParseAs defines what auto formatting should be applied to the body.
 	// This can make interacting with keys within a json body much easier if AsJson is selected.
+	// This field is only supported for kgateway (Envoy) data plane and is ignored by agentgateway.
+	// For agentgateway, use json(request.body) or json(response.body) directly in CEL expressions.
 	// +kubebuilder:default=AsString
 	ParseAs BodyParseBehavior `json:"parseAs"`
 
 	// Value is the template to apply to generate the output value for the body.
+	// Inja templates are supported for Envoy-based data planes only.
+	// CEL expressions are supported for agentgateway data plane only.
+	// The system will auto-detect the appropriate template format based on the data plane.
 	// +optional
-	Value *InjaTemplate `json:"value,omitempty"`
-}
-
-// ExtAuthPolicy configures external authentication for a route.
-// This policy will determine the ext auth server to use and how to  talk to it.
-// Note that most of these fields are passed along as is to Envoy.
-// For more details on particular fields please see the Envoy ExtAuth documentation.
-// https://raw.githubusercontent.com/envoyproxy/envoy/f910f4abea24904aff04ec33a00147184ea7cffa/api/envoy/extensions/filters/http/ext_authz/v3/ext_authz.proto
-//
-// +kubebuilder:validation:ExactlyOneOf=extensionRef;disable
-type ExtAuthPolicy struct {
-	// ExtensionRef references the GatewayExtension that should be used for authentication.
-	// +optional
-	ExtensionRef NamespacedObjectReference `json:"extensionRef,omitempty"`
-
-	// WithRequestBody allows the request body to be buffered and sent to the authorization service.
-	// Warning buffering has implications for streaming and therefore performance.
-	// +optional
-	WithRequestBody *BufferSettings `json:"withRequestBody,omitempty"`
-
-	// Additional context for the authorization service.
-	// +optional
-	ContextExtensions map[string]string `json:"contextExtensions,omitempty"`
-
-	// Disable all external authorization filters.
-	// Can be used to disable external authorization policies applied at a higher level in the config hierarchy.
-	// +optional
-	Disable *PolicyDisable `json:"disable,omitempty"`
-}
-
-// BufferSettings configures how the request body should be buffered.
-type BufferSettings struct {
-	// MaxRequestBytes sets the maximum size of a message body to buffer.
-	// Requests exceeding this size will receive HTTP 413 and not be sent to the authorization service.
-	// +required
-	// +kubebuilder:validation:Minimum=1
-	MaxRequestBytes uint32 `json:"maxRequestBytes"`
-
-	// AllowPartialMessage determines if partial messages should be allowed.
-	// When true, requests will be sent to the authorization service even if they exceed maxRequestBytes.
-	// When unset, the default behavior is false.
-	// +optional
-	AllowPartialMessage *bool `json:"allowPartialMessage,omitempty"`
-
-	// PackAsBytes determines if the body should be sent as raw bytes.
-	// When true, the body is sent as raw bytes in the raw_body field.
-	// When false, the body is sent as UTF-8 string in the body field.
-	// When unset, the default behavior is false.
-	// +optional
-	PackAsBytes *bool `json:"packAsBytes,omitempty"`
+	Value *Template `json:"value,omitempty"`
 }
 
 // RateLimit defines a rate limiting policy.
@@ -286,6 +262,7 @@ type TokenBucket struct {
 	// It determines the frequency of token replenishment.
 	// +required
 	// +kubebuilder:validation:XValidation:rule="matches(self, '^([0-9]{1,5}(h|m|s|ms)){1,4}$')",message="invalid duration value"
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('50ms')",message="must be at least 50ms"
 	FillInterval metav1.Duration `json:"fillInterval"`
 }
 
@@ -398,13 +375,25 @@ type CSRFPolicy struct {
 	AdditionalOrigins []StringMatcher `json:"additionalOrigins,omitempty"`
 }
 
+// HeaderModifiers can be used to define the policy to modify request and response headers.
+// +kubebuilder:validation:XValidation:rule="has(self.request) || has(self.response)",message="At least one of request or response must be provided."
+type HeaderModifiers struct {
+	// Request modifies request headers.
+	// +optional
+	Request *gwv1.HTTPHeaderFilter `json:"request,omitempty"`
+
+	// Response modifies response headers.
+	// +optional
+	Response *gwv1.HTTPHeaderFilter `json:"response,omitempty"`
+}
+
 // +kubebuilder:validation:ExactlyOneOf=maxRequestSize;disable
 type Buffer struct {
 	// MaxRequestSize sets the maximum size in bytes of a message body to buffer.
 	// Requests exceeding this size will receive HTTP 413.
 	// Example format: "1Mi", "512Ki", "1Gi"
 	// +optional
-	// +kubebuilder:validation:XValidation:message="maxRequestSize must be greater than 0 and less than 4Gi",rule="quantity(self).isGreaterThan(quantity('0')) && quantity(self).isLessThan(quantity('4Gi'))"
+	// +kubebuilder:validation:XValidation:message="maxRequestSize must be greater than 0 and less than 4Gi",rule="(type(self) == int && int(self) > 0 && int(self) < 4294967296) || (type(self) == string && quantity(self).isGreaterThan(quantity('0')) && quantity(self).isLessThan(quantity('4Gi')))"
 	MaxRequestSize *resource.Quantity `json:"maxRequestSize,omitempty"`
 
 	// Disable the buffer filter.

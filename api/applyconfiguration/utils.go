@@ -73,8 +73,6 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.BodyTransformationApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("Buffer"):
 		return &apiv1alpha1.BufferApplyConfiguration{}
-	case v1alpha1.SchemeGroupVersion.WithKind("BufferSettings"):
-		return &apiv1alpha1.BufferSettingsApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("CELFilter"):
 		return &apiv1alpha1.CELFilterApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("CommonAccessLogGrpcService"):
@@ -117,6 +115,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.EnvoyContainerApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("EnvoyHealthCheck"):
 		return &apiv1alpha1.EnvoyHealthCheckApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("ExtAuthBufferSettings"):
+		return &apiv1alpha1.ExtAuthBufferSettingsApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("ExtAuthPolicy"):
 		return &apiv1alpha1.ExtAuthPolicyApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("ExtAuthProvider"):
@@ -155,6 +155,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.HeaderApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("HeaderFilter"):
 		return &apiv1alpha1.HeaderFilterApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("HeaderModifiers"):
+		return &apiv1alpha1.HeaderModifiersApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("HeaderTransformation"):
 		return &apiv1alpha1.HeaderTransformationApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("HeaderValue"):
@@ -221,6 +223,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.MessageApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("MetadataKey"):
 		return &apiv1alpha1.MetadataKeyApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("MetadataNamespaces"):
+		return &apiv1alpha1.MetadataNamespacesApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("MetadataOptions"):
+		return &apiv1alpha1.MetadataOptionsApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("MetadataPathSegment"):
 		return &apiv1alpha1.MetadataPathSegmentApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("Moderation"):
@@ -237,6 +243,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.OpenTelemetryTracingConfigApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("OTelTracesSampler"):
 		return &apiv1alpha1.OTelTracesSamplerApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("OutlierDetection"):
+		return &apiv1alpha1.OutlierDetectionApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("Parameters"):
 		return &apiv1alpha1.ParametersApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("PathOverride"):
@@ -267,6 +275,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.RateLimitPolicyApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("RateLimitProvider"):
 		return &apiv1alpha1.RateLimitProviderApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("RBAC"):
+		return &apiv1alpha1.RBACApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("RBACPolicy"):
+		return &apiv1alpha1.RBACPolicyApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("Regex"):
 		return &apiv1alpha1.RegexApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("RegexMatch"):

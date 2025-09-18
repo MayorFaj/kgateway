@@ -20,7 +20,16 @@ spec:
     singular: httplistenerpolicy
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - description: HTTP listener policy acceptance status
+      jsonPath: .status.ancestors[*].conditions[?(@.type=='Accepted')].status
+      name: Accepted
+      type: string
+    - description: HTTP listener policy attachment status
+      jsonPath: .status.ancestors[*].conditions[?(@.type=='Attached')].status
+      name: Attached
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         properties:
@@ -32,6 +41,8 @@ spec:
             type: object
           spec:
             properties:
+              acceptHttp10:
+                type: boolean
               accessLog:
                 items:
                   properties:
@@ -661,6 +672,9 @@ spec:
                   type: object
                 maxItems: 16
                 type: array
+              defaultHostForHttp10:
+                minLength: 1
+                type: string
               healthCheck:
                 properties:
                   path:
@@ -670,6 +684,11 @@ spec:
                 required:
                 - path
                 type: object
+              idleTimeout:
+                type: string
+                x-kubernetes-validations:
+                - message: invalid duration value
+                  rule: matches(self, '^([0-9]{1,5}(h|m|s|ms)){1,4}$')
               preserveHttp1HeaderCase:
                 type: boolean
               serverHeaderTransformation:
