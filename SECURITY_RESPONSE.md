@@ -12,7 +12,7 @@ This initial phase begins when we receive a security vulnerability report. The p
 
 **Process Overview:**
 
-When a report is received, a designated maintainer will:
+When a report is received, a designated maintainer who is part of the security group will:
 
 1. **Acknowledge the Report**: Privately acknowledge receipt of the report from the person who submitted it.
 2. **Validate the Vulnerability**: Thoroughly review the report and work to reproduce the vulnerability. This helps us understand the conditions required for an exploit.
@@ -33,10 +33,11 @@ Once a vulnerability is confirmed, our focus shifts to fixing the issue and prev
 
 Our remediation efforts include the following steps:
 
-1. **Develop a Fix**: The team will identify the root cause and develop a code patch to resolve the vulnerability.
-2. **Code Review**: The proposed fix will be submitted as a pull request and undergo a thorough review by maintainers to ensure it is effective and does not introduce new issues.
-3. **Testing**: The patch is tested to confirm that it successfully resolves the vulnerability.
-4. **Merge and Release**: Once approved, the fix is merged into the main codebase and scheduled for inclusion in the next official release of the application. The fix will be backported to all versions in the support window. 
+1. **Discuss and Plan the Fix**: The team will identify the root cause and discuss potential approaches to resolve the vulnerability. The proposed solution must be agreed upon by the security group before implementation begins.
+2. **Develop the Fix**: Once the approach is agreed upon, develop a code patch to resolve the vulnerability.
+3. **Code Review**: The proposed fix will be submitted as a pull request and undergo a thorough review by maintainers to ensure it is effective and does not introduce new issues.
+4. **Testing**: The patch is tested to confirm that it successfully resolves the vulnerability.
+5. **Merge and Release**: Once approved, the fix is merged into the main codebase and scheduled for inclusion in the next official release of the application. The fix will be backported to all versions in the support window.
 
 ---
 
@@ -62,7 +63,7 @@ Transparency with our users is critical. This phase is about communicating the v
 
 Following the release of a patched version, we will execute our public disclosure process.
 
-1. **Publish Security Advisory**: We will publish a detailed security advisory on GitHub. This advisory will serve as the single source of truth and will contain:
+1. **Publish Security Advisory**: We will publish a release and any corresponding documentation for mitigating the vulnerability. This will include:
 
    - A description of the vulnerability and its potential impact.
    - A list of all affected application versions.
@@ -70,4 +71,4 @@ Following the release of a patched version, we will execute our public disclosur
    - Instructions and recommendations for users to upgrade.
    - Credit to the security researcher who discovered and reported the issue (with their permission).
 
-2. **Community Communication**: We will announce the security patch through our public channels, including the application's release notes, directing users to the official GitHub Security Advisory for details.
+2. **Community Communication**: We will announce the security patch through our public channels, including the application's release notes, directing users to the GitHub Security Advisory for details.

@@ -14,4 +14,4 @@ Instead, please report them by email to the private Google group **kgateway-vuln
 
 ## Security Incident Response Process
 
-Please refer to the guide [SECURITY_RESPONSE.md](SECURITY_RESPONSE.md).
+Please refer to the [Security Response](SECURITY_RESPONSE.md) guide.
