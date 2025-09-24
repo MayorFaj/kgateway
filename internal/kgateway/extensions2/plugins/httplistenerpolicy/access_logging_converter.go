@@ -25,10 +25,10 @@ import (
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
-	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/common"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/ir"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils"
 	kwellknown "github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
+	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/collections"
 )
 
 var ErrUnresolvedBackendRef = errors.New("unresolved backend reference")
@@ -44,7 +44,7 @@ const serviceNameKey = "service.name"
 func convertAccessLogConfig(
 	ctx context.Context,
 	policy *v1alpha1.HTTPListenerPolicy,
-	commoncol *common.CommonCollections,
+	commoncol *collections.CommonCollections,
 	krtctx krt.HandlerContext,
 	parentSrc ir.ObjectSource,
 ) ([]proto.Message, error) {
@@ -247,7 +247,7 @@ func translateFilter(filter *v1alpha1.FilterType) (*envoyaccesslogv3.AccessLogFi
 					Comparison: &envoyaccesslogv3.ComparisonFilter{
 						Op: op,
 						Value: &envoycorev3.RuntimeUInt32{
-							DefaultValue: filter.StatusCodeFilter.Value,
+							DefaultValue: uint32(filter.StatusCodeFilter.Value), // nolint:gosec // G115: kubebuilder validation ensures safe for uint32
 						},
 					},
 				},
@@ -266,7 +266,7 @@ func translateFilter(filter *v1alpha1.FilterType) (*envoyaccesslogv3.AccessLogFi
 					Comparison: &envoyaccesslogv3.ComparisonFilter{
 						Op: op,
 						Value: &envoycorev3.RuntimeUInt32{
-							DefaultValue: filter.DurationFilter.Value,
+							DefaultValue: uint32(filter.DurationFilter.Value), // nolint:gosec // G115: kubebuilder validation ensures safe for uint32
 						},
 					},
 				},

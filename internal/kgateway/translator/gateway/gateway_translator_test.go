@@ -331,7 +331,7 @@ func TestBasic(t *testing.T) {
 				Name:      "example-gateway",
 			},
 			assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-				expectedPolicies := []reports.PolicyKey{
+				expectedPolicies := []reporter.PolicyKey{
 					{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "infra", Name: "policy-with-section-name"},
 					{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "infra", Name: "policy-without-section-name"},
 				}
@@ -349,7 +349,7 @@ func TestBasic(t *testing.T) {
 				Name:      "example-gateway",
 			},
 			assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-				expectedPolicies := []reports.PolicyKey{
+				expectedPolicies := []reporter.PolicyKey{
 					{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "infra", Name: "transform"},
 					{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "infra", Name: "rate-limit"},
 				}
@@ -367,7 +367,7 @@ func TestBasic(t *testing.T) {
 				Name:      "example-gateway",
 			},
 			assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-				expectedPolicies := []reports.PolicyKey{
+				expectedPolicies := []reporter.PolicyKey{
 					{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "infra", Name: "transform"},
 					{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "infra", Name: "rate-limit"},
 					{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "kgateway-system", Name: "global-policy"},
@@ -388,7 +388,7 @@ func TestBasic(t *testing.T) {
 				Name:      "example-gateway",
 			},
 			assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-				expectedPolicies := []reports.PolicyKey{
+				expectedPolicies := []reporter.PolicyKey{
 					{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "infra", Name: "extauth-for-gateway-section-name"},
 					{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "infra", Name: "extauth-for-gateway"},
 					{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "infra", Name: "extauth-for-http-route"},
@@ -1322,7 +1322,7 @@ func TestBasic(t *testing.T) {
 				Name:      "example-gateway",
 			},
 			assertReports: func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
-				expectedPolicies := []reports.PolicyKey{
+				expectedPolicies := []reporter.PolicyKey{
 					{Group: "gateway.kgateway.dev", Kind: "TrafficPolicy", Namespace: "infra", Name: "test-policy"},
 				}
 				translatortest.AssertPolicyStatusWithGeneration(t, reportsMap, expectedPolicies, 42)
@@ -1608,6 +1608,30 @@ func TestBasic(t *testing.T) {
 			},
 		})
 	})
+
+	t.Run("Gateway with reserved port should be rejected", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "validation/gateway-reserved-port.yaml",
+			outputFile: "validation/gateway-reserved-port.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "test",
+			},
+			assertReports: translatortest.AssertReportsNoOp,
+		})
+	})
+
+	t.Run("XListenerSet with reserved port should be rejected", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "validation/xlistenerset-reserved-port.yaml",
+			outputFile: "validation/xlistenerset-reserved-port.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "test",
+			},
+			assertReports: translatortest.AssertReportsNoOp,
+		})
+	})
 }
 
 func TestRouteReplacement(t *testing.T) {
@@ -1777,7 +1801,7 @@ func TestRouteReplacement(t *testing.T) {
 					// that verifies all status' are in Accepted=true state when assertReports is nil.
 					// we already have coverage for output status written to golden file.
 					r := require.New(t)
-					policy := reports.PolicyKey{
+					policy := reporter.PolicyKey{
 						Group:     "gateway.kgateway.dev",
 						Kind:      "TrafficPolicy",
 						Namespace: "gwtest",
@@ -1911,7 +1935,7 @@ func TestRouteReplacement(t *testing.T) {
 					"invalid-traffic-policy-route",
 					"gwtest",
 					reporter.RouteRuleReplacedReason,
-					"extauthz: gateway extension gwtest/non-existent-auth-extension not found",
+					"extauth: gateway extension gwtest/non-existent-auth-extension not found",
 				)
 			},
 		},
@@ -2018,6 +2042,104 @@ func TestRouteReplacement(t *testing.T) {
 			minMode:   settings.RouteReplacementStandard,
 			assertStrict: func(t *testing.T) translatortest.AssertReports {
 				return translatortest.AssertPolicyNotAccepted(t, "listener-merge-invalid-policy", "")
+			},
+		},
+		{
+			name:      "BackendConfigPolicy Missing Secret",
+			category:  "backendconfigpolicy",
+			inputFile: "invalid-missing-secret.yaml",
+			minMode:   settings.RouteReplacementStandard,
+			assertStandard: func(t *testing.T) translatortest.AssertReports {
+				return func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
+					// Verify that the backend policy has error status
+					policy := reporter.PolicyKey{
+						Group:     "gateway.kgateway.dev",
+						Kind:      "BackendConfigPolicy",
+						Namespace: "gwtest",
+						Name:      "invalid-backend-config-policy",
+					}
+					err := translatortest.GetPolicyStatusError(reportsMap, &policy)
+					require.Error(t, err, "BackendConfigPolicy should have error status due to missing secret")
+					require.Contains(t, err.Error(), "condition error", "Error should be about policy condition")
+				}
+			},
+			assertStrict: func(t *testing.T) translatortest.AssertReports {
+				return func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
+					policy := reporter.PolicyKey{
+						Group:     "gateway.kgateway.dev",
+						Kind:      "BackendConfigPolicy",
+						Namespace: "gwtest",
+						Name:      "invalid-backend-config-policy",
+					}
+					err := translatortest.GetPolicyStatusError(reportsMap, &policy)
+					require.Error(t, err, "BackendConfigPolicy should have error status due to missing secret")
+					require.Contains(t, err.Error(), "condition error", "Error should be about policy condition")
+				}
+			},
+		},
+		{
+			name:      "BackendConfigPolicy Invalid Cipher Suites",
+			category:  "backendconfigpolicy",
+			inputFile: "invalid-cipher-suites.yaml",
+			minMode:   settings.RouteReplacementStandard,
+			assertStrict: func(t *testing.T) translatortest.AssertReports {
+				return func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
+					err := translatortest.GetPolicyStatusError(reportsMap, &reporter.PolicyKey{
+						Group:     "gateway.kgateway.dev",
+						Kind:      "BackendConfigPolicy",
+						Namespace: "gwtest",
+						Name:      "invalid-cipher-policy",
+					})
+					require.Error(t, err)
+				}
+			},
+		},
+		{
+			name:      "BackendConfigPolicy Invalid TLS Files Non-existent",
+			category:  "backendconfigpolicy",
+			inputFile: "invalid-tlsfiles-nonexistent.yaml",
+			minMode:   settings.RouteReplacementStandard,
+			assertStandard: func(t *testing.T) translatortest.AssertReports {
+				return func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
+					err := translatortest.GetPolicyStatusError(reportsMap, &reporter.PolicyKey{
+						Group:     "gateway.kgateway.dev",
+						Kind:      "BackendConfigPolicy",
+						Namespace: "gwtest",
+						Name:      "invalid-tlsfiles-policy",
+					})
+					require.Error(t, err, "BackendConfigPolicy with non-existent TLS files should fail validation in strict mode")
+					require.Contains(t, err.Error(), "condition error", "Error should be about policy condition")
+				}
+			},
+			assertStrict: func(t *testing.T) translatortest.AssertReports {
+				return func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
+					err := translatortest.GetPolicyStatusError(reportsMap, &reporter.PolicyKey{
+						Group:     "gateway.kgateway.dev",
+						Kind:      "BackendConfigPolicy",
+						Namespace: "gwtest",
+						Name:      "invalid-tlsfiles-policy",
+					})
+					require.Error(t, err, "BackendConfigPolicy with non-existent TLS files should fail validation in strict mode")
+					require.Contains(t, err.Error(), "condition error", "Error should be about policy condition")
+				}
+			},
+		},
+		{
+			name:      "BackendConfigPolicy Invalid Outlier Detection Zero Interval",
+			category:  "backendconfigpolicy",
+			inputFile: "invalid-outlier-detection-zero-interval.yaml",
+			minMode:   settings.RouteReplacementStandard,
+			assertStrict: func(t *testing.T) translatortest.AssertReports {
+				return func(gwNN types.NamespacedName, reportsMap reports.ReportMap) {
+					err := translatortest.GetPolicyStatusError(reportsMap, &reporter.PolicyKey{
+						Group:     "gateway.kgateway.dev",
+						Kind:      "BackendConfigPolicy",
+						Namespace: "gwtest",
+						Name:      "invalid-outlier-detection-policy",
+					})
+					require.Error(t, err, "BackendConfigPolicy with zero interval outlier detection should fail validation in strict mode")
+					require.Contains(t, err.Error(), "condition error", "Error should be about policy condition")
+				}
 			},
 		},
 	}

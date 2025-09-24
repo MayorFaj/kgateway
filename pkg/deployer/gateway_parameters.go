@@ -8,7 +8,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
-	common "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/collections"
+	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/collections"
 )
 
 // Inputs is the set of options used to configure gateway/ineference pool deployment.
@@ -17,7 +17,7 @@ type Inputs struct {
 	IstioAutoMtlsEnabled     bool
 	ControlPlane             ControlPlaneInfo
 	ImageInfo                *ImageInfo
-	CommonCollections        *common.CommonCollections
+	CommonCollections        *collections.CommonCollections
 	GatewayClassName         string
 	WaypointGatewayClassName string
 	AgentgatewayClassName    string
@@ -179,7 +179,7 @@ func defaultGatewayParameters(imageInfo *ImageInfo) *v1alpha1.GatewayParameters 
 			SelfManaged: nil,
 			Kube: &v1alpha1.KubernetesProxyConfig{
 				Deployment: &v1alpha1.ProxyDeployment{
-					Replicas:     ptr.To[uint32](1),
+					Replicas:     ptr.To[int32](1),
 					OmitReplicas: ptr.To(false),
 				},
 				Service: &v1alpha1.Service{

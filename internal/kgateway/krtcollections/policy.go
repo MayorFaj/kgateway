@@ -22,15 +22,15 @@ import (
 	apiannotations "github.com/kgateway-dev/kgateway/v2/api/annotations"
 	apilabels "github.com/kgateway-dev/kgateway/v2/api/labels"
 	"github.com/kgateway-dev/kgateway/v2/api/settings"
-	extensionsplug "github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/plugin"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/ir"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/krtcollections/metrics"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/backendref"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/utils"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils/delegation"
-	krtinternal "github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils/krtutil"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
+	sdk "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk"
 	pluginsdkir "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/ir"
+	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/krtutil"
 	pluginsdk "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/utils"
 	krtpkg "github.com/kgateway-dev/kgateway/v2/pkg/utils/krtutil"
 )
@@ -76,7 +76,7 @@ type BackendIndex struct {
 
 	policies  *PolicyIndex
 	refgrants *RefGrantIndex
-	krtopts   krtinternal.KrtOptions
+	krtopts   krtutil.KrtOptions
 }
 
 type backendKey struct {
@@ -85,7 +85,7 @@ type backendKey struct {
 }
 
 func NewBackendIndex(
-	krtopts krtinternal.KrtOptions,
+	krtopts krtutil.KrtOptions,
 	policies *PolicyIndex,
 	refgrants *RefGrantIndex,
 ) *BackendIndex {
@@ -287,7 +287,7 @@ type GatewayIndex struct {
 }
 
 func NewGatewayIndex(
-	krtopts krtinternal.KrtOptions,
+	krtopts krtutil.KrtOptions,
 	controllerName string,
 	policies *PolicyIndex,
 	gws krt.Collection[*gwv1.Gateway],
@@ -336,7 +336,7 @@ func NewGatewayIndex(
 			if err != nil {
 				logger.Error("failed to parse per connection buffer limit", "error", err)
 			} else {
-				gwIR.PerConnectionBufferLimitBytes = k8sptr.To(uint32(limit.Value()))
+				gwIR.PerConnectionBufferLimitBytes = k8sptr.To(uint32(limit.Value())) //nolint:gosec // G115: Kubernetes resource quantities are always non-negative
 			}
 		}
 
@@ -557,8 +557,8 @@ func (h *PolicyIndex) HasSynced() bool {
 }
 
 func NewPolicyIndex(
-	krtopts krtinternal.KrtOptions,
-	contributesPolicies extensionsplug.ContributesPolicies,
+	krtopts krtutil.KrtOptions,
+	contributesPolicies sdk.ContributesPolicies,
 	globalSettings settings.Settings,
 ) *PolicyIndex {
 	index := &PolicyIndex{
@@ -944,7 +944,7 @@ func (r *RoutesIndex) HTTPRoutes() krt.Collection[ir.HttpRouteIR] {
 }
 
 func NewRoutesIndex(
-	krtopts krtinternal.KrtOptions,
+	krtopts krtutil.KrtOptions,
 	httproutes krt.Collection[*gwv1.HTTPRoute],
 	grpcroutes krt.Collection[*gwv1.GRPCRoute],
 	tcproutes krt.Collection[*gwv1a2.TCPRoute],
@@ -1387,7 +1387,7 @@ func weight(w *int32) uint32 {
 	if w == nil {
 		return 1
 	}
-	return uint32(*w)
+	return uint32(*w) //nolint:gosec // G115: weight values are validated to be non-negative in Gateway API
 }
 
 func toAttachedPolicies(policies []ir.PolicyAtt, opts ...ir.PolicyAttachmentOpts) ir.AttachedPolicies {
