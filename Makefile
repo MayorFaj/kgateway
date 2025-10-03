@@ -514,8 +514,11 @@ metallb: ## Install the MetalLB load balancer
 .PHONY: deploy-kgateway
 deploy-kgateway: package-kgateway-charts deploy-kgateway-crd-chart deploy-kgateway-chart ## Deploy the kgateway chart and CRDs
 
+.PHONY: setup-base
+setup-base: kind-create gw-api-crds gie-crds metallb ## Setup the base infrastructure (kind cluster, CRDs, and MetalLB)
+
 .PHONY: setup
-setup: kind-create kind-build-and-load gw-api-crds gie-crds metallb package-kgateway-charts ## Set up basic infrastructure (kind cluster, images, CRDs, MetalLB)
+setup: setup-base kind-build-and-load package-kgateway-charts ## Setup the complete infrastructure (base setup plus images and charts)
 
 .PHONY: run
 run: setup deploy-kgateway  ## Set up complete development environment
@@ -628,8 +631,8 @@ $(TEST_ASSET_DIR)/conformance/conformance_test.go:
 	cat $(shell go list -json -m sigs.k8s.io/gateway-api | jq -r '.Dir')/conformance/conformance_test.go >> $@
 	go fmt $@
 
-CONFORMANCE_SUPPORTED_FEATURES ?= -supported-features=HTTPRouteBackendProtocolH2C,HTTPRouteBackendProtocolWebSocket,HTTPRouteBackendTimeout,HTTPRouteHostRewrite,HTTPRouteMethodMatching,HTTPRoutePathRedirect,HTTPRoutePathRewrite,HTTPRoutePortRedirect,HTTPRouteQueryParamMatching,HTTPRouteRequestTimeout,HTTPRouteResponseHeaderModification,HTTPRouteSchemeRedirect
-CONFORMANCE_UNSUPPORTED_FEATURES ?= -exempt-features=GatewayPort8080,GatewayStaticAddresses,GatewayHTTPListenerIsolation,GatewayInfrastructurePropagation,GatewayAddressEmpty,HTTPRouteDestinationPortMatching,HTTPRouteBackendRequestHeaderModification,HTTPRouteRequestMirror,HTTPRouteRequestMultipleMirrors,HTTPRouteRequestPercentageMirror,HTTPRouteParentRefPort
+CONFORMANCE_SUPPORTED_FEATURES ?= -supported-features=GatewayAddressEmpty,HTTPRouteParentRefPort,HTTPRouteRequestMirror,HTTPRouteBackendRequestHeaderModification,HTTPRouteNamedRouteRule,HTTPRouteDestinationPortMatching,HTTPRouteBackendProtocolH2C,HTTPRouteBackendProtocolWebSocket,HTTPRouteBackendTimeout,HTTPRouteHostRewrite,HTTPRouteMethodMatching,HTTPRoutePathRedirect,HTTPRoutePathRewrite,HTTPRoutePortRedirect,HTTPRouteQueryParamMatching,HTTPRouteRequestTimeout,HTTPRouteResponseHeaderModification,HTTPRouteSchemeRedirect
+CONFORMANCE_UNSUPPORTED_FEATURES ?= -exempt-features=GatewayPort8080,GatewayStaticAddresses,GatewayHTTPListenerIsolation,GatewayInfrastructurePropagation,HTTPRouteRequestMultipleMirrors,HTTPRouteRequestPercentageMirror
 CONFORMANCE_SUPPORTED_PROFILES ?= -conformance-profiles=GATEWAY-HTTP,GATEWAY-TLS,GATEWAY-GRPC
 CONFORMANCE_GATEWAY_CLASS ?= kgateway
 CONFORMANCE_REPORT_ARGS ?= -report-output=$(TEST_ASSET_DIR)/conformance/$(VERSION)-report.yaml -organization=kgateway-dev -project=kgateway -version=$(VERSION) -url=github.com/kgateway-dev/kgateway -contact=github.com/kgateway-dev/kgateway/issues/new/choose
@@ -720,24 +723,28 @@ agw-conformance-%: $(TEST_ASSET_DIR)/conformance/conformance_test.go
 #----------------------------------------------------------------------------------
 
 .PHONY: bump-gtw
-bump-gtw: ## Bump Gateway API deps to $DEP_VERSION
-ifndef DEP_VERSION
-	$(error DEP_VERSION is not set, e.g. make bump-gtw DEP_VERSION=v1.3.0)
-endif
-	@echo "Bumping Gateway API to $(DEP_VERSION)"
-	@$(SHELL) hack/bump_deps.sh gtw $(DEP_VERSION)
-	@echo "Updating licensing..."
-	@$(MAKE) generate-licenses
+bump-gtw: ## Bump Gateway API deps to $DEP_REF (or $DEP_VERSION). Example: make bump-gtw DEP_REF=198e6cab...
+	@if [ -z "$${DEP_REF:-}" ] && [ -n "$${DEP_VERSION:-}" ]; then DEP_REF="$$DEP_VERSION"; fi; \
+	if [ -z "$${DEP_REF:-}" ]; then \
+	  echo "DEP_REF is not set (or DEP_VERSION). e.g. make bump-gtw DEP_REF=v1.3.0 or DEP_REF=198e6cab6774..."; \
+	  exit 2; \
+	fi; \
+	echo "Bumping Gateway API to $${DEP_REF}"; \
+	$(SHELL) hack/bump_deps.sh gtw "$$DEP_REF"; \
+	echo "Updating licensing..."; \
+	$(MAKE) generate-licenses
 
 .PHONY: bump-gie
-bump-gie: ## Bump Gateway API Inference Extension to $DEP_VERSION
-ifndef DEP_VERSION
-	$(error DEP_VERSION is not set, e.g. make bump-gie DEP_VERSION=v0.5.0)
-endif
-	@echo ">>> Bumping Gateway API Inference Extension to $(DEP_VERSION)"
-	@$(SHELL) hack/bump_deps.sh gie $(DEP_VERSION)
-	@echo "Updating licensing..."
-	@$(MAKE) generate-licenses
+bump-gie: ## Bump Gateway API Inference Extension to $DEP_REF (or $DEP_VERSION). Example: make bump-gie DEP_REF=198e6cab...
+	@if [ -z "$${DEP_REF:-}" ] && [ -n "$${DEP_VERSION:-}" ]; then DEP_REF="$$DEP_VERSION"; fi; \
+	if [ -z "$${DEP_REF:-}" ]; then \
+	  echo "DEP_REF is not set (or DEP_VERSION). e.g. make bump-gie DEP_REF=v0.5.1 or DEP_REF=198e6cab6774..."; \
+	  exit 2; \
+	fi; \
+	echo ">>> Bumping Gateway API Inference Extension to $${DEP_REF}"; \
+	$(SHELL) hack/bump_deps.sh gie "$$DEP_REF"; \
+	echo "Updating licensing..."; \
+	$(MAKE) generate-licenses
 
 #----------------------------------------------------------------------------------
 # Printing makefile variables utility
