@@ -250,7 +250,7 @@ spec:
       - name: x-kgateway-response
         value: '{{ request_header("x-kgateway-request") }}'
       remove:
-      - x-kgateway-request`, `apiVersion: gateway.networking.k8s.io/v1beta1
+      - x-kgateway-request`, `apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: happypath
