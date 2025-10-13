@@ -21,15 +21,14 @@ import (
 
 	apiannotations "github.com/kgateway-dev/kgateway/v2/api/annotations"
 	apilabels "github.com/kgateway-dev/kgateway/v2/api/labels"
-	"github.com/kgateway-dev/kgateway/v2/api/settings"
-	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/ir"
+	apisettings "github.com/kgateway-dev/kgateway/v2/api/settings"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/krtcollections/metrics"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/backendref"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/utils"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils/delegation"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
 	sdk "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk"
-	pluginsdkir "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/ir"
+	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/ir"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/krtutil"
 	pluginsdk "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/utils"
 	krtpkg "github.com/kgateway-dev/kgateway/v2/pkg/utils/krtutil"
@@ -71,6 +70,9 @@ type BackendIndex struct {
 	// availableBackendsWithPolicy is built from availableBackends, attaching policy to the given backends.
 	// BackendsWithPolicy is the public interface to access this.
 	availableBackendsWithPolicy []krt.Collection[*ir.BackendObjectIR]
+	// backendsRequiringPolicyStatus is a collection of backends that have policies that may require status to be written to them.
+	// BackendsWithPolicyRequiringStatus is the public interface to access this.
+	backendsRequiringPolicyStatus []krt.Collection[*ir.BackendObjectIR]
 
 	gkAliases map[schema.GroupKind][]schema.GroupKind
 
@@ -116,11 +118,20 @@ func (i *BackendIndex) HasSynced() bool {
 			return false
 		}
 	}
+	for _, col := range i.backendsRequiringPolicyStatus {
+		if !col.HasSynced() {
+			return false
+		}
+	}
 	return true
 }
 
 func (i *BackendIndex) BackendsWithPolicy() []krt.Collection[*ir.BackendObjectIR] {
 	return i.availableBackendsWithPolicy
+}
+
+func (i *BackendIndex) BackendsWithPolicyRequiringStatus() []krt.Collection[*ir.BackendObjectIR] {
+	return i.backendsRequiringPolicyStatus
 }
 
 // AddBackends builds the backends stored in this BackendIndex by deriving a new BackendObjIR collection
@@ -131,6 +142,13 @@ func (i *BackendIndex) BackendsWithPolicy() []krt.Collection[*ir.BackendObjectIR
 func (i *BackendIndex) AddBackends(gk schema.GroupKind, col krt.Collection[ir.BackendObjectIR], aliasKinds ...schema.GroupKind) {
 	backendsWithPoliciesCol := krt.NewCollection(col, func(kctx krt.HandlerContext, backendObj ir.BackendObjectIR) **ir.BackendObjectIR {
 		policies := i.policies.getTargetingPoliciesForBackends(kctx, backendObj.ObjectSource, "", backendObj.GetObjectLabels(), false)
+		anyHasRef := false
+		for _, p := range policies {
+			if p.PolicyRef != nil {
+				anyHasRef = true
+				break
+			}
+		}
 		for _, aliasObjSrc := range backendObj.Aliases {
 			if aliasObjSrc.Namespace == "" {
 				// targeting policies must be namespace local
@@ -138,12 +156,26 @@ func (i *BackendIndex) AddBackends(gk schema.GroupKind, col krt.Collection[ir.Ba
 				aliasObjSrc.Namespace = backendObj.GetNamespace()
 			}
 			aliasPolicies := i.policies.getTargetingPoliciesForBackends(kctx, aliasObjSrc, "", backendObj.GetObjectLabels(), true)
+			if !anyHasRef {
+				for _, p := range aliasPolicies {
+					if p.PolicyRef != nil {
+						anyHasRef = true
+						break
+					}
+				}
+			}
 			policies = append(policies, aliasPolicies...)
 		}
+		backendObj.RequiresPolicyStatus = anyHasRef
 		backendObj.AttachedPolicies = toAttachedPolicies(policies)
 		return ptr.Of(&backendObj)
 	}, i.krtopts.ToOptions("")...)
-
+	backendsRequiringPolicyStatus := krt.NewCollection(backendsWithPoliciesCol, func(ctx krt.HandlerContext, i *ir.BackendObjectIR) **ir.BackendObjectIR {
+		if i.RequiresPolicyStatus {
+			return &i
+		}
+		return nil
+	}, i.krtopts.ToOptions("")...)
 	idx := krtpkg.UnnamedIndex(col, func(backendObj ir.BackendObjectIR) (aliasKeys []backendKey) {
 		for _, alias := range backendObj.Aliases {
 			aliasKeys = append(aliasKeys, backendKey{ObjectSource: alias, port: backendObj.Port})
@@ -153,6 +185,7 @@ func (i *BackendIndex) AddBackends(gk schema.GroupKind, col krt.Collection[ir.Ba
 	i.availableBackends[gk] = col
 	i.aliasIndex[gk] = idx
 	i.availableBackendsWithPolicy = append(i.availableBackendsWithPolicy, backendsWithPoliciesCol)
+	i.backendsRequiringPolicyStatus = append(i.backendsRequiringPolicyStatus, backendsRequiringPolicyStatus)
 
 	// when we query by the alias, also check our "actual" gk
 	for _, aliasGK := range aliasKinds {
@@ -559,7 +592,7 @@ func (h *PolicyIndex) HasSynced() bool {
 func NewPolicyIndex(
 	krtopts krtutil.KrtOptions,
 	contributesPolicies sdk.ContributesPolicies,
-	globalSettings settings.Settings,
+	globalSettings apisettings.Settings,
 ) *PolicyIndex {
 	index := &PolicyIndex{
 		globalPolicyNamespace: globalSettings.GlobalPolicyNamespace,
@@ -952,7 +985,7 @@ func NewRoutesIndex(
 	policies *PolicyIndex,
 	backends *BackendIndex,
 	refgrants *RefGrantIndex,
-	globalSettings settings.Settings,
+	globalSettings apisettings.Settings,
 ) *RoutesIndex {
 	h := &RoutesIndex{
 		policies:                policies,
@@ -1240,7 +1273,7 @@ func (h *RoutesIndex) getBuiltInRulePolicies(
 		for _, o := range opts {
 			o(&policyAtt)
 		}
-		ret.Policies[pluginsdkir.VirtualBuiltInGK] = append(ret.Policies[pluginsdkir.VirtualBuiltInGK], policyAtt)
+		ret.Policies[ir.VirtualBuiltInGK] = append(ret.Policies[ir.VirtualBuiltInGK], policyAtt)
 	}
 	return ret
 }
@@ -1291,7 +1324,7 @@ func (h *RoutesIndex) resolveExtension(kctx krt.HandlerContext, ns string, ext g
 
 	builtinIR := NewBuiltInIr(kctx, ext, fromGK, ns, h.refgrants, h.backends)
 	policyAtt := &ir.PolicyAtt{
-		GroupKind: pluginsdkir.VirtualBuiltInGK,
+		GroupKind: ir.VirtualBuiltInGK,
 		PolicyIr:  builtinIR,
 	}
 	return policyAtt, nil

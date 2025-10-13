@@ -17,7 +17,7 @@ import (
 // +genclient
 // +kubebuilder:object:root=true
 // +kubebuilder:metadata:labels={app=kgateway,app.kubernetes.io/name=kgateway}
-// +kubebuilder:resource:categories=kgateway
+// +kubebuilder:resource:categories=kgateway,path=gatewayparameters
 // +kubebuilder:subresource:status
 type GatewayParameters struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -116,19 +116,40 @@ type KubernetesProxyConfig struct {
 	// +optional
 	Stats *StatsConfig `json:"stats,omitempty"`
 
+	// Deprecated: `aiExtension` is deprecated in v2.1 and will be removed in v2.2.
+	// Prefer to use `agentgateway` instead.
+	//
 	// Configuration for the AI extension.
 	//
 	// +optional
 	AiExtension *AiExtension `json:"aiExtension,omitempty"`
 
-	// Configure the agentgateway integration. If agentgateway is disabled, the EnvoyContainer values will be used by
-	// default to configure the data plane proxy.
+	// Configure the agentgateway integration. If agentgateway is disabled, the
+	// EnvoyContainer values will be used by default to configure the data
+	// plane proxy.
 	//
 	// +optional
 	Agentgateway *Agentgateway `json:"agentgateway,omitempty"`
 
+	// Deprecated: Prefer to use omitDefaultSecurityContext instead. Will be
+	// removed in the next release.
+	//
 	// Used to unset the `runAsUser` values in security contexts.
 	FloatingUserId *bool `json:"floatingUserId,omitempty"`
+
+	// OmitDefaultSecurityContext is used to control whether or not
+	// `securityContext` fields should be rendered for the various generated
+	// Deployments/Containers that are dynamically provisioned by the deployer.
+	//
+	// When set to true, no `securityContexts` will be provided and will left
+	// to the user/platform to be provided.
+	//
+	// This should be enabled on platforms such as Red Hat OpenShift where the
+	// `securityContext` will be dynamically added to enforce the appropriate
+	// level of security.
+	//
+	// +optional
+	OmitDefaultSecurityContext *bool `json:"omitDefaultSecurityContext,omitempty"`
 }
 
 func (in *KubernetesProxyConfig) GetDeployment() *ProxyDeployment {
@@ -208,18 +229,23 @@ func (in *KubernetesProxyConfig) GetFloatingUserId() *bool {
 	return in.FloatingUserId
 }
 
+func (in *KubernetesProxyConfig) GetOmitDefaultSecurityContext() *bool {
+	if in == nil {
+		return nil
+	}
+	return in.OmitDefaultSecurityContext
+}
+
 // ProxyDeployment configures the Proxy deployment in Kubernetes.
-// +kubebuilder:validation:AtMostOneOf=replicas;omitReplicas
 type ProxyDeployment struct {
-	// The number of desired pods. Defaults to 1.
+	// The number of desired pods.
+	// If omitted, behavior will be managed by the K8s control plane, and will default to 1.
+	// If you are using an HPA, make sure to not explicitly define this.
+	// K8s reference: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#replicas
 	//
 	// +optional
-	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Minimum=0
 	Replicas *int32 `json:"replicas,omitempty"`
-
-	// If true, replicas will not be set in the deployment (allowing HPA to control scaling)
-	// +optional
-	OmitReplicas *bool `json:"omitReplicas,omitempty"`
 
 	// The deployment strategy to use to replace existing pods with new
 	// ones. The Kubernetes default is a RollingUpdate with 25% maxUnavailable,
@@ -243,13 +269,6 @@ func (in *ProxyDeployment) GetReplicas() *int32 {
 		return nil
 	}
 	return in.Replicas
-}
-
-func (in *ProxyDeployment) GetOmitReplicas() *bool {
-	if in == nil {
-		return nil
-	}
-	return in.OmitReplicas
 }
 
 func (in *ProxyDeployment) GetStrategy() *appsv1.DeploymentStrategy {

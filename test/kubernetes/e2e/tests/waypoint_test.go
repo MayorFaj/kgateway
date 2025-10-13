@@ -1,3 +1,5 @@
+//go:build e2e
+
 package tests_test
 
 import (
@@ -26,7 +28,7 @@ func TestKgatewayWaypoint(t *testing.T) {
 		&install.Context{
 			InstallNamespace:          installNs,
 			ProfileValuesManifestFile: e2e.CommonRecommendationManifest,
-			ValuesManifestFile:        e2e.EmptyValuesManifestPath,
+			ValuesManifestFile:        e2e.ManifestPath("waypoint-enabled-helm.yaml"),
 		},
 	)
 

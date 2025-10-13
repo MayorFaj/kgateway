@@ -15,6 +15,7 @@ import (
 
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
 	"github.com/kgateway-dev/kgateway/v2/pkg/agentgateway/ir"
+	"github.com/kgateway-dev/kgateway/v2/pkg/agentgateway/plugins"
 	"github.com/kgateway-dev/kgateway/v2/pkg/agentgateway/utils"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/krtutil"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/reporter"
@@ -89,17 +90,7 @@ func (g AgwListener) Equals(other AgwListener) bool {
 }
 
 // AgwPolicy is a wrapper type that contains the policy on the gateway, as well as the status for the policy.
-type AgwPolicy struct {
-	*api.Policy
-}
-
-func (g AgwPolicy) ResourceName() string {
-	return "policy/" + g.Name
-}
-
-func (g AgwPolicy) Equals(other AgwPolicy) bool {
-	return protoconv.Equals(g, other)
-}
+type AgwPolicy = plugins.AgwPolicy
 
 // AgwBackend is a wrapper type that contains the backend on the gateway, as well as the status for the backend.
 type AgwBackend struct {
@@ -185,7 +176,7 @@ func (g GatewayListener) Equals(other GatewayListener) bool {
 
 // GatewayCollection returns a collection of the internal representations GatewayListeners for the given gateway.
 func GatewayCollection(
-	agwClassName string,
+	controllerName string,
 	gateways krt.Collection[*gwv1.Gateway],
 	gatewayClasses krt.Collection[GatewayClass],
 	namespaces krt.Collection[*corev1.Namespace],
@@ -194,23 +185,25 @@ func GatewayCollection(
 	krtopts krtutil.KrtOptions,
 ) krt.Collection[GatewayListener] {
 	gw := krt.NewManyCollection(gateways, func(ctx krt.HandlerContext, obj *gwv1.Gateway) []GatewayListener {
+		class := krt.FetchOne(ctx, gatewayClasses, krt.FilterKey(string(obj.Spec.GatewayClassName)))
+		if class == nil {
+			logger.Debug("gateway class not found, skipping", "gw_name", obj.GetName(), "gatewayClassName", obj.Spec.GatewayClassName)
+			return nil
+		}
+		if string(class.Controller) != controllerName {
+			logger.Debug("skipping gateway not managed by our controller", "gw_name", obj.GetName(), "gatewayClassName", obj.Spec.GatewayClassName, "controllerName", class.Controller)
+			return nil // ignore gateways not managed by our controller
+		}
+
 		rm := reports.NewReportMap()
 		statusReporter := reports.NewReporter(&rm)
 		gwReporter := statusReporter.Gateway(obj)
 		logger.Debug("translating Gateway", "gw_name", obj.GetName(), "resource_version", obj.GetResourceVersion())
 
-		if string(obj.Spec.GatewayClassName) != agwClassName {
-			return nil // ignore non agentgateway gws
-		}
-
 		var result []GatewayListener
 		kgw := obj.Spec
 		status := obj.Status.DeepCopy()
-		class := fetchClass(ctx, gatewayClasses, kgw.GatewayClassName)
-		if class == nil {
-			return nil
-		}
-		controllerName := class.Controller
+		classControllerName := class.Controller
 		var servers []*istio.Server
 
 		// Extract the addresses. A gwv1 will bind to a specific Service
@@ -232,7 +225,7 @@ func GatewayCollection(
 			// when the real count is available after route processing
 			attachedCount := int32(0) // Default to 0 if not found
 
-			server, tlsInfo, programmed := BuildListener(ctx, secrets, grants, namespaces, obj, status, l, i, controllerName, attachedCount)
+			server, tlsInfo, programmed := BuildListener(ctx, secrets, grants, namespaces, obj, status, l, i, classControllerName, attachedCount)
 
 			lstatus := status.Listeners[i]
 

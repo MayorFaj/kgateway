@@ -20,15 +20,15 @@ type HelmGateway struct {
 	Name             *string `json:"name,omitempty"`
 	GatewayName      *string `json:"gatewayName,omitempty"`
 	GatewayNamespace *string `json:"gatewayNamespace,omitempty"`
+	GatewayClassName *string `json:"gatewayClassName,omitempty"`
 	NameOverride     *string `json:"nameOverride,omitempty"`
 	FullnameOverride *string `json:"fullnameOverride,omitempty"`
 
 	// deployment/service values
-	ReplicaCount   *uint32                    `json:"replicaCount,omitempty"`
-	Ports          []HelmPort                 `json:"ports,omitempty"`
-	Service        *HelmService               `json:"service,omitempty"`
-	FloatingUserId *bool                      `json:"floatingUserId,omitempty"`
-	Strategy       *appsv1.DeploymentStrategy `json:"strategy,omitempty"`
+	ReplicaCount *uint32                    `json:"replicaCount,omitempty"`
+	Ports        []HelmPort                 `json:"ports,omitempty"`
+	Service      *HelmService               `json:"service,omitempty"`
+	Strategy     *appsv1.DeploymentStrategy `json:"strategy,omitempty"`
 
 	// serviceaccount values
 	ServiceAccount *HelmServiceAccount `json:"serviceAccount,omitempty"`
@@ -41,6 +41,7 @@ type HelmGateway struct {
 	NodeSelector                  map[string]string                 `json:"nodeSelector,omitempty"`
 	Affinity                      *corev1.Affinity                  `json:"affinity,omitempty"`
 	Tolerations                   []corev1.Toleration               `json:"tolerations,omitempty"`
+	StartupProbe                  *corev1.Probe                     `json:"startupProbe,omitempty"`
 	ReadinessProbe                *corev1.Probe                     `json:"readinessProbe,omitempty"`
 	LivenessProbe                 *corev1.Probe                     `json:"livenessProbe,omitempty"`
 	ExtraVolumes                  []corev1.Volume                   `json:"extraVolumes,omitempty"`
@@ -77,6 +78,7 @@ type HelmGateway struct {
 	Stats *HelmStatsConfig `json:"stats,omitempty"`
 
 	// AI extension values
+	// Deprecated: Envoy-based AI gateway is deprecated in v2.1 and will be removed in v2.2.
 	AIExtension *HelmAIExtension `json:"aiExtension,omitempty"`
 
 	// agentgateway integration values
@@ -116,8 +118,14 @@ type HelmServiceAccount struct {
 // helmXds represents the xds host and port to which envoy will connect
 // to receive xds config updates
 type HelmXds struct {
-	Host *string `json:"host,omitempty"`
-	Port *uint32 `json:"port,omitempty"`
+	Host *string     `json:"host,omitempty"`
+	Port *uint32     `json:"port,omitempty"`
+	Tls  *HelmXdsTls `json:"tls,omitempty"`
+}
+
+type HelmXdsTls struct {
+	Enabled *bool   `json:"enabled,omitempty"`
+	CaCert  *string `json:"caCert,omitempty"`
 }
 
 type HelmIstio struct {

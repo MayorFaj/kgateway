@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -20,6 +21,7 @@ import (
 
 	intdeployer "github.com/kgateway-dev/kgateway/v2/internal/kgateway/deployer"
 	"github.com/kgateway-dev/kgateway/v2/pkg/deployer"
+	"github.com/kgateway-dev/kgateway/v2/pkg/reports"
 )
 
 const (
@@ -37,7 +39,11 @@ type gatewayReconciler struct {
 	deployer *deployer.Deployer
 }
 
-func NewGatewayReconciler(ctx context.Context, cfg GatewayConfig, deployer *deployer.Deployer) *gatewayReconciler {
+func NewGatewayReconciler(
+	ctx context.Context,
+	cfg GatewayConfig,
+	deployer *deployer.Deployer,
+) *gatewayReconciler {
 	return &gatewayReconciler{
 		cli:               cfg.Mgr.GetClient(),
 		scheme:            cfg.Mgr.GetScheme(),
@@ -65,7 +71,6 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		log.Error(err, "unable to get namespace")
 		return ctrl.Result{}, err
 	}
-
 	// check for the annotation:
 	if !r.autoProvision && namespace.Annotations[GatewayAutoDeployAnnotationKey] != "true" {
 		log.Info("namespace is not enabled for auto deploy.")
@@ -76,7 +81,6 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 	if err := r.cli.Get(ctx, req.NamespacedName, &gw); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-
 	if gw.GetDeletionTimestamp() != nil {
 		// no need to do anything as we have owner refs, so children will be deleted
 		log.Info("gateway deleted, no need for reconciling")
@@ -129,7 +133,7 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 			Status:             metav1.ConditionTrue,
 			ObservedGeneration: gw.Generation,
 			Reason:             string(api.GatewayReasonAccepted),
-			Message:            "Gateway is accepted",
+			Message:            reports.GatewayAcceptedMessage,
 		}
 		if statusErr := r.updateGatewayStatusWithRetry(ctx, &gw, condition); statusErr != nil {
 			log.Error(statusErr, "failed to update Gateway status after retries")
@@ -153,7 +157,7 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 	err = updateStatus(ctx, r.cli, &gw, generatedSvc)
 	if err != nil {
 		log.Error(err, "failed to update status")
-		result.Requeue = true
+		result.RequeueAfter = time.Second
 	}
 
 	err = r.deployer.DeployObjsWithSource(ctx, objs, &gw)

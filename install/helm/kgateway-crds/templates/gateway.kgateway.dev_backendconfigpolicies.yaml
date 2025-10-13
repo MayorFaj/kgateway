@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.18.1-0.20250625175829-8d11ce77f347
+    controller-gen.kubebuilder.io/version: v0.19.0
   labels:
     app: kgateway
     app.kubernetes.io/name: kgateway
@@ -365,6 +365,8 @@ spec:
                     x-kubernetes-validations:
                     - message: invalid duration value
                       rule: matches(self, '^([0-9]{1,5}(h|m|s|ms)){1,4}$')
+                    - message: baseEjectionTime must be at least 1ms
+                      rule: duration(self) >= duration('1ms')
                   consecutive5xx:
                     default: 5
                     format: int32
@@ -376,6 +378,8 @@ spec:
                     x-kubernetes-validations:
                     - message: invalid duration value
                       rule: matches(self, '^([0-9]{1,5}(h|m|s|ms)){1,4}$')
+                    - message: interval must be at least 1ms
+                      rule: duration(self) >= duration('1ms')
                   maxEjectionPercent:
                     default: 10
                     format: int32
@@ -637,10 +641,12 @@ spec:
                       type: string
                   required:
                   - ancestorRef
+                  - conditions
                   - controllerName
                   type: object
                 maxItems: 16
                 type: array
+                x-kubernetes-list-type: atomic
             required:
             - ancestors
             type: object

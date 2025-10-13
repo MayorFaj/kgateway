@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.18.1-0.20250625175829-8d11ce77f347
+    controller-gen.kubebuilder.io/version: v0.19.0
   labels:
     app: kgateway
     app.kubernetes.io/name: kgateway
@@ -180,8 +180,6 @@ spec:
                             minLength: 1
                             pattern: ^[a-z0-9-]+$
                             type: string
-                        required:
-                        - model
                         type: object
                       gemini:
                         properties:
@@ -262,8 +260,6 @@ spec:
                         type: object
                       port:
                         format: int32
-                        maximum: 65535
-                        minimum: 1
                         type: integer
                       vertexai:
                         properties:
@@ -470,8 +466,6 @@ spec:
                                     minLength: 1
                                     pattern: ^[a-z0-9-]+$
                                     type: string
-                                required:
-                                - model
                                 type: object
                               gemini:
                                 properties:
@@ -557,8 +551,6 @@ spec:
                                 type: object
                               port:
                                 format: int32
-                                maximum: 65535
-                                minimum: 1
                                 type: integer
                               vertexai:
                                 properties:
@@ -634,11 +626,6 @@ spec:
                     maxItems: 32
                     minItems: 1
                     type: array
-                    x-kubernetes-validations:
-                    - message: provider names must be unique across groups
-                      rule: self.map(pg, pg.providers.map(pp, pp.name)).map(p, self.map(pg,
-                        pg.providers.map(pp, pp.name)).filter(cp, cp != p).exists(cp,
-                        p.exists(pn, pn in cp))).exists(p, !p)
                 type: object
                 x-kubernetes-validations:
                 - message: exactly one of the fields in [llm priorityGroups] must
@@ -844,8 +831,6 @@ spec:
                           type: string
                         port:
                           format: int32
-                          maximum: 65535
-                          minimum: 1
                           type: integer
                       required:
                       - host
