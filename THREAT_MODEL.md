@@ -2,6 +2,14 @@
 
 This document provides a threat model for kgateway. This analysis identifies potential security threats, attack vectors, and mitigation strategies to help secure kgateway deployments.
 
+## Audience
+
+This threat model is intended for **deployers and security engineers** responsible for running kgateway.
+
+## Related Documentation
+
+* [Envoy Threat Model](https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/security/threat_model) - Essential reading for understanding the dataplane security model
+
 ## Potential Attack Surfaces
 
 * Tenant-provided Gateway API resources: Gateways, HTTPRoutes, TCPRoutes, etc.
