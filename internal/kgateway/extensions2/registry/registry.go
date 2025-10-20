@@ -7,7 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	"github.com/kgateway-dev/kgateway/v2/api/settings"
+	apisettings "github.com/kgateway-dev/kgateway/v2/api/settings"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/plugins/backend"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/plugins/backendconfigpolicy"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/plugins/backendtlspolicy"
@@ -19,7 +19,6 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/plugins/sandwich"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/plugins/serviceentry"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/plugins/trafficpolicy"
-	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/plugins/waypoint"
 	sdk "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk"
 	pluginsdkcol "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/collections"
 	"github.com/kgateway-dev/kgateway/v2/pkg/validator"
@@ -76,7 +75,7 @@ func Plugins(
 	ctx context.Context,
 	commoncol *pluginsdkcol.CommonCollections,
 	waypointGatewayClassName string,
-	globalSettings settings.Settings,
+	globalSettings apisettings.Settings,
 	validator validator.Validator,
 ) []sdk.Plugin {
 	return []sdk.Plugin{
@@ -90,7 +89,6 @@ func Plugins(
 		httplistenerpolicy.NewPlugin(ctx, commoncol),
 		backendtlspolicy.NewPlugin(ctx, commoncol),
 		serviceentry.NewPlugin(ctx, commoncol),
-		waypoint.NewPlugin(ctx, commoncol, waypointGatewayClassName),
 		sandwich.NewPlugin(),
 		backendconfigpolicy.NewPlugin(ctx, commoncol, validator),
 	}

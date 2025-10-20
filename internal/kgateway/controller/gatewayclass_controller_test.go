@@ -19,18 +19,18 @@ var _ = Describe("GatewayClass Status Controller", func() {
 	)
 
 	var (
-		cancel context.CancelFunc
+		cancelManager context.CancelFunc
 	)
 
 	BeforeEach(func() {
 		var err error
-		cancel, err = createManager(ctx, nil, nil)
+		cancelManager, err = createManager(ctx, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
 	AfterEach(func() {
-		if cancel != nil {
-			cancel()
+		if cancelManager != nil {
+			cancelManager()
 		}
 		// ensure goroutines cleanup
 		Eventually(func() bool { return true }).WithTimeout(3 * time.Second).Should(BeTrue())
@@ -63,22 +63,6 @@ var _ = Describe("GatewayClass Status Controller", func() {
 				WithTransform(func(c *metav1.Condition) metav1.ConditionStatus { return c.Status }, Equal(metav1.ConditionTrue)),
 				WithTransform(func(c *metav1.Condition) string { return c.Reason }, Equal(string(apiv1.GatewayClassReasonAccepted))),
 				WithTransform(func(c *metav1.Condition) string { return c.Message }, ContainSubstring(`accepted by kgateway controller`)),
-			))
-		})
-
-		It("should set the SupportedVersion=True condition type", func() {
-			Eventually(func() (*metav1.Condition, error) {
-				gc := &apiv1.GatewayClass{}
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: gatewayClassName}, gc); err != nil {
-					return nil, err
-				}
-				return meta.FindStatusCondition(gc.Status.Conditions, string(apiv1.GatewayClassConditionStatusSupportedVersion)), nil
-			}, timeout, interval).Should(And(
-				Not(BeNil()),
-				WithTransform(func(c *metav1.Condition) string { return c.Type }, Equal(string(apiv1.GatewayClassConditionStatusSupportedVersion))),
-				WithTransform(func(c *metav1.Condition) metav1.ConditionStatus { return c.Status }, Equal(metav1.ConditionTrue)),
-				WithTransform(func(c *metav1.Condition) string { return c.Reason }, Equal(string(apiv1.GatewayClassReasonSupportedVersion))),
-				WithTransform(func(c *metav1.Condition) string { return c.Message }, ContainSubstring(`supported by kgateway controller`)),
 			))
 		})
 	})

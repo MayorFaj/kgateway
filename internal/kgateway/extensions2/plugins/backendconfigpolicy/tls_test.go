@@ -13,11 +13,11 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
-	gwv1alpha3 "sigs.k8s.io/gateway-api/apis/v1alpha3"
+	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
 	eiutils "github.com/kgateway-dev/kgateway/v2/internal/envoyinit/pkg/utils"
-	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/ir"
+	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/ir"
 )
 
 // MockSecretGetter implements SecretGetter for testing
@@ -208,6 +208,40 @@ func TestTranslateTLSConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "TLS config with only minVersion parameter",
+			tlsConfig: &v1alpha1.TLS{
+				Parameters: &v1alpha1.TLSParameters{
+					MinVersion: ptr.To(v1alpha1.TLSVersion1_2),
+				},
+			},
+			wantErr: false,
+			expected: &envoytlsv3.UpstreamTlsContext{
+				CommonTlsContext: &envoytlsv3.CommonTlsContext{
+					TlsParams: &envoytlsv3.TlsParameters{
+						TlsMinimumProtocolVersion: envoytlsv3.TlsParameters_TLSv1_2,
+						TlsMaximumProtocolVersion: envoytlsv3.TlsParameters_TLS_AUTO,
+					},
+				},
+			},
+		},
+		{
+			name: "TLS config with only maxVersion parameter",
+			tlsConfig: &v1alpha1.TLS{
+				Parameters: &v1alpha1.TLSParameters{
+					MaxVersion: ptr.To(v1alpha1.TLSVersion1_3),
+				},
+			},
+			wantErr: false,
+			expected: &envoytlsv3.UpstreamTlsContext{
+				CommonTlsContext: &envoytlsv3.CommonTlsContext{
+					TlsParams: &envoytlsv3.TlsParameters{
+						TlsMinimumProtocolVersion: envoytlsv3.TlsParameters_TLS_AUTO,
+						TlsMaximumProtocolVersion: envoytlsv3.TlsParameters_TLSv1_3,
+					},
+				},
+			},
+		},
+		{
 			name: "invalid TLS config - missing secret",
 			tlsConfig: &v1alpha1.TLS{
 				SecretRef: &corev1.LocalObjectReference{
@@ -375,7 +409,7 @@ func TestTranslateTLSConfig(t *testing.T) {
 		{
 			name: "TLS config with system ca",
 			tlsConfig: &v1alpha1.TLS{
-				WellKnownCACertificates: ptr.To(gwv1alpha3.WellKnownCACertificatesSystem),
+				WellKnownCACertificates: ptr.To(gwv1.WellKnownCACertificatesSystem),
 			},
 			expected: &envoytlsv3.UpstreamTlsContext{
 				CommonTlsContext: &envoytlsv3.CommonTlsContext{
@@ -391,7 +425,7 @@ func TestTranslateTLSConfig(t *testing.T) {
 		{
 			name: "TLS config with system ca and san",
 			tlsConfig: &v1alpha1.TLS{
-				WellKnownCACertificates: ptr.To(gwv1alpha3.WellKnownCACertificatesSystem),
+				WellKnownCACertificates: ptr.To(gwv1.WellKnownCACertificatesSystem),
 				VerifySubjectAltNames:   []string{"test.example.com", "api.example.com"},
 			},
 			expected: &envoytlsv3.UpstreamTlsContext{

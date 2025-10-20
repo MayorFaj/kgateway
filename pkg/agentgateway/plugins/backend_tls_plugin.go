@@ -3,7 +3,6 @@ package plugins
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/agentgateway/agentgateway/go/api"
@@ -14,9 +13,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
-	gwv1alpha3 "sigs.k8s.io/gateway-api/apis/v1alpha3"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
+	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/sslutils"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
 	"github.com/kgateway-dev/kgateway/v2/pkg/agentgateway/utils"
 	"github.com/kgateway-dev/kgateway/v2/pkg/utils/kubeutils"
@@ -25,7 +24,7 @@ import (
 // NewBackendTLSPlugin creates a new BackendTLSPolicy plugin
 func NewBackendTLSPlugin(agw *AgwCollections) AgwPlugin {
 	clusterDomain := kubeutils.GetClusterDomainName()
-	policyCol := krt.NewManyCollection(agw.BackendTLSPolicies, func(krtctx krt.HandlerContext, btls *gwv1alpha3.BackendTLSPolicy) []AgwPolicy {
+	policyCol := krt.NewManyCollection(agw.BackendTLSPolicies, func(krtctx krt.HandlerContext, btls *gwv1.BackendTLSPolicy) []AgwPolicy {
 		return translatePoliciesForBackendTLS(krtctx, agw.ConfigMaps, agw.Backends, btls, clusterDomain)
 	})
 	return AgwPlugin{
@@ -45,13 +44,13 @@ func translatePoliciesForBackendTLS(
 	krtctx krt.HandlerContext,
 	cfgmaps krt.Collection[*corev1.ConfigMap],
 	backends krt.Collection[*v1alpha1.Backend],
-	btls *gwv1alpha3.BackendTLSPolicy,
+	btls *gwv1.BackendTLSPolicy,
 	clusterDomain string,
 ) []AgwPolicy {
 	logger := logger.With("plugin_kind", "backendtls")
 	var policies []AgwPolicy
 
-	for idx, target := range btls.Spec.TargetRefs {
+	for _, target := range btls.Spec.TargetRefs {
 		var policyTarget *api.PolicyTarget
 
 		switch string(target.Kind) {
@@ -140,7 +139,7 @@ func translatePoliciesForBackendTLS(
 		}
 
 		policy := &api.Policy{
-			Name:   btls.Namespace + "/" + btls.Name + ":" + strconv.Itoa(idx) + ":backendtls",
+			Name:   btls.Namespace + "/" + btls.Name + ":backendtls" + attachmentName(policyTarget),
 			Target: policyTarget,
 			Spec: &api.PolicySpec{Kind: &api.PolicySpec_BackendTls{
 				BackendTls: &api.PolicySpec_BackendTLS{
@@ -164,12 +163,12 @@ func translatePoliciesForBackendTLS(
 func getBackendTLSCACert(
 	krtctx krt.HandlerContext,
 	cfgmaps krt.Collection[*corev1.ConfigMap],
-	btls *gwv1alpha3.BackendTLSPolicy,
+	btls *gwv1.BackendTLSPolicy,
 ) (*wrapperspb.BytesValue, error) {
 	validation := btls.Spec.Validation
 	if wk := validation.WellKnownCACertificates; wk != nil {
 		switch kind := *wk; kind {
-		case gwv1alpha3.WellKnownCACertificatesSystem:
+		case gwv1.WellKnownCACertificatesSystem:
 			return nil, nil
 
 		default:
@@ -195,7 +194,7 @@ func getBackendTLSCACert(
 		if cfgmap == nil {
 			return nil, fmt.Errorf("ConfigMap %s not found", nn)
 		}
-		caCert, err := extractCARoot(ptr.Flatten(cfgmap))
+		caCert, err := sslutils.GetCACertFromConfigMap(ptr.Flatten(cfgmap))
 		if err != nil {
 			return nil, fmt.Errorf("error extracting CA cert from ConfigMap %s: %w", nn, err)
 		}
@@ -205,13 +204,4 @@ func getBackendTLSCACert(
 		sb.WriteString(caCert)
 	}
 	return wrapperspb.Bytes([]byte(sb.String())), nil
-}
-
-func extractCARoot(cm *corev1.ConfigMap) (string, error) {
-	caCrt, ok := cm.Data["ca.crt"]
-	if !ok {
-		return "", errors.New("ca.crt key missing")
-	}
-
-	return caCrt, nil
 }

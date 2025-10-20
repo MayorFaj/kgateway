@@ -76,7 +76,7 @@ const (
 // Recognizes http2 app protocols defined by istio (https://istio.io/latest/docs/ops/configuration/traffic-management/protocol-selection/)
 // and GEP-1911 (https://gateway-api.sigs.k8s.io/geps/gep-1911/#api-semantics).
 func ParseAppProtocol(appProtocol *string) AppProtocol {
-	switch ptr.Deref(appProtocol, "") {
+	switch strings.ToLower(ptr.Deref(appProtocol, "")) {
 	case string(v1alpha1.AppProtocolHttp2):
 		fallthrough
 	case string(v1alpha1.AppProtocolGrpc):
@@ -122,6 +122,10 @@ type BackendObjectIR struct {
 	// CanonicalHostname. We should see if it's possible to have multiple
 	// CanonicalHostnames.
 	ExtraKey string
+
+	// RequiresPolicyStatus indicates if this Backend may require updating status of an attached policy
+	// This is essentially a precomputation of whether there are any 'AttachedPolicies' that are objects
+	RequiresPolicyStatus bool
 
 	AttachedPolicies AttachedPolicies
 
@@ -387,7 +391,7 @@ func (c Listeners) Equals(in Listeners) bool {
 
 // ParseObjectAnnotations parses common annotations from a Kubernetes object
 // and sets the corresponding fields on the BackendObjectIR. If parsing fails, an error is added
-// to the backend's Errors slice.
+// to the backend's errors slice.
 func ParseObjectAnnotations(backend *BackendObjectIR, obj metav1.Object) {
 	if obj == nil {
 		return
@@ -398,7 +402,7 @@ func ParseObjectAnnotations(backend *BackendObjectIR, obj metav1.Object) {
 	// Parse Istio auto-mTLS annotation
 	if val, exists := annotations[apiannotations.DisableIstioAutoMTLS]; exists {
 		if disabled, err := strconv.ParseBool(val); err != nil {
-			// Add error to backend.Errors instead of just logging
+			// Add error to backend.errors instead of just logging
 			backend.Errors = append(backend.Errors, fmt.Errorf("invalid annotation %s value %q: %w", apiannotations.DisableIstioAutoMTLS, val, err))
 		} else {
 			// Store the parsed value

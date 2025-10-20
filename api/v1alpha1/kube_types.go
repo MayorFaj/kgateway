@@ -89,11 +89,13 @@ type Service struct {
 	ClusterIP *string `json:"clusterIP,omitempty"`
 
 	// Additional labels to add to the Service object metadata.
+	// If the same label is present on `Gateway.spec.infrastructure.labels`, the `Gateway` takes precedence.
 	//
 	// +optional
 	ExtraLabels map[string]string `json:"extraLabels,omitempty"`
 
 	// Additional annotations to add to the Service object metadata.
+	// If the same annotation is present on `Gateway.spec.infrastructure.annotations`, the `Gateway` takes precedence.
 	//
 	// +optional
 	ExtraAnnotations map[string]string `json:"extraAnnotations,omitempty"`
@@ -191,6 +193,7 @@ type ServiceAccount struct {
 	ExtraLabels map[string]string `json:"extraLabels,omitempty"`
 
 	// Additional annotations to add to the ServiceAccount object metadata.
+	// If the same annotation is present on `Gateway.spec.infrastructure.annotations`, the `Gateway` takes precedence.
 	//
 	// +optional
 	ExtraAnnotations map[string]string `json:"extraAnnotations,omitempty"`
@@ -213,11 +216,13 @@ func (in *ServiceAccount) GetExtraAnnotations() map[string]string {
 // Configuration for a Kubernetes Pod template.
 type Pod struct {
 	// Additional labels to add to the Pod object metadata.
+	// If the same label is present on `Gateway.spec.infrastructure.labels`, the `Gateway` takes precedence.
 	//
 	// +optional
 	ExtraLabels map[string]string `json:"extraLabels,omitempty"`
 
 	// Additional annotations to add to the Pod object metadata.
+	// If the same annotation is present on `Gateway.spec.infrastructure.annotations`, the `Gateway` takes precedence.
 	//
 	// +optional
 	ExtraAnnotations map[string]string `json:"extraAnnotations,omitempty"`
@@ -272,6 +277,14 @@ type Pod struct {
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=31536000
 	TerminationGracePeriodSeconds *int64 `json:"terminationGracePeriodSeconds,omitempty"`
+
+	// If specified, the pod's startup probe. A probe of container startup readiness.
+	// Container will be only be added to service endpoints if the probe succeeds. See
+	// https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.26/#probe-v1-core
+	// for details.
+	//
+	// +optional
+	StartupProbe *corev1.Probe `json:"startupProbe,omitempty"`
 
 	// If specified, the pod's readiness probe. Periodic probe of container service readiness.
 	// Container will be removed from service endpoints if the probe fails. See
@@ -351,6 +364,13 @@ func (in *Pod) GetTolerations() []corev1.Toleration {
 		return nil
 	}
 	return in.Tolerations
+}
+
+func (in *Pod) GetStartupProbe() *corev1.Probe {
+	if in == nil {
+		return nil
+	}
+	return in.StartupProbe
 }
 
 func (in *Pod) GetReadinessProbe() *corev1.Probe {

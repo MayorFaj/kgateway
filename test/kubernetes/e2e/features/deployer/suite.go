@@ -1,3 +1,5 @@
+//go:build e2e
+
 package deployer
 
 import (
@@ -20,8 +22,8 @@ import (
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
-	"github.com/kgateway-dev/kgateway/v2/pkg/utils/envoyutils/admincli"
 	"github.com/kgateway-dev/kgateway/v2/pkg/utils/kubeutils"
+	"github.com/kgateway-dev/kgateway/v2/test/envoyutils/admincli"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/defaults"
 	"github.com/kgateway-dev/kgateway/v2/test/kubernetes/e2e/tests/base"
@@ -121,7 +123,7 @@ func (s *testingSuite) TestConfigureProxiesFromGatewayParameters() {
 	s.Require().NoError(err)
 	s.Require().Subset(pod.Labels, map[string]string{
 		"app.kubernetes.io/instance":             proxyObjectMeta.Name,
-		"app.kubernetes.io/name":                 proxyObjectMeta.Name,
+		defaults.WellKnownAppLabel:               proxyObjectMeta.Name,
 		"gateway.networking.k8s.io/gateway-name": proxyObjectMeta.Name,
 		"kgateway":                               "kube-gateway",
 	})
