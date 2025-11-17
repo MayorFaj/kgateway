@@ -1,7 +1,6 @@
 package deployer
 
 import (
-	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	internaldeployer "github.com/kgateway-dev/kgateway/v2/internal/kgateway/deployer"
+	"github.com/kgateway-dev/kgateway/v2/pkg/apiclient"
 	pkgdeployer "github.com/kgateway-dev/kgateway/v2/pkg/deployer"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/collections"
 	"github.com/kgateway-dev/kgateway/v2/pkg/utils/envutils"
@@ -61,19 +62,38 @@ func ExtractCommonObjs(t *testing.T, objs []client.Object) ([]client.Object, *gw
 	return commonObjs, gtw
 }
 
+func (dt DeployerTester) GetObjects(
+	t *testing.T,
+	tt HelmTestCase,
+	scheme *runtime.Scheme,
+	dir string,
+	crdDir string,
+) []client.Object {
+	filePath := filepath.Join(dir, "testdata/", tt.InputFile)
+	inputFile := filePath + ".yaml"
+
+	gvkToStructuralSchema, err := testutils.GetStructuralSchemas(crdDir)
+	require.NoError(t, err, "error getting structural schemas")
+
+	objs, err := testutils.LoadFromFiles(inputFile, scheme, gvkToStructuralSchema)
+	require.NoError(t, err, "error loading files from input file")
+
+	return objs
+}
+
 func (dt DeployerTester) RunHelmChartTest(
 	t *testing.T,
 	tt HelmTestCase,
 	scheme *runtime.Scheme,
 	dir string,
-	helmValuesGeneratorOverride func(cli client.Client, inputs *pkgdeployer.Inputs) pkgdeployer.HelmValuesGenerator,
+	crdDir string,
+	helmValuesGeneratorOverride func(inputs *pkgdeployer.Inputs) pkgdeployer.HelmValuesGenerator,
+	fakeClient apiclient.Client,
 ) {
 	filePath := filepath.Join(dir, "testdata/", tt.InputFile)
-	inputFile := filePath + ".yaml"
 	outputFile := filePath + "-out.yaml"
 
-	objs, err := testutils.LoadFromFiles(inputFile, scheme, nil)
-	assert.NoError(t, err, "error loading files from input file")
+	objs := dt.GetObjects(t, tt, scheme, dir, crdDir)
 
 	commonObjs, gtw := ExtractCommonObjs(t, objs)
 	if gtw == nil {
@@ -85,25 +105,27 @@ func (dt DeployerTester) RunHelmChartTest(
 	if tt.Inputs != nil {
 		inputs = tt.Inputs
 	}
-	fakeClient := NewFakeClientWithObjsWithScheme(scheme, objs...)
 
 	gwParams := internaldeployer.NewGatewayParameters(
 		fakeClient,
 		inputs,
 	)
 	if helmValuesGeneratorOverride != nil {
-		gwParams.WithHelmValuesGeneratorOverride(helmValuesGeneratorOverride(fakeClient, inputs))
+		gwParams.WithHelmValuesGeneratorOverride(helmValuesGeneratorOverride(inputs))
 	}
 	deployer, err := internaldeployer.NewGatewayDeployer(
 		dt.ControllerName,
 		dt.AgwControllerName,
 		dt.AgwClassName,
+		scheme,
 		fakeClient,
 		gwParams,
 	)
 	assert.NoError(t, err, "error creating gateway deployer")
 
-	ctx := context.TODO()
+	ctx := t.Context()
+	fakeClient.RunAndWait(ctx.Done())
+
 	vals, err := gwParams.GetValues(ctx, gtw)
 	assert.NoError(t, err, "error getting values for GwParams")
 
@@ -150,38 +172,83 @@ func DefaultDeployerInputs(dt DeployerTester, commonCols *collections.CommonColl
 			Registry: "ghcr.io",
 			Tag:      "v2.1.0-dev",
 		},
-		GatewayClassName:         dt.ClassName,
-		WaypointGatewayClassName: dt.WaypointClassName,
-		AgentgatewayClassName:    dt.AgwClassName,
+		GatewayClassName:           dt.ClassName,
+		WaypointGatewayClassName:   dt.WaypointClassName,
+		AgentgatewayClassName:      dt.AgwClassName,
+		AgentgatewayControllerName: dt.AgwControllerName,
 	}
 }
 
 // validateYAML checks that the YAML file is valid:
-// 1. No lines should end with ': ' (colon-space)
-// 2. Each YAML document should be unmarshalable
+//
+// 1. No lines should end with whitespace. This sometimes means you forgot
+// something important, such as handling edge cases when certain values are
+// absent, e.g. `foo: {{ bar }}` leads to `foo: ` if bar is the empty string,
+// and should probably be handled by omitting `foo:` altogether. If it's not a
+// real problem, it's lint that can be quickly fixed.
+//
+// 2. No blank lines appear, which helps ensure good hygiene around usage of
+// helm `indent` and `nindent` template functions.
+//
+// 3. Each YAML document should round-trip: unmarshaling and then marshaling
+// should produce the same YAML content.
 func validateYAML(t *testing.T, filename string, data []byte) {
 	t.Helper()
 
-	// Check for lines ending with whitespace. This could be "innocent" go
-	// templating lint but can also be 'oops, the chart assumed that
-	// .Values.foo would never be empty'
+	// Check for (1,2)
 	lines := strings.Split(string(data), "\n")
 	for i, line := range lines {
 		if strings.HasSuffix(line, " ") || strings.HasSuffix(line, "\t") {
 			t.Errorf("helm chart produced yaml indicative of a buggy helm chart not handling edge cases: line %d in %s ends with whitespace: %q", i+1, filename, line)
 		}
+		if line == "" && i+1 != len(lines) {
+			t.Errorf("helm chart produced yaml with blank lines; please remove these to help ensure good hygiene around usage of helm template functions indent/nindent: line %d in %s is blank", i+1, filename)
+		}
 	}
 
-	// Split into YAML documents and unmarshal each one
+	// (3) Split into YAML documents and verify each one round-trips
 	documents := strings.Split(string(data), "\n---\n")
 	for i, doc := range documents {
 		doc = strings.TrimSpace(doc)
 		if doc == "" || doc == "---" {
 			continue
 		}
-		var obj interface{}
+		var obj any
 		if err := yaml.Unmarshal([]byte(doc), &obj); err != nil {
 			t.Errorf("helm chart produced invalid yaml: failed to unmarshal document %d in %s: %v", i+1, filename, err)
+			continue
+		}
+
+		// Verify round-trip: marshal back to YAML and compare
+		marshaled, err := yaml.Marshal(obj)
+		if err != nil {
+			t.Errorf("helm chart produced yaml that cannot be marshaled back: failed to marshal document %d in %s: %v", i+1, filename, err)
+			continue
+		}
+
+		// Unmarshal round-trip and compare objects (handles key ordering)
+		var objRoundTrip any
+		if err := yaml.Unmarshal(marshaled, &objRoundTrip); err != nil {
+			t.Errorf("helm chart produced yaml that fails to unmarshal after round-trip: document %d in %s: %v", i+1, filename, err)
+			continue
+		}
+
+		// First check: objects should be semantically equal (order-independent)
+		if diff := cmp.Diff(obj, objRoundTrip); diff != "" {
+			t.Errorf("helm chart produced yaml that does not round-trip semantically: document %d in %s\nDiff (- original, + after round-trip):\n%s", i+1, filename, diff)
+			continue
+		}
+
+		// Second check: string comparison to catch implicit null becoming
+		// explicit, which could be a mistaken use of '{{- with ... }}'
+		// Normalize whitespace but preserve the actual YAML syntax differences
+		originalNorm := strings.TrimSpace(doc)
+		marshaledNorm := strings.TrimSpace(string(marshaled))
+
+		// Check if marshaled version has explicit 'null' that wasn't in original
+		if !strings.Contains(originalNorm, ": null") && strings.Contains(marshaledNorm, ": null") {
+			diff := cmp.Diff(originalNorm, marshaledNorm)
+			t.Errorf("helm chart produced yaml with implicit null that becomes explicit: document %d in %s\nDiff (- original, + after round-trip):\n%s", i+1, filename, diff)
 		}
 	}
 }

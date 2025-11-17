@@ -1,8 +1,6 @@
 package deployer
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -10,14 +8,8 @@ import (
 
 	"istio.io/istio/pkg/slices"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
-	gwxv1a1 "sigs.k8s.io/gateway-api/apisx/v1alpha1"
-
-	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
-	"github.com/kgateway-dev/kgateway/v2/pkg/utils/kubeutils"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/listener"
@@ -32,70 +24,21 @@ var ComponentLogLevelEmptyError = func(key string, value string) error {
 	return fmt.Errorf("an empty key or value was provided in componentLogLevels: key=%s, value=%s", key, value)
 }
 
-func NewGatewayIRForDeployer(gw *ir.Gateway) GatewayIRForDeployer {
-	return GatewayIRForDeployer{
-		ObjectSource: gw.ObjectSource,
-		Listeners: slices.Map(gw.Listeners, func(e ir.Listener) ListenerForDeployer {
-			return ListenerForDeployer{
-				Name:       e.Name,
-				Port:       e.Port,
-				Parent:     kubeutils.NamespacedNameFrom(e.Parent),
-				ParentKind: getListenerSourceKind(e.Parent),
-			}
-		}),
-	}
-}
-
-func getListenerSourceKind(obj client.Object) string {
-	switch obj.(type) {
-	case *gwv1.Gateway:
-		return wellknown.GatewayKind
-	case *gwxv1a1.XListenerSet:
-		return wellknown.XListenerSetKind
-	default:
-		return ""
-	}
-}
-
-type GatewayIRForDeployer struct {
-	ir.ObjectSource
-	Listeners []ListenerForDeployer
-}
-
-func (c GatewayIRForDeployer) ResourceName() string {
-	return c.ObjectSource.ResourceName()
-}
-
-func (c GatewayIRForDeployer) Equals(in GatewayIRForDeployer) bool {
-	return c.ObjectSource.Equals(in.ObjectSource) &&
-		slices.EqualFunc(c.Listeners, in.Listeners, func(a ListenerForDeployer, b ListenerForDeployer) bool {
-			return a.Name == b.Name && a.Port == b.Port && a.ParentKind == b.ParentKind && a.Parent == b.Parent
-		})
-}
-
-type ListenerForDeployer struct {
-	Name       gwv1.SectionName
-	Port       gwv1.PortNumber
-	Parent     types.NamespacedName
-	ParentKind string
-}
-
 // Extract the listener ports from a Gateway and corresponding listener sets. These will be used to populate:
 // 1. the ports exposed on the envoy container
 // 2. the ports exposed on the proxy service
-func GetPortsValues(gw GatewayIRForDeployer, gwp *v1alpha1.GatewayParameters) []HelmPort {
+func GetPortsValues(gw *ir.GatewayForDeployer, gwp *v1alpha1.GatewayParameters, agentgateway bool) []HelmPort {
 	gwPorts := []HelmPort{}
 
 	// Add ports from Gateway listeners
-	for _, l := range gw.Listeners {
-		listenerPort := int32(l.Port)
-		portName := listener.GenerateListenerNameFromPort(l.Port)
-		if err := validate.ListenerPortForParent(l.Name, l.Port, l.ParentKind, l.Parent); err != nil {
+	for _, port := range gw.Ports.List() {
+		portName := listener.GenerateListenerNameFromPort(port)
+		if err := validate.ListenerPortForParent(port, agentgateway); err != nil {
 			// skip invalid ports; statuses are handled in the translator
 			logger.Error("skipping port", "gateway", gw.ResourceName(), "error", err)
 			continue
 		}
-		gwPorts = AppendPortValue(gwPorts, listenerPort, portName, gwp)
+		gwPorts = AppendPortValue(gwPorts, port, portName, gwp)
 	}
 
 	// Add ports from GatewayParameters.Service.Ports
@@ -268,21 +211,6 @@ func GetStatsValues(statsConfig *v1alpha1.StatsConfig) *HelmStatsConfig {
 	}
 }
 
-func getTracingValues(tracingConfig *v1alpha1.AiExtensionTrace) *helmAITracing {
-	if tracingConfig == nil {
-		return nil
-	}
-	return &helmAITracing{
-		EndPoint: tracingConfig.EndPoint,
-		Sampler: &helmAITracingSampler{
-			SamplerType: tracingConfig.GetSamplerType(),
-			SamplerArg:  tracingConfig.GetSamplerArg(),
-		},
-		Timeout:  tracingConfig.GetTimeout(),
-		Protocol: tracingConfig.GetOTLPProtocolType(),
-	}
-}
-
 // ComponentLogLevelsToString converts the key-value pairs in the map into a string of the
 // format: key1:value1,key2:value2,key3:value3, where the keys are sorted alphabetically.
 // If an empty map is passed in, then an empty string is returned.
@@ -302,45 +230,4 @@ func ComponentLogLevelsToString(vals map[string]string) (string, error) {
 	}
 	sort.Strings(parts)
 	return strings.Join(parts, ","), nil
-}
-
-func GetAIExtensionValues(config *v1alpha1.AiExtension) (*HelmAIExtension, error) {
-	if config == nil {
-		return nil, nil
-	}
-
-	// If we don't do this check, a byte array containing the characters "null" will be rendered
-	// This will not be marshallable by the component so instead we render nothing.
-	var byt []byte
-	if config.GetStats() != nil {
-		var err error
-		byt, err = json.Marshal(config.GetStats())
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// Handle Tracing with base64 encoding
-	var tracingBase64 string
-	if config.Tracing != nil {
-		// Convert tracing config to JSON
-		tracingJSON, err := json.Marshal(getTracingValues(config.Tracing))
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal tracing config: %w", err)
-		}
-
-		// Encode JSON to base64
-		tracingBase64 = base64.StdEncoding.EncodeToString(tracingJSON)
-	}
-
-	return &HelmAIExtension{
-		Enabled:         *config.GetEnabled(),
-		Image:           GetImageValues(config.GetImage()),
-		SecurityContext: config.GetSecurityContext(),
-		Resources:       config.GetResources(),
-		Env:             config.GetEnv(),
-		Ports:           config.GetPorts(),
-		Stats:           byt,
-		Tracing:         tracingBase64,
-	}, nil
 }

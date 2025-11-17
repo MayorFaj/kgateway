@@ -3,7 +3,8 @@ package translator
 import (
 	"crypto/tls"
 	"fmt"
-	"log"
+	"maps"
+	slices0 "slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ import (
 	"istio.io/istio/pkg/config/schema/kind"
 	"istio.io/istio/pkg/kube/controllers"
 	"istio.io/istio/pkg/kube/krt"
+	"istio.io/istio/pkg/log"
 	"istio.io/istio/pkg/ptr"
 	"istio.io/istio/pkg/slices"
 	"istio.io/istio/pkg/util/sets"
@@ -30,9 +32,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
-	gwv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
-	gwv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
+	gwv1a2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
+	gwv1b1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
@@ -76,8 +79,8 @@ func ConvertHTTPRouteToAgw(ctx RouteContext, r gwv1.HTTPRouteRule,
 		}
 	}
 
-	filters, filterError := BuildAgwFilters(ctx, obj.Namespace, r.Filters)
-	res.Filters = filters
+	policies, policiesErr := BuildAgwTrafficPolicyFilters(ctx, obj.Namespace, r.Filters)
+	res.TrafficPolicies = policies
 
 	if err := ApplyTimeouts(&r, res); err != nil {
 		return nil, &reporter.RouteCondition{
@@ -114,11 +117,11 @@ func ConvertHTTPRouteToAgw(ctx RouteContext, r gwv1.HTTPRouteRule,
 	res.Hostnames = convertHostnames(obj.Spec.Hostnames)
 
 	if shouldInjectErrorResponse(backendErr) {
-		injectDirectResponseFilter(res, obj.Namespace, obj.Name)
+		injectDirectResponseFilter(res)
 	}
 
-	if filterError != nil && !isFilterErrorCritical(filterError) {
-		return nil, filterError
+	if policiesErr != nil && !isPolicyErrorCritical(policiesErr) {
+		return nil, policiesErr
 	}
 	return res, backendErr
 }
@@ -191,14 +194,14 @@ func shouldInjectErrorResponse(backendErr *reporter.RouteCondition) bool {
 }
 
 // Helper function to inject direct response filter for errors
-func injectDirectResponseFilter(res *api.Route, namespace, name string) {
-	for _, f := range res.Filters {
-		if _, ok := f.GetKind().(*api.RouteFilter_DirectResponse); ok {
+func injectDirectResponseFilter(res *api.Route) {
+	for _, f := range res.TrafficPolicies {
+		if _, ok := f.GetKind().(*api.TrafficPolicySpec_DirectResponse); ok {
 			return
 		}
 	}
-	drf := &api.RouteFilter{
-		Kind: &api.RouteFilter_DirectResponse{
+	drf := &api.TrafficPolicySpec{
+		Kind: &api.TrafficPolicySpec_DirectResponse{
 			DirectResponse: &api.DirectResponse{
 				Status: 500,
 				Body:   []byte("Backend service unavailable"),
@@ -206,28 +209,23 @@ func injectDirectResponseFilter(res *api.Route, namespace, name string) {
 		},
 	}
 
-	res.Filters = append([]*api.RouteFilter{drf}, res.Filters...)
+	res.TrafficPolicies = append([]*api.TrafficPolicySpec{drf}, res.TrafficPolicies...)
 }
 
 // Helper function to determine if filter error is critical
-func isFilterErrorCritical(filterError *reporter.RouteCondition) bool {
+func isPolicyErrorCritical(filterError *reporter.RouteCondition) bool {
 	criticalReasons := []gwv1.RouteConditionReason{
 		"FilterNotSupported",
 		"FilterConfigInvalid",
 		// Add other critical filter error reasons as needed
 	}
 
-	for _, reason := range criticalReasons {
-		if filterError.Reason == reason {
-			return true
-		}
-	}
-	return false
+	return slices0.Contains(criticalReasons, filterError.Reason)
 }
 
 // ConvertTCPRouteToAgw converts a TCPRouteRule to an agentgateway TCPRoute
-func ConvertTCPRouteToAgw(ctx RouteContext, r gwv1alpha2.TCPRouteRule,
-	obj *gwv1alpha2.TCPRoute, pos int,
+func ConvertTCPRouteToAgw(ctx RouteContext, r gwv1a2.TCPRouteRule,
+	obj *gwv1a2.TCPRoute, pos int,
 ) (*api.TCPRoute, *reporter.RouteCondition) {
 	routeRuleKey := strconv.Itoa(pos)
 	var ruleName string
@@ -305,13 +303,20 @@ func ConvertGRPCRouteToAgw(ctx RouteContext, r gwv1.GRPCRouteRule,
 			// note: the RouteMatch method field only applies for http methods
 		})
 	}
+	if len(res.Matches) == 0 {
+		// HTTPRoute defaults in the CRD itself, but GRPCRoute does not.
+		// Agentgateway expects there to always be a match set.
+		res.Matches = []*api.RouteMatch{{
+			Path: &api.PathMatch{Kind: &api.PathMatch_PathPrefix{PathPrefix: "/"}},
+		}}
+	}
 
-	filters, err := BuildAgwGRPCFilters(ctx, obj.Namespace, r.Filters)
+	policies, err := BuildAgwGRPCTrafficPolicies(ctx, obj.Namespace, r.Filters)
 	if err != nil {
 		logger.Error("failed to translate grpc filter", "err", err, "route_name", obj.Name, "route_ns", obj.Namespace)
 		return nil, err
 	}
-	res.Filters = filters
+	res.TrafficPolicies = policies
 
 	route, backendErr, err := buildAgwGRPCDestination(ctx, r.BackendRefs, obj.Namespace)
 	if err != nil {
@@ -326,8 +331,8 @@ func ConvertGRPCRouteToAgw(ctx RouteContext, r gwv1.GRPCRouteRule,
 }
 
 // ConvertTLSRouteToAgw converts a TLSRouteRule to an agentgateway TCPRoute
-func ConvertTLSRouteToAgw(ctx RouteContext, r gwv1alpha2.TLSRouteRule,
-	obj *gwv1alpha2.TLSRoute, pos int,
+func ConvertTLSRouteToAgw(ctx RouteContext, r gwv1a2.TLSRouteRule,
+	obj *gwv1a2.TLSRoute, pos int,
 ) (*api.TCPRoute, *reporter.RouteCondition) {
 	routeRuleKey := strconv.Itoa(pos)
 	var ruleName string
@@ -426,17 +431,21 @@ func terminalFilterCombinationError(existingFilter, newFilter string) string {
 	return fmt.Sprintf("Cannot combine multiple terminal filters: %s and %s are mutually exclusive. Only one terminal filter is allowed per route rule.", existingFilter, newFilter)
 }
 
-// BuildAgwFilters builds a list of agentgateway filters from a list of k8s gateway api HTTPRoute filters
-func BuildAgwFilters(
+// BuildAgwTrafficPolicyFilters builds a list of agentgateway TrafficPolicySpec from a list of k8s gateway api HTTPRoute filters
+func BuildAgwTrafficPolicyFilters(
 	ctx RouteContext,
 	ns string,
 	inputFilters []gwv1.HTTPRouteFilter,
-) ([]*api.RouteFilter, *reporter.RouteCondition) {
-	var filters []*api.RouteFilter
+) ([]*api.TrafficPolicySpec, *reporter.RouteCondition) {
+	var policies []*api.TrafficPolicySpec
 	var hasTerminalFilter bool
 	var terminalFilterType string
 
-	var filterError *reporter.RouteCondition
+	var policyError *reporter.RouteCondition
+	// Collect multiples of same-type filters to merge
+	var mergedReqHdr *api.HeaderModifier
+	var mergedRespHdr *api.HeaderModifier
+	var mergedMirror []*api.RequestMirrors_Mirror
 	for _, filter := range inputFilters {
 		switch filter.Type {
 		case gwv1.HTTPRouteFilterRequestHeaderModifier:
@@ -444,16 +453,16 @@ func BuildAgwFilters(
 			if h == nil {
 				continue
 			}
-			filters = append(filters, h)
+			mergedReqHdr = mergeHeaderModifiers(mergedReqHdr, h)
 		case gwv1.HTTPRouteFilterResponseHeaderModifier:
 			h := CreateAgwResponseHeadersFilter(filter.ResponseHeaderModifier)
 			if h == nil {
 				continue
 			}
-			filters = append(filters, h)
+			mergedRespHdr = mergeHeaderModifiers(mergedRespHdr, h)
 		case gwv1.HTTPRouteFilterRequestRedirect:
 			if hasTerminalFilter {
-				filterError = &reporter.RouteCondition{
+				policyError = &reporter.RouteCondition{
 					Type:    gwv1.RouteConditionAccepted,
 					Status:  metav1.ConditionFalse,
 					Reason:  gwv1.RouteReasonIncompatibleFilters,
@@ -465,42 +474,42 @@ func BuildAgwFilters(
 			if h == nil {
 				continue
 			}
-			filters = append(filters, h)
+			policies = append(policies, &api.TrafficPolicySpec{Kind: &api.TrafficPolicySpec_RequestRedirect{RequestRedirect: h}})
 			hasTerminalFilter = true
 			terminalFilterType = "RequestRedirect"
 		case gwv1.HTTPRouteFilterRequestMirror:
 			h, err := CreateAgwMirrorFilter(ctx, filter.RequestMirror, ns, wellknown.HTTPRouteGVK)
 			if err != nil {
-				if filterError == nil {
-					filterError = err
+				if policyError == nil {
+					policyError = err
 				}
 			} else {
-				filters = append(filters, h)
+				mergedMirror = append(mergedMirror, h)
 			}
 		case gwv1.HTTPRouteFilterURLRewrite:
 			h := CreateAgwRewriteFilter(filter.URLRewrite)
 			if h == nil {
 				continue
 			}
-			filters = append(filters, h)
+			policies = append(policies, h)
 		case gwv1.HTTPRouteFilterCORS:
 			h := createAgwCorsFilter(filter.CORS)
 			if h == nil {
 				continue
 			}
-			filters = append(filters, h)
+			policies = append(policies, h)
 		case gwv1.HTTPRouteFilterExtensionRef:
 			h, err := createAgwExtensionRefFilter(ctx, filter.ExtensionRef, ns)
 			if err != nil {
-				if filterError == nil {
-					filterError = err
+				if policyError == nil {
+					policyError = err
 				}
 				continue
 			}
 			if h != nil {
-				if _, ok := h.Kind.(*api.RouteFilter_DirectResponse); ok {
+				if _, ok := h.Kind.(*api.TrafficPolicySpec_DirectResponse); ok {
 					if hasTerminalFilter {
-						filterError = &reporter.RouteCondition{
+						policyError = &reporter.RouteCondition{
 							Type:    gwv1.RouteConditionAccepted,
 							Status:  metav1.ConditionFalse,
 							Reason:  gwv1.RouteReasonIncompatibleFilters,
@@ -511,7 +520,7 @@ func BuildAgwFilters(
 					hasTerminalFilter = true
 					terminalFilterType = "DirectResponse"
 				}
-				filters = append(filters, h)
+				policies = append(policies, h)
 			}
 		default:
 			return nil, &reporter.RouteCondition{
@@ -522,15 +531,134 @@ func BuildAgwFilters(
 			}
 		}
 	}
-	return filters, filterError
+	// Append merged header modifiers at the end to avoid duplicates
+	if mergedReqHdr != nil {
+		policies = append(policies, &api.TrafficPolicySpec{Kind: &api.TrafficPolicySpec_RequestHeaderModifier{RequestHeaderModifier: mergedReqHdr}})
+	}
+	if mergedRespHdr != nil {
+		policies = append(policies, &api.TrafficPolicySpec{Kind: &api.TrafficPolicySpec_ResponseHeaderModifier{ResponseHeaderModifier: mergedRespHdr}})
+	}
+	if mergedMirror != nil {
+		policies = append(policies, &api.TrafficPolicySpec{Kind: &api.TrafficPolicySpec_RequestMirror{RequestMirror: &api.RequestMirrors{Mirrors: mergedMirror}}})
+	}
+	return policies, policyError
 }
 
-func createAgwCorsFilter(cors *gwv1.HTTPCORSFilter) *api.RouteFilter {
+// BuildAgwBackendPolicyFilters builds a list of agentgateway BackendPolicySpec from a list of k8s gateway api HTTPRoute filters
+func BuildAgwBackendPolicyFilters(
+	ctx RouteContext,
+	ns string,
+	inputFilters []gwv1.HTTPRouteFilter,
+) ([]*api.BackendPolicySpec, *reporter.RouteCondition) {
+	var policies []*api.BackendPolicySpec
+	var hasTerminalFilter bool
+	var terminalFilterType string
+
+	var policyError *reporter.RouteCondition
+	// Collect multiples of same-type filters to merge
+	var mergedReqHdr *api.HeaderModifier
+	var mergedRespHdr *api.HeaderModifier
+	var mergedMirror []*api.RequestMirrors_Mirror
+	for _, filter := range inputFilters {
+		switch filter.Type {
+		case gwv1.HTTPRouteFilterRequestHeaderModifier:
+			h := CreateAgwHeadersFilter(filter.RequestHeaderModifier)
+			if h == nil {
+				continue
+			}
+			mergedReqHdr = mergeHeaderModifiers(mergedReqHdr, h)
+		case gwv1.HTTPRouteFilterResponseHeaderModifier:
+			h := CreateAgwResponseHeadersFilter(filter.ResponseHeaderModifier)
+			if h == nil {
+				continue
+			}
+			mergedRespHdr = mergeHeaderModifiers(mergedRespHdr, h)
+		case gwv1.HTTPRouteFilterRequestRedirect:
+			if hasTerminalFilter {
+				policyError = &reporter.RouteCondition{
+					Type:    gwv1.RouteConditionAccepted,
+					Status:  metav1.ConditionFalse,
+					Reason:  gwv1.RouteReasonIncompatibleFilters,
+					Message: terminalFilterCombinationError(terminalFilterType, "RequestRedirect"),
+				}
+				continue
+			}
+			h := CreateAgwRedirectFilter(filter.RequestRedirect)
+			if h == nil {
+				continue
+			}
+			policies = append(policies, &api.BackendPolicySpec{Kind: &api.BackendPolicySpec_RequestRedirect{RequestRedirect: h}})
+			hasTerminalFilter = true
+			terminalFilterType = "RequestRedirect"
+		case gwv1.HTTPRouteFilterRequestMirror:
+			h, err := CreateAgwMirrorFilter(ctx, filter.RequestMirror, ns, wellknown.HTTPRouteGVK)
+			if err != nil {
+				if policyError == nil {
+					policyError = err
+				}
+			} else {
+				mergedMirror = append(mergedMirror, h)
+			}
+		default:
+			return nil, &reporter.RouteCondition{
+				Type:    gwv1.RouteConditionAccepted,
+				Status:  metav1.ConditionFalse,
+				Reason:  gwv1.RouteReasonIncompatibleFilters,
+				Message: fmt.Sprintf("unsupported filter type %q", filter.Type),
+			}
+		}
+	}
+	// Append merged header modifiers at the end to avoid duplicates
+	if mergedReqHdr != nil {
+		policies = append(policies, &api.BackendPolicySpec{Kind: &api.BackendPolicySpec_RequestHeaderModifier{RequestHeaderModifier: mergedReqHdr}})
+	}
+	if mergedRespHdr != nil {
+		policies = append(policies, &api.BackendPolicySpec{Kind: &api.BackendPolicySpec_ResponseHeaderModifier{ResponseHeaderModifier: mergedRespHdr}})
+	}
+	if mergedMirror != nil {
+		policies = append(policies, &api.BackendPolicySpec{Kind: &api.BackendPolicySpec_RequestMirror{RequestMirror: &api.RequestMirrors{Mirrors: mergedMirror}}})
+	}
+	return policies, policyError
+}
+
+// mergeHeaderModifiers merges two api.HeaderModifier instances by concatenating their Add/Set/Remove lists.
+// Later entries are applied after earlier ones by preserving order in the resulting slices.
+func mergeHeaderModifiers(dst, src *api.HeaderModifier) *api.HeaderModifier {
+	if src == nil {
+		return dst
+	}
+	if dst == nil {
+		// Create a copy of src to avoid mutating input
+		out := &api.HeaderModifier{}
+		if len(src.Add) > 0 {
+			out.Add = append([]*api.Header{}, src.Add...)
+		}
+		if len(src.Set) > 0 {
+			out.Set = append([]*api.Header{}, src.Set...)
+		}
+		if len(src.Remove) > 0 {
+			out.Remove = append([]string{}, src.Remove...)
+		}
+		return out
+	}
+	if len(src.Add) > 0 {
+		dst.Add = append(dst.Add, src.Add...)
+	}
+	if len(src.Set) > 0 {
+		dst.Set = append(dst.Set, src.Set...)
+	}
+	if len(src.Remove) > 0 {
+		dst.Remove = append(dst.Remove, src.Remove...)
+	}
+	return dst
+}
+
+func createAgwCorsFilter(cors *gwv1.HTTPCORSFilter) *api.TrafficPolicySpec {
 	if cors == nil {
 		return nil
 	}
-	return &api.RouteFilter{
-		Kind: &api.RouteFilter_Cors{Cors: &api.CORS{
+	return &api.TrafficPolicySpec{
+		Kind: &api.TrafficPolicySpec_Cors{Cors: &api.CORS{
 			AllowCredentials: ptr.OrEmpty(cors.AllowCredentials),
 			AllowHeaders:     slices.Map(cors.AllowHeaders, func(h gwv1.HTTPHeaderName) string { return string(h) }),
 			AllowMethods:     slices.Map(cors.AllowMethods, func(m gwv1.HTTPMethodWithWildcard) string { return string(m) }),
@@ -566,11 +694,11 @@ func buildAgwHTTPDestination(
 			}
 		}
 		if dst != nil {
-			filters, err := BuildAgwFilters(ctx, ns, fwd.Filters)
+			policies, err := BuildAgwBackendPolicyFilters(ctx, ns, fwd.Filters)
 			if err != nil {
 				return nil, nil, err
 			}
-			dst.Filters = filters
+			dst.BackendPolicies = policies
 		}
 		res = append(res, dst)
 	}
@@ -619,7 +747,8 @@ func buildAgwDestination(
 				Type:    gwv1.RouteConditionAccepted,
 				Status:  metav1.ConditionFalse,
 				Reason:  gwv1.RouteReasonUnsupportedValue,
-				Message: "service name invalid; the name of the Service must be used, not the hostname."}
+				Message: "service name invalid; the name of the Service must be used, not the hostname.",
+			}
 		}
 		hostname = kubeutils.GetInferenceServiceHostname(string(to.Name), namespace)
 		key := namespace + "/" + string(to.Name)
@@ -630,7 +759,8 @@ func buildAgwDestination(
 				Type:    gwv1.RouteConditionResolvedRefs,
 				Status:  metav1.ConditionFalse,
 				Reason:  gwv1.RouteReasonBackendNotFound,
-				Message: fmt.Sprintf("backendRef(%s) not found", hostname)}
+				Message: fmt.Sprintf("backendRef %s  not found", key),
+			}
 		} else {
 			rb.Backend = &api.BackendReference{
 				Kind: &api.BackendReference_Service{
@@ -647,7 +777,8 @@ func buildAgwDestination(
 				Type:    gwv1.RouteConditionAccepted,
 				Status:  metav1.ConditionFalse,
 				Reason:  gwv1.RouteReasonUnsupportedValue,
-				Message: "service name invalid; the name of the Service must be used, not the hostname."}
+				Message: "service name invalid; the name of the Service must be used, not the hostname.",
+			}
 		}
 		hostname = kubeutils.GetServiceHostname(string(to.Name), namespace)
 		key := namespace + "/" + string(to.Name)
@@ -657,7 +788,8 @@ func buildAgwDestination(
 				Type:    gwv1.RouteConditionResolvedRefs,
 				Status:  metav1.ConditionFalse,
 				Reason:  gwv1.RouteReasonBackendNotFound,
-				Message: fmt.Sprintf("backend(%s) not found", hostname)}
+				Message: fmt.Sprintf("backend(%s) not found", hostname),
+			}
 		}
 		// TODO: All kubernetes service types currently require a Port, so we do this for everything; consider making this per-type if we have future types
 		// that do not require port.
@@ -667,7 +799,8 @@ func buildAgwDestination(
 				Type:    gwv1.RouteConditionAccepted,
 				Status:  metav1.ConditionFalse,
 				Reason:  gwv1.RouteReasonUnsupportedValue,
-				Message: "port is required in backendRef"}
+				Message: "port is required in backendRef",
+			}
 		}
 		rb.Backend = &api.BackendReference{
 			Kind: &api.BackendReference_Service{
@@ -719,6 +852,7 @@ func ParentMeta(obj controllers.Object, sectionName *gwv1.SectionName) map[strin
 
 var allowedParentReferences = sets.New(
 	wellknown.GatewayGVK,
+	wellknown.XListenerSetGVK,
 	wellknown.ServiceGVK,
 	wellknown.ServiceEntryGVK,
 )
@@ -740,6 +874,11 @@ func normalizeReference(group *gwv1.Group, kind *gwv1.Kind, defaultGVK schema.Gr
 			result.Group = ""
 		} else {
 			result.Group = groupStr
+		}
+	}
+	for wk := range allowedParentReferences {
+		if wk.Group == result.Group && wk.Kind == result.Kind {
+			return wk
 		}
 	}
 
@@ -906,7 +1045,9 @@ func extractParentReferenceInfo(ctx RouteContext, parents RouteParents, obj cont
 				bannedHostnames.Insert(gw.OriginalHostname)
 			}
 			deniedReason := ReferenceAllowed(ctx, pr, kind, pk, hostnames, localNamespace)
+
 			rpi := RouteParentReference{
+				ParentGateway:     pr.ParentGateway,
 				InternalName:      pr.InternalName,
 				InternalKind:      ir.Kind,
 				Hostname:          pr.OriginalHostname,
@@ -966,6 +1107,9 @@ func (p ParentReference) String() string {
 // ParentInfo holds info about a "Parent" - something that can be referenced as a ParentRef in the API.
 // Today, this is just Gateway
 type ParentInfo struct {
+	ParentGateway types.NamespacedName
+	// +krtEqualsTodo ensure gateway class changes trigger equality differences
+	ParentGatewayClassName string
 	// InternalName refers to the internal name we can reference it by. For example "my-ns/my-gateway"
 	InternalName string
 	// AllowedKinds indicates which kinds can be admitted by this Parent
@@ -976,9 +1120,10 @@ type ParentInfo struct {
 	// OriginalHostname is the unprocessed form of Hostnames; how it appeared in users' config
 	OriginalHostname string
 
-	SectionName gwv1.SectionName
-	Port        gwv1.PortNumber
-	Protocol    gwv1.ProtocolType
+	SectionName    gwv1.SectionName
+	Port           gwv1.PortNumber
+	Protocol       gwv1.ProtocolType
+	TLSPassthrough bool
 }
 
 // RouteParentReference holds information about a route's parent reference
@@ -997,6 +1142,7 @@ type RouteParentReference struct {
 	ParentKey       ParentKey
 	ParentSection   gwv1.SectionName
 	Accepted        bool
+	ParentGateway   types.NamespacedName
 }
 
 // FilteredReferences filters out references that are not accepted by the Parent.
@@ -1103,13 +1249,12 @@ func BuildListener(
 	secrets krt.Collection[*corev1.Secret],
 	grants ReferenceGrants,
 	namespaces krt.Collection[*corev1.Namespace],
-	obj *gwv1.Gateway,
-	status *gwv1.GatewayStatus,
+	obj controllers.Object,
+	status []gwv1.ListenerStatus,
 	l gwv1.Listener,
 	listenerIndex int,
-	controllerName gwv1.GatewayController,
-	attachedRoutes int32,
-) (*istio.Server, *TLSInfo, bool) {
+	portErr error,
+) (*istio.Server, *TLSInfo, []gwv1.ListenerStatus, bool) {
 	listenerConditions := map[string]*condition{
 		string(gwv1.ListenerConditionAccepted): {
 			reason:  string(gwv1.ListenerReasonAccepted),
@@ -1131,7 +1276,7 @@ func BuildListener(
 	}
 
 	ok := true
-	tls, tlsInfo, err := buildTLS(ctx, secrets, grants, l.TLS, obj, kube.IsAutoPassthrough(obj.Labels, l))
+	tls, tlsInfo, err := buildTLS(ctx, secrets, grants, l.TLS, obj, kube.IsAutoPassthrough(obj.GetLabels(), l))
 	if err != nil {
 		listenerConditions[string(gwv1.ListenerConditionResolvedRefs)].error = err
 		listenerConditions[string(gwv1.GatewayConditionProgrammed)].error = &ConfigError{
@@ -1140,8 +1285,15 @@ func BuildListener(
 		}
 		ok = false
 	}
+	if portErr != nil {
+		listenerConditions[string(gwv1.ListenerConditionAccepted)].error = &ConfigError{
+			Reason:  string(gwv1.ListenerReasonUnsupportedProtocol),
+			Message: portErr.Error(),
+		}
+		ok = false
+	}
 
-	hostnames := buildHostnameMatch(ctx, obj.Namespace, namespaces, l)
+	hostnames := buildHostnameMatch(ctx, obj.GetNamespace(), namespaces, l)
 	protocol, perr := listenerProtocolToAgw(l.Protocol)
 	if perr != nil {
 		listenerConditions[string(gwv1.ListenerConditionAccepted)].error = &ConfigError{
@@ -1161,8 +1313,8 @@ func BuildListener(
 		Tls:   tls,
 	}
 
-	reportListenerCondition(listenerIndex, l, obj, status, listenerConditions, attachedRoutes)
-	return server, tlsInfo, ok
+	updatedStatus := reportListenerCondition(listenerIndex, l, obj, status, listenerConditions)
+	return server, tlsInfo, updatedStatus, ok
 }
 
 var supportedProtocols = sets.New(
@@ -1198,7 +1350,7 @@ func buildTLS(
 	secrets krt.Collection[*corev1.Secret],
 	grants ReferenceGrants,
 	tls *gwv1.ListenerTLSConfig,
-	gw *gwv1.Gateway,
+	gw controllers.Object,
 	isAutoPassthrough bool,
 ) (*istio.ServerTLSSettings, *TLSInfo, *ConfigError) {
 	if tls == nil {
@@ -1213,7 +1365,7 @@ func buildTLS(
 	if tls.Mode != nil {
 		mode = *tls.Mode
 	}
-	namespace := gw.Namespace
+	namespace := gw.GetNamespace()
 	switch mode {
 	case gwv1.TLSModeTerminate:
 		out.Mode = istio.ServerTLSSettings_SIMPLE
@@ -1259,7 +1411,7 @@ func buildTLS(
 func buildSecretReference(
 	ctx krt.HandlerContext,
 	ref gwv1.SecretObjectReference,
-	gw *gwv1.Gateway,
+	gw controllers.Object,
 	secrets krt.Collection[*corev1.Secret],
 ) (string, TLSInfo, *ConfigError) {
 	if normalizeReference(ref.Group, ref.Kind, wellknown.SecretGVK) != wellknown.SecretGVK {
@@ -1269,7 +1421,7 @@ func buildSecretReference(
 	secret := ConfigKey{
 		Kind:      kind.Secret,
 		Name:      string(ref.Name),
-		Namespace: ptr.OrDefault((*string)(ref.Namespace), gw.Namespace),
+		Namespace: ptr.OrDefault((*string)(ref.Namespace), gw.GetNamespace()),
 	}
 
 	key := secret.Namespace + "/" + secret.Name
@@ -1389,22 +1541,20 @@ func toNamespaceSet(name string, labels map[string]string) klabels.Set {
 	}
 	// First we need a copy to not modify the underlying object
 	ret := make(map[string]string, len(labels)+1)
-	for k, v := range labels {
-		ret[k] = v
-	}
+	maps.Copy(ret, labels)
 	ret[NamespaceNameLabel] = name
 	return ret
 }
 
 func GetCommonRouteInfo(spec any) ([]gwv1.ParentReference, []gwv1.Hostname, schema.GroupVersionKind) {
 	switch t := spec.(type) {
-	case *gwv1alpha2.TCPRoute:
+	case *gwv1a2.TCPRoute:
 		return t.Spec.ParentRefs, nil, wellknown.TCPRouteGVK
-	case *gwv1alpha2.TLSRoute:
+	case *gwv1a2.TLSRoute:
 		return t.Spec.ParentRefs, t.Spec.Hostnames, wellknown.TLSRouteGVK
 	case *gwv1.HTTPRoute:
 		return t.Spec.ParentRefs, t.Spec.Hostnames, wellknown.HTTPRouteGVK
-	case *gwv1beta1.HTTPRoute:
+	case *gwv1b1.HTTPRoute:
 		return t.Spec.ParentRefs, t.Spec.Hostnames, wellknown.HTTPRouteGVK
 	case *gwv1.GRPCRoute:
 		return t.Spec.ParentRefs, t.Spec.Hostnames, wellknown.GRPCRouteGVK
@@ -1430,7 +1580,7 @@ func createAgwExtensionRefFilter(
 	ctx RouteContext,
 	extensionRef *gwv1.LocalObjectReference,
 	ns string,
-) (*api.RouteFilter, *reporter.RouteCondition) {
+) (*api.TrafficPolicySpec, *reporter.RouteCondition) {
 	if extensionRef == nil {
 		return nil, nil
 	}
@@ -1449,8 +1599,8 @@ func createAgwExtensionRefFilter(
 		}
 
 		// Convert to Agw DirectResponse filter
-		filter := &api.RouteFilter{
-			Kind: &api.RouteFilter_DirectResponse{
+		filter := &api.TrafficPolicySpec{
+			Kind: &api.TrafficPolicySpec_DirectResponse{
 				DirectResponse: &api.DirectResponse{
 					Status: uint32(directResponse.Spec.StatusCode), // nolint:gosec // G115: kubebuilder validation ensures safe for uint32
 				},

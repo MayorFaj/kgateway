@@ -19,6 +19,7 @@ import (
 	envoytypev3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 	"istio.io/istio/pkg/kube/krt"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
@@ -29,6 +30,7 @@ import (
 )
 
 type TrafficPolicyGatewayExtensionIR struct {
+	// +krtEqualsTodo decide whether extension name should affect equality
 	Name             string
 	ExtType          v1alpha1.GatewayExtensionType
 	ExtAuth          *envoy_ext_authz_v3.ExtAuthz
@@ -108,7 +110,7 @@ func TranslateGatewayExtensionBuilder(commoncol *collections.CommonCollections) 
 
 		switch gExt.Type {
 		case v1alpha1.GatewayExtensionTypeExtAuth:
-			envoyGrpcService, err := ResolveExtGrpcService(krtctx, commoncol.BackendIndex, false, gExt.ObjectSource, gExt.ExtAuth.GrpcService)
+			envoyGrpcService, err := ResolveExtGrpcService(krtctx, commoncol.BackendIndex, false, gExt.ObjectSource, &gExt.ExtAuth.GrpcService)
 			if err != nil {
 				// TODO: should this be a warning, and set cluster to blackhole?
 				p.Err = fmt.Errorf("failed to resolve ExtAuth backend: %w", err)
@@ -137,7 +139,7 @@ func TranslateGatewayExtensionBuilder(commoncol *collections.CommonCollections) 
 			}
 
 		case v1alpha1.GatewayExtensionTypeExtProc:
-			envoyGrpcService, err := ResolveExtGrpcService(krtctx, commoncol.BackendIndex, false, gExt.ObjectSource, gExt.ExtProc.GrpcService)
+			envoyGrpcService, err := ResolveExtGrpcService(krtctx, commoncol.BackendIndex, false, gExt.ObjectSource, &gExt.ExtProc.GrpcService)
 			if err != nil {
 				p.Err = fmt.Errorf("failed to resolve ExtProc backend: %w", err)
 				return p
@@ -150,7 +152,7 @@ func TranslateGatewayExtensionBuilder(commoncol *collections.CommonCollections) 
 				return p
 			}
 
-			grpcService, err := ResolveExtGrpcService(krtctx, commoncol.BackendIndex, false, gExt.ObjectSource, gExt.RateLimit.GrpcService)
+			grpcService, err := ResolveExtGrpcService(krtctx, commoncol.BackendIndex, false, gExt.ObjectSource, &gExt.RateLimit.GrpcService)
 			if err != nil {
 				p.Err = fmt.Errorf("ratelimit: %w", err)
 				return p
@@ -175,9 +177,6 @@ func ResolveExtGrpcService(
 	// defensive checks, both of these fields are required
 	if grpcService == nil {
 		return nil, errors.New("grpcService not provided")
-	}
-	if grpcService.BackendRef == nil {
-		return nil, errors.New("backend not provided")
 	}
 
 	var backend *ir.BackendObjectIR
@@ -211,11 +210,31 @@ func ResolveExtGrpcService(
 				Authority:   authority,
 			},
 		},
+		RetryPolicy: buildGRPCRetryPolicy(grpcService.Retry),
 	}
 	if grpcService.RequestTimeout != nil {
 		envoyGrpcService.Timeout = durationpb.New(grpcService.RequestTimeout.Duration)
 	}
 	return envoyGrpcService, nil
+}
+
+func buildGRPCRetryPolicy(in *v1alpha1.GRPCRetryPolicy) *envoycorev3.RetryPolicy {
+	if in == nil {
+		return nil
+	}
+
+	p := &envoycorev3.RetryPolicy{
+		NumRetries: wrapperspb.UInt32(uint32(in.Attempts)), //nolint: gosec // G115: kubebuilder validation ensures safe conversion
+	}
+	if in.Backoff != nil {
+		p.RetryBackOff = &envoycorev3.BackoffStrategy{
+			BaseInterval: durationpb.New(in.Backoff.BaseInterval.Duration),
+		}
+		if in.Backoff.MaxInterval != nil {
+			p.RetryBackOff.MaxInterval = durationpb.New(in.Backoff.MaxInterval.Duration)
+		}
+	}
+	return p
 }
 
 // FIXME: Should this live here instead of the global rate limit plugin?

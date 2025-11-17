@@ -1,17 +1,19 @@
 package agentgatewaysyncer
 
 import (
+	gocmp "cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
-	"reflect"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/agentgateway/agentgateway/go/api"
 	"github.com/google/go-cmp/cmp"
@@ -21,25 +23,29 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"istio.io/istio/pkg/config/schema/gvr"
+	"istio.io/istio/pilot/pkg/config/kube/crd"
+	"istio.io/istio/pilot/test/util"
+	"istio.io/istio/pkg/config/schema/gvk"
 	kubeclient "istio.io/istio/pkg/kube"
-	"istio.io/istio/pkg/kube/kclient/clienttest"
 	"istio.io/istio/pkg/kube/krt"
+	"istio.io/istio/pkg/ptr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
-	"sigs.k8s.io/gateway-api/pkg/consts"
+	"sigs.k8s.io/yaml"
 
 	apisettings "github.com/kgateway-dev/kgateway/v2/api/settings"
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
+	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/agentgatewaysyncer/status"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/extensions2/registry"
-	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/translator/listener"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
+	"github.com/kgateway-dev/kgateway/v2/pkg/agentgateway/ir"
 	agwplugins "github.com/kgateway-dev/kgateway/v2/pkg/agentgateway/plugins"
 	agwtranslator "github.com/kgateway-dev/kgateway/v2/pkg/agentgateway/translator"
-	"github.com/kgateway-dev/kgateway/v2/pkg/client/clientset/versioned/fake"
+	"github.com/kgateway-dev/kgateway/v2/pkg/apiclient"
+	"github.com/kgateway-dev/kgateway/v2/pkg/apiclient/fake"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/collections"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/krtutil"
@@ -67,7 +73,7 @@ func (tr *translationResult) MarshalJSON() ([]byte, error) {
 	}
 
 	// Create a map to hold the marshaled fields
-	result := make(map[string]interface{})
+	result := make(map[string]any)
 
 	// Marshal each field using protojson
 	if len(tr.Routes) > 0 {
@@ -248,14 +254,14 @@ func (tr *translationResult) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func marshalProtoMessages[T proto.Message](messages []T, m protojson.MarshalOptions) ([]interface{}, error) {
-	var result []interface{}
+func marshalProtoMessages[T proto.Message](messages []T, m protojson.MarshalOptions) ([]any, error) {
+	var result []any
 	for _, msg := range messages {
 		data, err := m.Marshal(msg)
 		if err != nil {
 			return nil, err
 		}
-		var jsonObj interface{}
+		var jsonObj any
 		if err := json.Unmarshal(data, &jsonObj); err != nil {
 			return nil, err
 		}
@@ -265,6 +271,12 @@ func marshalProtoMessages[T proto.Message](messages []T, m protojson.MarshalOpti
 }
 
 type ExtraPluginsFn func(ctx context.Context, commoncol *collections.CommonCollections) []pluginsdk.Plugin
+
+type ExtraConfig struct {
+	NewClientFn func(*testing.T, ...client.Object) apiclient.Client
+	PluginsFn   ExtraPluginsFn
+	Schemes     runtime.SchemeBuilder
+}
 
 func NewScheme(extraSchemes runtime.SchemeBuilder) *runtime.Scheme {
 	scheme := schemes.GatewayScheme()
@@ -280,11 +292,11 @@ func TestTranslation(
 	ctx context.Context,
 	inputFiles []string,
 	outputFile string,
+	expectedStatusFile string,
 	gwNN types.NamespacedName,
-	assertReports AssertReports,
 	settingsOpts ...SettingsOpts,
 ) {
-	TestTranslationWithExtraPlugins(t, ctx, inputFiles, outputFile, gwNN, assertReports, nil, nil, nil, settingsOpts...)
+	TestTranslationWithExtraPlugins(t, ctx, inputFiles, outputFile, expectedStatusFile, gwNN, ExtraConfig{}, settingsOpts...)
 }
 
 func TestTranslationWithExtraPlugins(
@@ -292,24 +304,18 @@ func TestTranslationWithExtraPlugins(
 	ctx context.Context,
 	inputFiles []string,
 	outputFile string,
+	expectedStatusFile string,
 	gwNN types.NamespacedName,
-	assertReports AssertReports,
-	extraPluginsFn ExtraPluginsFn,
-	extraSchemes runtime.SchemeBuilder,
-	extraGroups []string,
+	extraConfig ExtraConfig,
 	settingsOpts ...SettingsOpts,
 ) {
-	scheme := NewScheme(extraSchemes)
+	scheme := NewScheme(extraConfig.Schemes)
 	r := require.New(t)
 
 	results, err := TestCase{
 		InputFiles: inputFiles,
-	}.Run(t, ctx, scheme, extraPluginsFn, extraGroups, settingsOpts...)
+	}.Run(t, ctx, scheme, extraConfig, settingsOpts...)
 	r.NoError(err)
-	// TODO allow expecting multiple gateways in the output (map nns -> outputFile?)
-	r.Len(results, 1)
-	r.Contains(results, gwNN)
-	result := results[gwNN]
 
 	// TODO: do a json round trip to normalize the output (i.e. things like omit empty)
 
@@ -323,30 +329,27 @@ func TestTranslationWithExtraPlugins(
 	var addresses []*api.Address
 
 	// Extract agentgateway API types from AgwResources
-	for _, agwRes := range result.Resources {
-		for _, item := range agwRes.ResourceConfig.Items {
-			resourceWrapper := item.Resource.(*agwtranslator.AgwResourceWithCustomName)
-			res := resourceWrapper.Message.(*api.Resource)
-			switch r := res.Kind.(type) {
-			case *api.Resource_Route:
-				routes = append(routes, r.Route)
-			case *api.Resource_TcpRoute:
-				tcproutes = append(tcproutes, r.TcpRoute)
-			case *api.Resource_Listener:
-				listeners = append(listeners, r.Listener)
-			case *api.Resource_Bind:
-				binds = append(binds, r.Bind)
-			case *api.Resource_Backend:
-				backends = append(backends, r.Backend)
-			case *api.Resource_Policy:
-				policies = append(policies, r.Policy)
-			}
+	for _, res := range results.Resources {
+		if !(res.Gateway == gwNN || res.Gateway == (types.NamespacedName{})) {
+			continue
 		}
-		for _, item := range agwRes.AddressConfig.Items {
-			resourceWrapper := item.Resource.(*agwtranslator.AgwResourceWithCustomName)
-			res := resourceWrapper.Message.(*api.Address)
-			addresses = append(addresses, res)
+		switch r := res.Resource.Kind.(type) {
+		case *api.Resource_Route:
+			routes = append(routes, r.Route)
+		case *api.Resource_TcpRoute:
+			tcproutes = append(tcproutes, r.TcpRoute)
+		case *api.Resource_Listener:
+			listeners = append(listeners, r.Listener)
+		case *api.Resource_Bind:
+			binds = append(binds, r.Bind)
+		case *api.Resource_Backend:
+			backends = append(backends, r.Backend)
+		case *api.Resource_Policy:
+			policies = append(policies, r.Policy)
 		}
+	}
+	for _, item := range results.Addresses {
+		addresses = append(addresses, item.IntoProto())
 	}
 
 	output := &translationResult{
@@ -376,11 +379,9 @@ func TestTranslationWithExtraPlugins(
 	r.Empty(diff)
 	r.NoError(err)
 
-	if assertReports != nil {
-		assertReports(gwNN, result.ReportsMap)
-	} else {
-		r.NoError(AreReportsSuccess(result.ReportsMap))
-	}
+	outputStatus := results.Status.Dump()
+
+	util.CompareContent(t, []byte(outputStatus), expectedStatusFile)
 }
 
 type TestCase struct {
@@ -388,8 +389,9 @@ type TestCase struct {
 }
 
 type ActualTestResult struct {
-	Resources  []agwtranslator.AgentGwXdsResources
-	ReportsMap reports.ReportMap
+	Resources []ir.AgwResource
+	Addresses []Address
+	Status    *TestStatusQueue
 }
 
 func compareProxy(expectedFile string, actualProxy *translationResult) (string, error) {
@@ -443,94 +445,12 @@ func sortTranslationResult(tr *translationResult) *translationResult {
 	return tr
 }
 
-func ReadYamlFile(file string, out interface{}) error {
+func ReadYamlFile(file string, out any) error {
 	data, err := os.ReadFile(file)
 	if err != nil {
 		return err
 	}
 	return testutils.UnmarshalAnyYaml(data, out)
-}
-
-func GetHTTPRouteStatusError(
-	reportsMap reports.ReportMap,
-	route *types.NamespacedName,
-) error {
-	for nns, routeReport := range reportsMap.HTTPRoutes {
-		if route != nil && nns != *route {
-			continue
-		}
-		for ref, parentRefReport := range routeReport.Parents {
-			for _, c := range parentRefReport.Conditions {
-				// most route conditions true is good, except RouteConditionPartiallyInvalid
-				if c.Type == string(gwv1.RouteConditionPartiallyInvalid) && c.Status != metav1.ConditionFalse {
-					return fmt.Errorf("condition error for httproute: %v ref: %v condition: %v", nns, ref, c)
-				} else if c.Status != metav1.ConditionTrue {
-					return fmt.Errorf("condition error for httproute: %v ref: %v condition: %v", nns, ref, c)
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func AreReportsSuccess(reportsMap reports.ReportMap) error {
-	err := GetHTTPRouteStatusError(reportsMap, nil)
-	if err != nil {
-		return err
-	}
-
-	for nns, routeReport := range reportsMap.TCPRoutes {
-		for ref, parentRefReport := range routeReport.Parents {
-			for _, c := range parentRefReport.Conditions {
-				// most route conditions true is good, except RouteConditionPartiallyInvalid
-				if c.Type == string(gwv1.RouteConditionPartiallyInvalid) && c.Status != metav1.ConditionFalse {
-					return fmt.Errorf("condition error for tcproute: %v ref: %v condition: %v", nns, ref, c)
-				} else if c.Status != metav1.ConditionTrue {
-					return fmt.Errorf("condition error for tcproute: %v ref: %v condition: %v", nns, ref, c)
-				}
-			}
-		}
-	}
-
-	for nns, routeReport := range reportsMap.TLSRoutes {
-		for ref, parentRefReport := range routeReport.Parents {
-			for _, c := range parentRefReport.Conditions {
-				// most route conditions true is good, except RouteConditionPartiallyInvalid
-				if c.Type == string(gwv1.RouteConditionPartiallyInvalid) && c.Status != metav1.ConditionFalse {
-					return fmt.Errorf("condition error for tlsroute: %v ref: %v condition: %v", nns, ref, c)
-				} else if c.Status != metav1.ConditionTrue {
-					return fmt.Errorf("condition error for tlsroute: %v ref: %v condition: %v", nns, ref, c)
-				}
-			}
-		}
-	}
-
-	for nns, routeReport := range reportsMap.GRPCRoutes {
-		for ref, parentRefReport := range routeReport.Parents {
-			for _, c := range parentRefReport.Conditions {
-				// most route conditions true is good, except RouteConditionPartiallyInvalid
-				if c.Type == string(gwv1.RouteConditionPartiallyInvalid) && c.Status != metav1.ConditionFalse {
-					return fmt.Errorf("condition error for grpcroute: %v ref: %v condition: %v", nns, ref, c)
-				} else if c.Status != metav1.ConditionTrue {
-					return fmt.Errorf("condition error for grpcroute: %v ref: %v condition: %v", nns, ref, c)
-				}
-			}
-		}
-	}
-
-	for nns, gwReport := range reportsMap.Gateways {
-		for _, c := range gwReport.GetConditions() {
-			if c.Type == listener.GatewayConditionAttachedListenerSets {
-				// A gateway might or might not have AttachedListenerSets so skip this condition
-				continue
-			}
-			if c.Status != metav1.ConditionTrue {
-				return fmt.Errorf("condition not accepted for gw %v condition: %v", nns, c)
-			}
-		}
-	}
-
-	return nil
 }
 
 type SettingsOpts func(*apisettings.Settings)
@@ -539,72 +459,31 @@ func (tc TestCase) Run(
 	t *testing.T,
 	ctx context.Context,
 	scheme *runtime.Scheme,
-	extraPluginsFn ExtraPluginsFn,
-	extraGroups []string,
+	extraConfig ExtraConfig,
 	settingsOpts ...SettingsOpts,
-) (map[types.NamespacedName]ActualTestResult, error) {
-	var (
-		anyObjs []runtime.Object
-		ourObjs []runtime.Object
-	)
+) (ActualTestResult, error) {
 	gvkToStructuralSchema, err := testutils.GetStructuralSchemas(
 		filepath.Join(testutils.GitRootDirectory(), testutils.CRDPath))
 	if err != nil {
-		return nil, fmt.Errorf("error getting structural schemas: %w", err)
+		return ActualTestResult{}, fmt.Errorf("error getting structural schemas: %w", err)
 	}
 
+	var allObjs []client.Object
 	for _, file := range tc.InputFiles {
 		objs, err := testutils.LoadFromFiles(file, scheme, gvkToStructuralSchema)
 		if err != nil {
-			return nil, err
+			return ActualTestResult{}, err
 		}
-		for i := range objs {
-			switch obj := objs[i].(type) {
-			case *gwv1.Gateway:
-				anyObjs = append(anyObjs, obj)
-
-			default:
-				apiversion := reflect.ValueOf(obj).Elem().FieldByName("TypeMeta").FieldByName("APIVersion").String()
-				if strings.Contains(apiversion, v1alpha1.GroupName) {
-					ourObjs = append(ourObjs, obj)
-				} else {
-					external := false
-					for _, group := range extraGroups {
-						if strings.Contains(apiversion, group) {
-							external = true
-							break
-						}
-					}
-					if !external {
-						anyObjs = append(anyObjs, objs[i])
-					}
-				}
-			}
-		}
+		allObjs = append(allObjs, objs...)
 	}
 
-	ourCli := fake.NewClientset(ourObjs...)
-	cli := kubeclient.NewFakeClient(anyObjs...)
-	for _, crd := range []schema.GroupVersionResource{
-		gvr.KubernetesGateway_v1,
-		gvr.GatewayClass,
-		gvr.HTTPRoute_v1,
-		gvr.GRPCRoute,
-		gvr.Service,
-		gvr.Pod,
-		gvr.TCPRoute,
-		gvr.TLSRoute,
-		gvr.ServiceEntry,
-		gvr.WorkloadEntry,
-		gvr.AuthorizationPolicy,
-		wellknown.XListenerSetGVR,
-		wellknown.BackendTLSPolicyGVR,
-	} {
-		clienttest.MakeCRDWithAnnotations(t, cli, crd, map[string]string{
-			consts.BundleVersionAnnotation: consts.BundleVersion,
-		})
+	var fakeClient apiclient.Client
+	if extraConfig.NewClientFn != nil {
+		fakeClient = extraConfig.NewClientFn(t, allObjs...)
+	} else {
+		fakeClient = fake.NewClient(t, allObjs...)
 	}
-	defer cli.Shutdown()
+	defer fakeClient.Shutdown()
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -614,7 +493,7 @@ func (tc TestCase) Run(
 		wellknown.DefaultAgwClassName,
 	}
 	for _, className := range gwClasses {
-		cli.GatewayAPI().GatewayV1().GatewayClasses().Create(ctx, &gwv1.GatewayClass{
+		fakeClient.GatewayAPI().GatewayV1().GatewayClasses().Create(ctx, &gwv1.GatewayClass{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: className,
 			},
@@ -624,17 +503,20 @@ func (tc TestCase) Run(
 		}, metav1.CreateOptions{})
 	}
 
+	krtDebugger := new(krt.DebugHandler)
+	dumpOnFailure(t, krtDebugger)
 	krtOpts := krtutil.KrtOptions{
-		Stop: ctx.Done(),
+		Stop:     ctx.Done(),
+		Debugger: krtDebugger,
 	}
 
 	settings, err := apisettings.BuildSettings()
+	if err != nil {
+		return ActualTestResult{}, err
+	}
 	// enable agent gateway translation
 	settings.EnableAgentgateway = true
 	settings.EnableInferExt = true
-	if err != nil {
-		return nil, err
-	}
 	for _, opt := range settingsOpts {
 		// overwrite any additional settings
 		opt(settings)
@@ -643,20 +525,16 @@ func (tc TestCase) Run(
 	commoncol, err := collections.NewCommonCollections(
 		ctx,
 		krtOpts,
-		cli,
-		ourCli,
-		nil,
+		fakeClient,
+		wellknown.DefaultGatewayControllerName,
 		wellknown.DefaultAgwControllerName,
 		*settings,
 	)
 	if err != nil {
-		return nil, err
+		return ActualTestResult{}, err
 	}
-	proxySyncerPlugins := proxySyncerPluginFactory(ctx, commoncol, wellknown.DefaultAgwClassName, extraPluginsFn, *settings)
+	proxySyncerPlugins := proxySyncerPluginFactory(ctx, commoncol, extraConfig.PluginsFn, *settings)
 	commoncol.InitPlugins(ctx, proxySyncerPlugins, *settings)
-
-	cli.RunAndWait(ctx.Done())
-	results := make(map[types.NamespacedName]ActualTestResult)
 
 	// Create AgwCollections with the necessary input collections
 	agwCollections, err := agwplugins.NewAgwCollections(
@@ -666,39 +544,39 @@ func (tc TestCase) Run(
 		"Kubernetes",
 	)
 	if err != nil {
-		return nil, err
+		return ActualTestResult{}, err
 	}
+
+	fakeClient.RunAndWait(ctx.Done())
+
 	agwMergedPlugins := agwPluginFactory(ctx, agwCollections)
 	kubeclient.WaitForCacheSync("tlsroutes", ctx.Done(), agwCollections.TLSRoutes.HasSynced)
 	kubeclient.WaitForCacheSync("tcproutes", ctx.Done(), agwCollections.TCPRoutes.HasSynced)
 	kubeclient.WaitForCacheSync("httproutes", ctx.Done(), agwCollections.HTTPRoutes.HasSynced)
 	kubeclient.WaitForCacheSync("grpcroutes", ctx.Done(), agwCollections.GRPCRoutes.HasSynced)
 	kubeclient.WaitForCacheSync("backends", ctx.Done(), agwCollections.Backends.HasSynced)
-	kubeclient.WaitForCacheSync("trafficpolicies", ctx.Done(), agwCollections.TrafficPolicies.HasSynced)
+	kubeclient.WaitForCacheSync("agentgatewaypolicies", ctx.Done(), agwCollections.AgentgatewayPolicies.HasSynced)
 	kubeclient.WaitForCacheSync("infpool", ctx.Done(), agwCollections.InferencePools.HasSynced)
 	kubeclient.WaitForCacheSync("secrets", ctx.Done(), agwCollections.Secrets.HasSynced)
 
 	// Instead of calling full Init(), manually initialize just what we need for testing
 	// to avoid race conditions with XDS collection building
 	agentGwSyncer := NewAgwSyncer(
+		context.TODO(),
 		wellknown.DefaultAgwControllerName,
-		wellknown.DefaultAgwClassName,
-		cli,
-		nil, // mgr not needed for test
+		fakeClient,
 		agwCollections,
 		agwMergedPlugins,
-		nil,  // xdsCache not needed for test
-		true, // enableInferExt
+		nil,
 	)
 	agentGwSyncer.translator.Init()
-
 	gatewayClasses := agwtranslator.GatewayClassesCollection(agwCollections.GatewayClasses, krtOpts)
 	refGrants := agwtranslator.BuildReferenceGrants(agwtranslator.ReferenceGrantsCollection(agwCollections.ReferenceGrants, krtOpts))
-	gateways := agentGwSyncer.buildGatewayCollection(gatewayClasses, refGrants, krtOpts)
+	_, listenerSets := agentGwSyncer.buildListenerSetCollection(gatewayClasses, refGrants, krtOpts)
+	_, gateways := agentGwSyncer.buildGatewayCollection(gatewayClasses, listenerSets, refGrants, krtOpts)
 
-	// Build Agw resources and addresses collections
-	agwResourcesCollection, _ := agentGwSyncer.buildAgwResources(gateways, refGrants, krtOpts)
-	_, agwBackendsCollection := agentGwSyncer.newAgwBackendCollection(agwCollections.Backends, krtOpts)
+	// Build ADP resources and addresses collections
+	agwResourcesCollection, _, _ := agentGwSyncer.buildAgwResources(gateways, refGrants, krtOpts)
 	addressesCollection := agentGwSyncer.buildAddressCollections(krtOpts)
 
 	// Wait for collections to sync
@@ -706,66 +584,90 @@ func (tc TestCase) Run(
 	kubeclient.WaitForCacheSync("addresses", ctx.Done(), addressesCollection.HasSynced)
 
 	// build final proxy xds result
-	agentGwSyncer.buildXDSCollection(agwResourcesCollection, agwBackendsCollection, addressesCollection, krtOpts)
-	kubeclient.WaitForCacheSync("xds", ctx.Done(), agentGwSyncer.xDS.HasSynced)
+	agentGwSyncer.buildXDSCollection(agwResourcesCollection, addressesCollection, krtOpts)
 
-	time.Sleep(500 * time.Millisecond) // Allow collections to populate
-
-	for _, gw := range commoncol.GatewayIndex.Gateways.List() {
-		gwNN := types.NamespacedName{
-			Namespace: gw.Namespace,
-			Name:      gw.Name,
-		}
-
-		// Collect results for this gateway
-		var xdsResult []agwtranslator.AgentGwXdsResources
-
-		// Create a test context for fetching from collections
-		testCtx := krt.TestingDummyContext{}
-
-		// Fetch xds resources for this gateway
-		allResources := krt.Fetch(testCtx, agentGwSyncer.xDS)
-		for _, resource := range allResources {
-			if resource.NamespacedName == gwNN {
-				xdsResult = append(xdsResult, resource)
-			}
-		}
-
-		// Get the reports from the collected resources
-		reportsMap := reports.NewReportMap()
-		for _, resource := range allResources {
-			// Merge reports from all resources for this gateway
-			for gwKey, gwReport := range resource.Reports.Gateways {
-				reportsMap.Gateways[gwKey] = gwReport
-			}
-			for lsKey, lsReport := range resource.Reports.ListenerSets {
-				reportsMap.ListenerSets[lsKey] = lsReport
-			}
-			for routeKey, routeReport := range resource.Reports.HTTPRoutes {
-				reportsMap.HTTPRoutes[routeKey] = routeReport
-			}
-			for routeKey, routeReport := range resource.Reports.GRPCRoutes {
-				reportsMap.GRPCRoutes[routeKey] = routeReport
-			}
-			for routeKey, routeReport := range resource.Reports.TCPRoutes {
-				reportsMap.TCPRoutes[routeKey] = routeReport
-			}
-			for routeKey, routeReport := range resource.Reports.TLSRoutes {
-				reportsMap.TLSRoutes[routeKey] = routeReport
-			}
-		}
-
-		actual := ActualTestResult{
-			Resources:  allResources,
-			ReportsMap: reportsMap,
-		}
-		results[gwNN] = actual
+	sq := &TestStatusQueue{
+		state: map[status.Resource]any{},
+	}
+	// Normally we don't care to block on status being written, but here we need to since we want to test output
+	statusSynced := agentGwSyncer.StatusCollections().SetQueue(sq)
+	for _, st := range statusSynced {
+		st.WaitUntilSynced(ctx.Done())
 	}
 
-	return results, nil
+	return ActualTestResult{
+		Resources: agwResourcesCollection.List(),
+		Addresses: addressesCollection.List(),
+		Status:    sq,
+	}, nil
 }
 
-func proxySyncerPluginFactory(ctx context.Context, commoncol *collections.CommonCollections, name string, extraPluginsFn ExtraPluginsFn, globalSettings apisettings.Settings) pluginsdk.Plugin {
+var _ status.WorkerQueue = &TestStatusQueue{}
+
+type TestStatusQueue struct {
+	mu    sync.Mutex
+	state map[status.Resource]any
+}
+
+func (t *TestStatusQueue) Push(target status.Resource, data any) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.state[target] = data
+}
+
+func (t *TestStatusQueue) Run(ctx context.Context) {
+}
+
+var timestampRegex = regexp.MustCompile(`lastTransitionTime:.*`)
+
+func (t *TestStatusQueue) Dump() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	sb := strings.Builder{}
+	objs := []crd.IstioKind{}
+	for k, v := range t.state {
+		statusj, _ := json.Marshal(v)
+		obj := crd.IstioKind{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       k.Kind,
+				APIVersion: k.GroupVersion().String(),
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      k.Name,
+				Namespace: k.Namespace,
+			},
+			Spec:   nil,
+			Status: ptr.Of(json.RawMessage(statusj)),
+		}
+		objs = append(objs, obj)
+	}
+	slices.SortFunc(objs, func(a, b crd.IstioKind) int {
+		ord := []string{gvk.GatewayClass.Kind, gvk.Gateway.Kind, gvk.HTTPRoute.Kind, gvk.GRPCRoute.Kind, gvk.TLSRoute.Kind, gvk.TCPRoute.Kind}
+		if r := gocmp.Compare(slices.Index(ord, a.Kind), slices.Index(ord, b.Kind)); r != 0 {
+			return r
+		}
+		if r := a.CreationTimestamp.Time.Compare(b.CreationTimestamp.Time); r != 0 {
+			return r
+		}
+		if r := gocmp.Compare(a.Namespace, b.Namespace); r != 0 {
+			return r
+		}
+		return gocmp.Compare(a.Name, b.Name)
+	})
+	for _, obj := range objs {
+		b, err := yaml.Marshal(obj)
+		if err != nil {
+			panic(err.Error())
+		}
+		// Replace parts that are not stable
+		b = timestampRegex.ReplaceAll(b, []byte("lastTransitionTime: fake"))
+		sb.WriteString(string(b))
+		sb.WriteString("---\n")
+	}
+	return sb.String()
+}
+
+func proxySyncerPluginFactory(ctx context.Context, commoncol *collections.CommonCollections, extraPluginsFn ExtraPluginsFn, globalSettings apisettings.Settings) pluginsdk.Plugin {
 	plugins := registry.Plugins(ctx, commoncol, wellknown.DefaultAgwClassName, globalSettings, nil)
 
 	var extraPlugs []pluginsdk.Plugin
@@ -790,4 +692,13 @@ func agwPluginFactory(ctx context.Context, agwCollections *agwplugins.AgwCollect
 		kubeclient.WaitForCacheSync(fmt.Sprintf("plugin-%d", i), ctx.Done(), plug.HasSynced)
 	}
 	return mergedPlugins
+}
+
+func dumpOnFailure(t *testing.T, debugger *krt.DebugHandler) {
+	t.Cleanup(func() {
+		if t.Failed() {
+			b, _ := yaml.Marshal(debugger)
+			t.Log(string(b))
+		}
+	})
 }

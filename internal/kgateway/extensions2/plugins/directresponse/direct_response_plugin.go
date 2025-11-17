@@ -6,20 +6,14 @@ import (
 	"net/http"
 	"time"
 
-	"k8s.io/apimachinery/pkg/runtime/schema"
-
 	envoycorev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoyroutev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
-	skubeclient "istio.io/istio/pkg/config/schema/kubeclient"
 	"istio.io/istio/pkg/kube/kclient"
 	"istio.io/istio/pkg/kube/krt"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
-	"github.com/kgateway-dev/kgateway/v2/pkg/client/clientset/versioned"
 	sdk "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/collections"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/ir"
@@ -51,24 +45,10 @@ type directResponsePluginGwPass struct {
 
 var _ ir.ProxyTranslationPass = &directResponsePluginGwPass{}
 
-func registerTypes(ourCli versioned.Interface) {
-	skubeclient.Register[*v1alpha1.DirectResponse](
-		wellknown.DirectResponseGVR,
-		wellknown.DirectResponseGVK,
-		func(c skubeclient.ClientGetter, namespace string, o metav1.ListOptions) (runtime.Object, error) {
-			return ourCli.GatewayV1alpha1().DirectResponses(namespace).List(context.Background(), o)
-		},
-		func(c skubeclient.ClientGetter, namespace string, o metav1.ListOptions) (watch.Interface, error) {
-			return ourCli.GatewayV1alpha1().DirectResponses(namespace).Watch(context.Background(), o)
-		},
-	)
-}
-
 func NewPlugin(ctx context.Context, commoncol *collections.CommonCollections) sdk.Plugin {
-	registerTypes(commoncol.OurClient)
-
-	col := krt.WrapClient(kclient.NewFiltered[*v1alpha1.DirectResponse](
+	col := krt.WrapClient(kclient.NewFilteredDelayed[*v1alpha1.DirectResponse](
 		commoncol.Client,
+		wellknown.DirectResponseGVR,
 		kclient.Filter{ObjectFilter: commoncol.Client.ObjectFilter()},
 	), commoncol.KrtOpts.ToOptions("DirectResponse")...)
 

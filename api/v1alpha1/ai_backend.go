@@ -21,23 +21,23 @@ type AIBackend struct {
 	// ```yaml
 	// priorityGroups:
 	//	- providers:
-	//	  - azureOpenai:
+	//	  - azureopenai:
 	//	      deploymentName: gpt-4o-mini
 	//	      apiVersion: 2024-02-15-preview
 	//	      endpoint: ai-gateway.openai.azure.com
 	//	      authToken:
+	//          kind: "SecretRef"
 	//	        secretRef:
 	//	          name: azure-secret
-	//	          namespace: kgateway-system
 	//	- providers:
-	//	  - azureOpenai:
+	//	  - azureopenai:
 	//	      deploymentName: gpt-4o-mini-2
 	//	      apiVersion: 2024-02-15-preview
 	//	      endpoint: ai-gateway-2.openai.azure.com
 	//	      authToken:
+	//          kind: "SecretRef"
 	//	        secretRef:
 	//	          name: azure-secret-2
-	//	          namespace: kgateway-system
 	// ```
 	// +optional
 	// +kubebuilder:validation:MinItems=1
@@ -45,6 +45,31 @@ type AIBackend struct {
 	// TODO: enable this rule when we don't need to support older k8s versions where this rule breaks // +kubebuilder:validation:XValidation:message="provider names must be unique across groups",rule="self.map(pg, pg.providers.map(pp, pp.name)).map(p, self.map(pg, pg.providers.map(pp, pp.name)).filter(cp, cp != p).exists(cp, p.exists(pn, pn in cp))).exists(p, !p)"
 	PriorityGroups []PriorityGroup `json:"priorityGroups,omitempty"`
 }
+
+// RouteType specifies how the AI gateway should process incoming requests
+// based on the URL path and the API format expected.
+// +kubebuilder:validation:Enum=completions;messages;models;passthrough;responses;anthropic_token_count
+type RouteType string
+
+const (
+	// RouteTypeCompletions processes OpenAI /v1/chat/completions format requests
+	RouteTypeCompletions RouteType = "completions"
+
+	// RouteTypeMessages processes Anthropic /v1/messages format requests
+	RouteTypeMessages RouteType = "messages"
+
+	// RouteTypeModels handles /v1/models endpoint (returns available models)
+	RouteTypeModels RouteType = "models"
+
+	// RouteTypePassthrough sends requests to upstream as-is without LLM processing
+	RouteTypePassthrough RouteType = "passthrough"
+
+	// RouteTypeResponses processes OpenAI /v1/responses format requests
+	RouteTypeResponses RouteType = "responses"
+
+	// RouteTypeAnthropicTokenCount processes Anthropic /v1/messages/count_tokens format requests
+	RouteTypeAnthropicTokenCount RouteType = "anthropic_token_count" //nolint:gosec // G101: False positive - this is a route type name, not credentials
+)
 
 // LLMProvider specifies the target large language model provider that the backend should route requests to.
 // +kubebuilder:validation:ExactlyOneOf=openai;azureopenai;anthropic;gemini;vertexai;bedrock
@@ -98,6 +123,13 @@ type LLMProvider struct {
 	// For example, OpenAI uses header: "Authorization" and prefix: "Bearer" But Azure OpenAI uses header: "api-key"
 	// and no Bearer.
 	AuthHeader *AuthHeader `json:"authHeader,omitempty"`
+
+	// Routes defines how to identify the type of traffic to handle.
+	// The keys are URL path suffixes matched using ends-with comparison (e.g., "/v1/chat/completions").
+	// The special "*" wildcard matches any path.
+	// If not specified, all traffic defaults to "completions" type.
+	// +optional
+	Routes map[string]RouteType `json:"routes,omitempty"`
 }
 
 // NamedLLMProvider wraps an LLMProvider with a name.
@@ -117,7 +149,7 @@ type PathOverride struct {
 // AuthHeader allows customization of the default Authorization header sent to the LLM Provider.
 // The default header is `Authorization: Bearer <token>`. HeaderName can change the Authorization
 // header name and Prefix can change the Bearer prefix
-// +kubebuilder:validation:XValidation:rule="has(self.prefix) || has(self.headerName)",message="at least one of prefix or headerName must be set"
+// +kubebuilder:validation:AtLeastOneOf=prefix;headerName
 type AuthHeader struct {
 	// Prefix specifies the prefix to use in the Authorization header.
 	// +optional
@@ -165,7 +197,7 @@ type SingleAuthToken struct {
 
 	// Store the API key in a Kubernetes secret in the same namespace as the Backend.
 	// Then, refer to the secret in the Backend configuration. This option is more secure than an inline token,
-	// because the API key is encoded and you can restrict access to secrets through RBAC rules.
+	// because the API key is encoded and you can restrict access to secrets through Authorization rules.
 	// You might use this option in proofs of concept, controlled development and staging environments,
 	// or well-controlled prod environments that use secrets.
 	SecretRef *corev1.LocalObjectReference `json:"secretRef,omitempty"`

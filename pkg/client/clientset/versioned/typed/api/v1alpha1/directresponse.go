@@ -5,14 +5,12 @@ package v1alpha1
 import (
 	context "context"
 
+	apiv1alpha1 "github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
+	scheme "github.com/kgateway-dev/kgateway/v2/pkg/client/clientset/versioned/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	gentype "k8s.io/client-go/gentype"
-
-	applyconfigurationapiv1alpha1 "github.com/kgateway-dev/kgateway/v2/api/applyconfiguration/api/v1alpha1"
-	apiv1alpha1 "github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
-	scheme "github.com/kgateway-dev/kgateway/v2/pkg/client/clientset/versioned/scheme"
 )
 
 // DirectResponsesGetter has a method to return a DirectResponseInterface.
@@ -33,21 +31,18 @@ type DirectResponseInterface interface {
 	List(ctx context.Context, opts v1.ListOptions) (*apiv1alpha1.DirectResponseList, error)
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
 	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *apiv1alpha1.DirectResponse, err error)
-	Apply(ctx context.Context, directResponse *applyconfigurationapiv1alpha1.DirectResponseApplyConfiguration, opts v1.ApplyOptions) (result *apiv1alpha1.DirectResponse, err error)
-	// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
-	ApplyStatus(ctx context.Context, directResponse *applyconfigurationapiv1alpha1.DirectResponseApplyConfiguration, opts v1.ApplyOptions) (result *apiv1alpha1.DirectResponse, err error)
 	DirectResponseExpansion
 }
 
 // directResponses implements DirectResponseInterface
 type directResponses struct {
-	*gentype.ClientWithListAndApply[*apiv1alpha1.DirectResponse, *apiv1alpha1.DirectResponseList, *applyconfigurationapiv1alpha1.DirectResponseApplyConfiguration]
+	*gentype.ClientWithList[*apiv1alpha1.DirectResponse, *apiv1alpha1.DirectResponseList]
 }
 
 // newDirectResponses returns a DirectResponses
 func newDirectResponses(c *GatewayV1alpha1Client, namespace string) *directResponses {
 	return &directResponses{
-		gentype.NewClientWithListAndApply[*apiv1alpha1.DirectResponse, *apiv1alpha1.DirectResponseList, *applyconfigurationapiv1alpha1.DirectResponseApplyConfiguration](
+		gentype.NewClientWithList[*apiv1alpha1.DirectResponse, *apiv1alpha1.DirectResponseList](
 			"directresponses",
 			c.RESTClient(),
 			scheme.ParameterCodec,

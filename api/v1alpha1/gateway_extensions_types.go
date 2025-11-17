@@ -33,24 +33,20 @@ type GatewayExtension struct {
 // +kubebuilder:validation:XValidation:message="RateLimit must not be set when type is not RateLimit",rule="self.type == 'RateLimit' || !has(self.rateLimit)"
 type GatewayExtensionSpec struct {
 	// Type indicates the type of the GatewayExtension to be used.
-	// +unionDiscriminator
 	// +kubebuilder:validation:Enum=ExtAuth;ExtProc;RateLimit
 	// +required
 	Type GatewayExtensionType `json:"type"`
 
 	// ExtAuth configuration for ExtAuth extension type.
 	// +optional
-	// +unionMember:type=ExtAuth
 	ExtAuth *ExtAuthProvider `json:"extAuth,omitempty"`
 
 	// ExtProc configuration for ExtProc extension type.
 	// +optional
-	// +unionMember:type=ExtProc
 	ExtProc *ExtProcProvider `json:"extProc,omitempty"`
 
 	// RateLimit configuration for RateLimit extension type.
 	// +optional
-	// +unionMember:type=RateLimit
 	RateLimit *RateLimitProvider `json:"rateLimit,omitempty"`
 }
 
@@ -70,7 +66,7 @@ const (
 type ExtGrpcService struct {
 	// BackendRef references the backend GRPC service.
 	// +required
-	BackendRef *gwv1.BackendRef `json:"backendRef"`
+	BackendRef gwv1.BackendRef `json:"backendRef"`
 
 	// Authority is the authority header to use for the GRPC service.
 	// +optional
@@ -81,13 +77,46 @@ type ExtGrpcService struct {
 	// +kubebuilder:validation:XValidation:rule="matches(self, '^([0-9]{1,5}(h|m|s|ms)){1,4}$')",message="invalid timeout value"
 	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1ms')",message="timeout must be at least 1ms."
 	RequestTimeout *metav1.Duration `json:"requestTimeout,omitempty"`
+
+	// Retry specifies the retry policy for gRPC streams associated with the service.
+	// +optional
+	Retry *GRPCRetryPolicy `json:"retry,omitempty"`
+}
+
+type GRPCRetryPolicy struct {
+	// Attempts specifies the number of retry attempts for a request.
+	// Defaults to 1 attempt if not set.
+	// A value of 0 effectively disables retries.
+	// +optional
+	//
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=0
+	Attempts int32 `json:"attempts,omitempty"`
+
+	// Backoff specifies the retry backoff strategy.
+	// If not set, a default backoff with a base interval of 1000ms is used. The default max interval is 10 times the base interval.
+	// +optional
+	Backoff *GRPCRetryBackoff `json:"backoff,omitempty"`
+}
+
+// +kubebuilder:validation:XValidation:rule="has(self.maxInterval) ? duration(self.maxInterval) >= duration(self.baseInterval) : true",message="maxInterval must be greater than or equal to baseInterval"
+type GRPCRetryBackoff struct {
+	// BaseInterval specifies the base interval used with a fully jittered exponential back-off between retries.
+	// +kubebuilder:validation:XValidation:rule="matches(self, '^([0-9]{1,5}(h|m|s|ms)){1,4}$')",message="invalid duration value"
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1ms')",message="retry.BaseInterval must be at least 1ms."
+	BaseInterval metav1.Duration `json:"baseInterval"`
+
+	// MaxInterval specifies the maximum interval between retry attempts.
+	// Defaults to 10 times the BaseInterval if not set.
+	// +kubebuilder:validation:XValidation:rule="matches(self, '^([0-9]{1,5}(h|m|s|ms)){1,4}$')",message="invalid duration value"
+	MaxInterval *metav1.Duration `json:"maxInterval,omitempty"`
 }
 
 // RateLimitProvider defines the configuration for a RateLimit service provider.
 type RateLimitProvider struct {
 	// GrpcService is the GRPC service that will handle the rate limiting.
 	// +required
-	GrpcService *ExtGrpcService `json:"grpcService"`
+	GrpcService ExtGrpcService `json:"grpcService"`
 
 	// Domain identifies a rate limiting configuration for the rate limit service.
 	// All rate limit requests must specify a domain, which enables the configuration

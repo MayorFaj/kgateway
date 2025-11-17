@@ -13,6 +13,7 @@ import (
 
 	"github.com/ghodss/yaml"
 	apiserverschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
+	apiextensionsvalidation "k8s.io/apiextensions-apiserver/pkg/apiserver/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -22,10 +23,22 @@ import (
 
 var ErrNoFilesFound = errors.New("no k8s files found")
 
+// FileContentTransformer is a function that transforms a file's contents
+type FileContentTransformer func(content string) string
+
 func LoadFromFiles(
 	filename string,
 	scheme *runtime.Scheme,
 	gvkToStructuralSchema map[schema.GroupVersionKind]*apiserverschema.Structural,
+) ([]client.Object, error) {
+	return LoadFromFileWithTransform(filename, scheme, gvkToStructuralSchema, nil)
+}
+
+func LoadFromFileWithTransform(
+	filename string,
+	scheme *runtime.Scheme,
+	gvkToStructuralSchema map[schema.GroupVersionKind]*apiserverschema.Structural,
+	transformer FileContentTransformer,
 ) ([]client.Object, error) {
 	fileOrDir, err := os.Stat(filename)
 	if err != nil {
@@ -56,7 +69,7 @@ func LoadFromFiles(
 
 	var resources []client.Object
 	for _, file := range yamlFiles {
-		objs, err := parseFile(file, scheme, gvkToStructuralSchema)
+		objs, err := parseFile(file, scheme, gvkToStructuralSchema, transformer)
 		if err != nil {
 			return nil, err
 		}
@@ -69,7 +82,7 @@ func LoadFromFiles(
 			_, isGwc := clientObj.(*gwv1.GatewayClass)
 			if !isGwc && clientObj.GetNamespace() == "" {
 				// fill in default namespace
-				clientObj.SetNamespace("default")
+				clientObj.SetNamespace(GetDefaultNamespace())
 			}
 			resources = append(resources, clientObj)
 		}
@@ -82,10 +95,14 @@ func parseFile(
 	filename string,
 	scheme *runtime.Scheme,
 	gvkToStructuralSchema map[schema.GroupVersionKind]*apiserverschema.Structural,
+	transformer FileContentTransformer,
 ) ([]runtime.Object, error) {
 	file, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
+	}
+	if transformer != nil {
+		file = []byte(transformer(string(file)))
 	}
 
 	type metaOnly struct {
@@ -136,12 +153,17 @@ func parseFile(
 		}
 
 		if structuralSchema, ok := gvkToStructuralSchema[gvk]; ok {
-			objYamlWithDefaults, err := ApplyDefaults(objYaml, structuralSchema)
+			unstructuredObj, objYamlWithDefaults, err := ApplyDefaults(objYaml, structuralSchema)
 			if err != nil {
 				return nil, fmt.Errorf("failed to apply defaults for %s: %w", gvk, err)
 			}
-			err = yaml.Unmarshal(objYamlWithDefaults, obj)
-			if err != nil {
+			validator := apiextensionsvalidation.NewSchemaValidatorFromOpenAPI(structuralSchema.ToKubeOpenAPI())
+			validationErrs := apiextensionsvalidation.ValidateCustomResource(nil, unstructuredObj.UnstructuredContent(), validator)
+			if len(validationErrs) > 0 {
+				agg := validationErrs.ToAggregate()
+				return nil, fmt.Errorf("failed to validate %s: %w", gvk, agg)
+			}
+			if err := yaml.Unmarshal(objYamlWithDefaults, obj); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal object with defaults for %s: %w", gvk, err)
 			}
 		}
@@ -175,4 +197,12 @@ func UnmarshalAnyYaml(data []byte, into any) error {
 	}
 
 	return json.Unmarshal(jsn, into)
+}
+
+func ToRuntimeObjects(objs ...client.Object) []runtime.Object {
+	res := make([]runtime.Object, len(objs))
+	for i, obj := range objs {
+		res[i] = obj
+	}
+	return res
 }

@@ -25,6 +25,8 @@ import (
 	"istio.io/istio/pkg/security"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 
+	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/agentgatewaysyncer/krtxds"
+	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/agentgatewaysyncer/nack"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/xds"
 	"github.com/kgateway-dev/kgateway/v2/pkg/metrics"
 )
@@ -64,25 +66,25 @@ type slogAdapterForEnvoy struct {
 // Ensure it implements the interface
 var _ envoylog.Logger = (*slogAdapterForEnvoy)(nil)
 
-func (s *slogAdapterForEnvoy) Debugf(format string, args ...interface{}) {
+func (s *slogAdapterForEnvoy) Debugf(format string, args ...any) {
 	if s.logger.Enabled(context.Background(), slog.LevelDebug) {
 		s.logger.Debug(fmt.Sprintf(format, args...)) //nolint:sloglint // ignore formatting
 	}
 }
 
-func (s *slogAdapterForEnvoy) Infof(format string, args ...interface{}) {
+func (s *slogAdapterForEnvoy) Infof(format string, args ...any) {
 	if s.logger.Enabled(context.Background(), slog.LevelInfo) {
 		s.logger.Info(fmt.Sprintf(format, args...)) //nolint:sloglint // ignore formatting
 	}
 }
 
-func (s *slogAdapterForEnvoy) Warnf(format string, args ...interface{}) {
+func (s *slogAdapterForEnvoy) Warnf(format string, args ...any) {
 	if s.logger.Enabled(context.Background(), slog.LevelWarn) {
 		s.logger.Warn(fmt.Sprintf(format, args...)) //nolint:sloglint // ignore formatting
 	}
 }
 
-func (s *slogAdapterForEnvoy) Errorf(format string, args ...interface{}) {
+func (s *slogAdapterForEnvoy) Errorf(format string, args ...any) {
 	if s.logger.Enabled(context.Background(), slog.LevelError) {
 		s.logger.Error(fmt.Sprintf(format, args...)) //nolint:sloglint // ignore formatting
 	}
@@ -91,7 +93,6 @@ func (s *slogAdapterForEnvoy) Errorf(format string, args ...interface{}) {
 func NewControlPlane(
 	ctx context.Context,
 	lis net.Listener,
-	agwLis net.Listener,
 	callbacks xdsserver.Callbacks,
 	authenticators []security.Authenticator,
 	xdsAuth bool,
@@ -103,7 +104,6 @@ func NewControlPlane(
 	// Create separate gRPC servers for each listener
 	serverOpts := getGRPCServerOpts(authenticators, xdsAuth, certWatcher, baseLogger)
 	kgwGRPCServer := grpc.NewServer(serverOpts...)
-	agwGRPCServer := grpc.NewServer(serverOpts...)
 
 	snapshotCache := envoycache.NewSnapshotCache(true, xds.NewNodeRoleHasher(), envoyLoggerAdapter)
 
@@ -111,7 +111,6 @@ func NewControlPlane(
 
 	// Register reflection and services on both servers
 	reflection.Register(kgwGRPCServer)
-	reflection.Register(agwGRPCServer)
 
 	// Register xDS services on first server
 	envoy_service_endpoint_v3.RegisterEndpointDiscoveryServiceServer(kgwGRPCServer, xdsServer)
@@ -120,25 +119,49 @@ func NewControlPlane(
 	envoy_service_listener_v3.RegisterListenerDiscoveryServiceServer(kgwGRPCServer, xdsServer)
 	envoy_service_discovery_v3.RegisterAggregatedDiscoveryServiceServer(kgwGRPCServer, xdsServer)
 
-	// Register xDS services on second server
-	envoy_service_endpoint_v3.RegisterEndpointDiscoveryServiceServer(agwGRPCServer, xdsServer)
-	envoy_service_cluster_v3.RegisterClusterDiscoveryServiceServer(agwGRPCServer, xdsServer)
-	envoy_service_route_v3.RegisterRouteDiscoveryServiceServer(agwGRPCServer, xdsServer)
-	envoy_service_listener_v3.RegisterListenerDiscoveryServiceServer(agwGRPCServer, xdsServer)
-	envoy_service_discovery_v3.RegisterAggregatedDiscoveryServiceServer(agwGRPCServer, xdsServer)
-
 	// Start both servers on their respective listeners
 	go kgwGRPCServer.Serve(lis)
-	go agwGRPCServer.Serve(agwLis)
 
 	// Handle graceful shutdown for both servers
 	go func() {
 		<-ctx.Done()
 		kgwGRPCServer.GracefulStop()
-		agwGRPCServer.GracefulStop()
 	}()
 
 	return snapshotCache
+}
+
+func NewAgwControlPlane(
+	ctx context.Context,
+	lis net.Listener,
+	authenticators []security.Authenticator,
+	xdsAuth bool,
+	certWatcher *certwatcher.CertWatcher,
+	eventPublisher *nack.NackEventPublisher,
+	reg ...krtxds.Registration,
+) {
+	baseLogger := slog.Default().With("component", "agentgateway-controlplane")
+
+	serverOpts := getGRPCServerOpts(authenticators, xdsAuth, certWatcher, baseLogger)
+	grpcServer := grpc.NewServer(serverOpts...)
+
+	ds := krtxds.NewDiscoveryServer(nil, eventPublisher, reg...)
+	stop := make(chan struct{})
+	context.AfterFunc(ctx, func() {
+		close(stop)
+	})
+	ds.Start(stop)
+
+	reflection.Register(grpcServer)
+	envoy_service_discovery_v3.RegisterAggregatedDiscoveryServiceServer(grpcServer, ds)
+
+	baseLogger.Info("starting server", "address", lis.Addr().String())
+	go grpcServer.Serve(lis)
+
+	go func() {
+		<-ctx.Done()
+		grpcServer.GracefulStop()
+	}()
 }
 
 func getGRPCServerOpts(

@@ -5,14 +5,12 @@ package v1alpha1
 import (
 	context "context"
 
+	apiv1alpha1 "github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
+	scheme "github.com/kgateway-dev/kgateway/v2/pkg/client/clientset/versioned/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	gentype "k8s.io/client-go/gentype"
-
-	applyconfigurationapiv1alpha1 "github.com/kgateway-dev/kgateway/v2/api/applyconfiguration/api/v1alpha1"
-	apiv1alpha1 "github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
-	scheme "github.com/kgateway-dev/kgateway/v2/pkg/client/clientset/versioned/scheme"
 )
 
 // GatewayExtensionsGetter has a method to return a GatewayExtensionInterface.
@@ -33,21 +31,18 @@ type GatewayExtensionInterface interface {
 	List(ctx context.Context, opts v1.ListOptions) (*apiv1alpha1.GatewayExtensionList, error)
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
 	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *apiv1alpha1.GatewayExtension, err error)
-	Apply(ctx context.Context, gatewayExtension *applyconfigurationapiv1alpha1.GatewayExtensionApplyConfiguration, opts v1.ApplyOptions) (result *apiv1alpha1.GatewayExtension, err error)
-	// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
-	ApplyStatus(ctx context.Context, gatewayExtension *applyconfigurationapiv1alpha1.GatewayExtensionApplyConfiguration, opts v1.ApplyOptions) (result *apiv1alpha1.GatewayExtension, err error)
 	GatewayExtensionExpansion
 }
 
 // gatewayExtensions implements GatewayExtensionInterface
 type gatewayExtensions struct {
-	*gentype.ClientWithListAndApply[*apiv1alpha1.GatewayExtension, *apiv1alpha1.GatewayExtensionList, *applyconfigurationapiv1alpha1.GatewayExtensionApplyConfiguration]
+	*gentype.ClientWithList[*apiv1alpha1.GatewayExtension, *apiv1alpha1.GatewayExtensionList]
 }
 
 // newGatewayExtensions returns a GatewayExtensions
 func newGatewayExtensions(c *GatewayV1alpha1Client, namespace string) *gatewayExtensions {
 	return &gatewayExtensions{
-		gentype.NewClientWithListAndApply[*apiv1alpha1.GatewayExtension, *apiv1alpha1.GatewayExtensionList, *applyconfigurationapiv1alpha1.GatewayExtensionApplyConfiguration](
+		gentype.NewClientWithList[*apiv1alpha1.GatewayExtension, *apiv1alpha1.GatewayExtensionList](
 			"gatewayextensions",
 			c.RESTClient(),
 			scheme.ParameterCodec,

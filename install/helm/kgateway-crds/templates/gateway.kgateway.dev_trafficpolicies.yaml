@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.19.1-0.20251023132335-bf7d6b742e6a
   labels:
     app: kgateway
     app.kubernetes.io/name: kgateway
@@ -122,14 +122,6 @@ spec:
                       - value
                       type: object
                     type: array
-                  modelAliases:
-                    additionalProperties:
-                      type: string
-                    description: |-
-                      ModelAliases maps friendly model names to actual provider model names.
-                      Example: {"fast": "gpt-3.5-turbo", "smart": "gpt-4-turbo"}
-                      Note: This field is only applicable when using the agentgateway data plane.
-                    type: object
                   promptEnrichment:
                     description: |-
                       Enrich requests sent to the LLM provider by appending and prepending system prompts.
@@ -242,7 +234,7 @@ spec:
                                         description: |-
                                           Store the API key in a Kubernetes secret in the same namespace as the Backend.
                                           Then, refer to the secret in the Backend configuration. This option is more secure than an inline token,
-                                          because the API key is encoded and you can restrict access to secrets through RBAC rules.
+                                          because the API key is encoded and you can restrict access to secrets through Authorization rules.
                                           You might use this option in proofs of concept, controlled development and staging environments,
                                           or well-controlled prod environments that use secrets.
                                         properties:
@@ -548,15 +540,6 @@ spec:
                             type: object
                         type: object
                     type: object
-                  routeType:
-                    default: CHAT
-                    description: |-
-                      The type of route to the LLM provider API. Currently, `CHAT` and `CHAT_STREAMING` are supported.
-                      Note: This field is not applicable when using agentgateway
-                    enum:
-                    - CHAT
-                    - CHAT_STREAMING
-                    type: string
                 type: object
               autoHostRewrite:
                 description: |-
@@ -1396,8 +1379,10 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-validations:
-                - message: At least one of request or response must be provided.
-                  rule: has(self.request) || has(self.response)
+                - message: at least one of the fields in [request response] must be
+                    set
+                  rule: '[has(self.request),has(self.response)].filter(x,x==true).size()
+                    >= 1'
               rateLimit:
                 description: |-
                   RateLimit specifies the rate limiting configuration for the policy.
@@ -1566,18 +1551,25 @@ spec:
                     type: string
                   policy:
                     description: |-
-                      Policy specifies the RBAC rule to evaluate.
-                      A policy matches only **all** the conditions evaluates to true.
+                      Policy specifies the Authorization rule to evaluate.
+                      A policy matches when **any** of the conditions evaluates to true.
                     properties:
                       matchExpressions:
                         description: |-
                           MatchExpressions defines a set of conditions that must be satisfied for the rule to match.
                           These expression should be in the form of a Common Expression Language (CEL) expression.
-                          See: https://www.envoyproxy.io/docs/envoy/latest/xds/type/matcher/v3/cel.proto
                         items:
+                          description: A Common Expression Language (CEL) expression.
+                            See https://agentgateway.dev/docs/reference/cel/ for more
+                            info.
+                          maxLength: 16384
+                          minLength: 1
                           type: string
+                        maxItems: 256
                         minItems: 1
                         type: array
+                    required:
+                    - matchExpressions
                     type: object
                 required:
                 - policy
@@ -1826,11 +1818,8 @@ spec:
                                 with.
                               type: string
                             value:
-                              description: |-
-                                Value is the template to apply to generate the output value for the header.
-                                Inja templates are supported for Envoy-based data planes only.
-                                CEL expressions are supported for agentgateway data plane only.
-                                The system will auto-detect the appropriate template format based on the data plane.
+                              description: Value is the Inja template to apply to
+                                generate the output value for the header.
                               type: string
                           required:
                           - name
@@ -1884,11 +1873,8 @@ spec:
                                 with.
                               type: string
                             value:
-                              description: |-
-                                Value is the template to apply to generate the output value for the header.
-                                Inja templates are supported for Envoy-based data planes only.
-                                CEL expressions are supported for agentgateway data plane only.
-                                The system will auto-detect the appropriate template format based on the data plane.
+                              description: Value is the Inja template to apply to
+                                generate the output value for the header.
                               type: string
                           required:
                           - name
@@ -1913,11 +1899,8 @@ spec:
                                 with.
                               type: string
                             value:
-                              description: |-
-                                Value is the template to apply to generate the output value for the header.
-                                Inja templates are supported for Envoy-based data planes only.
-                                CEL expressions are supported for agentgateway data plane only.
-                                The system will auto-detect the appropriate template format based on the data plane.
+                              description: Value is the Inja template to apply to
+                                generate the output value for the header.
                               type: string
                           required:
                           - name
@@ -1971,11 +1954,8 @@ spec:
                                 with.
                               type: string
                             value:
-                              description: |-
-                                Value is the template to apply to generate the output value for the header.
-                                Inja templates are supported for Envoy-based data planes only.
-                                CEL expressions are supported for agentgateway data plane only.
-                                The system will auto-detect the appropriate template format based on the data plane.
+                              description: Value is the Inja template to apply to
+                                generate the output value for the header.
                               type: string
                           required:
                           - name
@@ -1993,7 +1973,7 @@ spec:
               rule: '!has(self.autoHostRewrite) || ((has(self.targetRefs) && self.targetRefs.all(r,
                 r.kind == ''HTTPRoute'')) || (has(self.targetSelectors) && self.targetSelectors.all(r,
                 r.kind == ''HTTPRoute'')))'
-            - message: retry.perTryTimeout must be lesser than timeouts.request
+            - message: retry.perTryTimeout must be less than timeouts.request
               rule: 'has(self.retry) && has(self.timeouts) ? (has(self.retry.perTryTimeout)
                 && has(self.timeouts.request) ? duration(self.retry.perTryTimeout)
                 < duration(self.timeouts.request) : true) : true'

@@ -92,6 +92,27 @@ func buildStaticIr(be *v1alpha1.Backend) (*StaticIr, error) {
 	}, nil
 }
 
+// translateRouteType converts kgateway RouteType to agentgateway proto RouteType
+func translateRouteType(rt v1alpha1.RouteType) api.AIBackend_RouteType {
+	switch rt {
+	case v1alpha1.RouteTypeCompletions:
+		return api.AIBackend_COMPLETIONS
+	case v1alpha1.RouteTypeMessages:
+		return api.AIBackend_MESSAGES
+	case v1alpha1.RouteTypeModels:
+		return api.AIBackend_MODELS
+	case v1alpha1.RouteTypePassthrough:
+		return api.AIBackend_PASSTHROUGH
+	case v1alpha1.RouteTypeResponses:
+		return api.AIBackend_RESPONSES
+	case v1alpha1.RouteTypeAnthropicTokenCount:
+		return api.AIBackend_ANTHROPIC_TOKEN_COUNT
+	default:
+		// Default to completions if unknown type
+		return api.AIBackend_COMPLETIONS
+	}
+}
+
 func translateLLMProviderToProvider(krtctx krt.HandlerContext, llm *v1alpha1.LLMProvider, providerName string, secrets krt.Collection[*corev1.Secret], namespace string) (*api.AIBackend_Provider, *api.BackendAuthPolicy, error) {
 	provider := &api.AIBackend_Provider{
 		Name: providerName,
@@ -112,6 +133,13 @@ func translateLLMProviderToProvider(krtctx krt.HandlerContext, llm *v1alpha1.LLM
 		}
 	}
 
+	if llm.Routes != nil && len(llm.Routes) > 0 {
+		provider.Routes = make(map[string]api.AIBackend_RouteType)
+		for path, routeType := range llm.Routes {
+			provider.Routes[path] = translateRouteType(routeType)
+		}
+	}
+
 	if llm.AuthHeader != nil {
 		logger.Warn("auth header override is not supported for agentgateway")
 	}
@@ -127,8 +155,12 @@ func translateLLMProviderToProvider(krtctx krt.HandlerContext, llm *v1alpha1.LLM
 		}
 		auth = buildTranslatedAuthPolicy(krtctx, &llm.OpenAI.AuthToken, secrets, namespace)
 	} else if llm.AzureOpenAI != nil {
-		provider.Provider = &api.AIBackend_Provider_Openai{
-			Openai: &api.AIBackend_OpenAI{},
+		provider.Provider = &api.AIBackend_Provider_Azureopenai{
+			Azureopenai: &api.AIBackend_AzureOpenAI{
+				Host:       llm.AzureOpenAI.Endpoint,
+				Model:      &wrappers.StringValue{Value: llm.AzureOpenAI.DeploymentName},
+				ApiVersion: &wrappers.StringValue{Value: llm.AzureOpenAI.ApiVersion},
+			},
 		}
 		auth = buildTranslatedAuthPolicy(krtctx, &llm.AzureOpenAI.AuthToken, secrets, namespace)
 	} else if llm.Anthropic != nil {
@@ -208,9 +240,11 @@ func createAuthPolicy(authPolicy *api.BackendAuthPolicy, backendName, providerNa
 				SubBackend: subBackendTarget,
 			},
 		},
-		Spec: &api.PolicySpec{
-			Kind: &api.PolicySpec_Auth{
-				Auth: authPolicy,
+		Kind: &api.Policy_Backend{
+			Backend: &api.BackendPolicySpec{
+				Kind: &api.BackendPolicySpec_Auth{
+					Auth: authPolicy,
+				},
 			},
 		},
 	}

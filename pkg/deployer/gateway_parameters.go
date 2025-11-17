@@ -1,9 +1,6 @@
 package deployer
 
 import (
-	"context"
-	"log/slog"
-
 	"istio.io/api/annotation"
 	"istio.io/api/label"
 	corev1 "k8s.io/api/core/v1"
@@ -16,28 +13,23 @@ import (
 
 // Inputs is the set of options used to configure gateway/inference pool deployment.
 type Inputs struct {
-	Dev                      bool
-	IstioAutoMtlsEnabled     bool
-	ControlPlane             ControlPlaneInfo
-	ImageInfo                *ImageInfo
-	CommonCollections        *collections.CommonCollections
-	GatewayClassName         string
-	WaypointGatewayClassName string
-	AgentgatewayClassName    string
+	Dev                        bool
+	IstioAutoMtlsEnabled       bool
+	ControlPlane               ControlPlaneInfo
+	ImageInfo                  *ImageInfo
+	CommonCollections          *collections.CommonCollections
+	GatewayClassName           string
+	WaypointGatewayClassName   string
+	AgentgatewayClassName      string
+	AgentgatewayControllerName string
 }
 
 // UpdateSecurityContexts updates the security contexts in the gateway parameters.
-// It applies the floating user ID if it is set and adds the sysctl to allow the privileged ports if the gateway uses them.
+// It adds the sysctl to allow the privileged ports if the gateway uses them.
 func UpdateSecurityContexts(cfg *v1alpha1.KubernetesProxyConfig, ports []HelmPort) {
-	// If the floating user ID is set, unset the RunAsUser field from all security contexts
-	if ptr.Deref(cfg.GetFloatingUserId(), false) {
-		applyFloatingUserId(cfg)
-	}
-
 	if ptr.Deref(cfg.GetOmitDefaultSecurityContext(), false) {
 		return
 	}
-
 	if usesPrivilegedPorts(ports) {
 		allowPrivilegedPorts(cfg)
 	}
@@ -80,45 +72,32 @@ func allowPrivilegedPorts(cfg *v1alpha1.KubernetesProxyConfig) {
 	})
 }
 
-// applyFloatingUserId (deprecated in favor of omitDefaultSecurityContext) will
-// set the RunAsUser field from all security contexts to null assuming that the
-// floatingUserId field is set. Will not create a securityContext, even an
-// empty one -- only updates existing securityContexts.
-func applyFloatingUserId(dstKube *v1alpha1.KubernetesProxyConfig) {
-	logger.Log(context.Background(), slog.LevelWarn, "the field GatewayParameters.Spec.Kube.FloatingUserId is deprecated and will be removed in a future release; see if OmitDefaultSecurityContext fits your needs")
-
-	podSecurityContext := dstKube.GetPodTemplate().GetSecurityContext()
-	if podSecurityContext != nil {
-		podSecurityContext.RunAsUser = nil
-	}
-
-	securityContexts := []*corev1.SecurityContext{
-		dstKube.GetEnvoyContainer().GetSecurityContext(),
-		dstKube.GetSdsContainer().GetSecurityContext(),
-		dstKube.GetIstio().GetIstioProxyContainer().GetSecurityContext(),
-		dstKube.GetAiExtension().GetSecurityContext(),
-		dstKube.GetAgentgateway().GetSecurityContext(),
-	}
-
-	for _, securityContext := range securityContexts {
-		if securityContext != nil {
-			securityContext.RunAsUser = nil
-		}
-	}
+// InMemoryGatewayParametersConfig holds the configuration for creating in-memory GatewayParameters.
+type InMemoryGatewayParametersConfig struct {
+	ControllerName             string
+	ClassName                  string
+	ImageInfo                  *ImageInfo
+	WaypointClassName          string
+	AgwControllerName          string
+	OmitDefaultSecurityContext bool
 }
 
-// GetInMemoryGatewayParameters returns an in-memory GatewayParameters based on the name of the gateway class.
-func GetInMemoryGatewayParameters(name string, imageInfo *ImageInfo, gatewayClassName, waypointClassName, agentgatewayClassName string, omitDefaultSecurityContext bool) *v1alpha1.GatewayParameters {
-	switch name {
-	case waypointClassName:
-		return defaultWaypointGatewayParameters(imageInfo, omitDefaultSecurityContext)
-	case gatewayClassName:
-		return defaultGatewayParameters(imageInfo, omitDefaultSecurityContext)
-	case agentgatewayClassName:
-		return defaultAgentgatewayParameters(imageInfo, omitDefaultSecurityContext)
-	default:
-		return defaultGatewayParameters(imageInfo, omitDefaultSecurityContext)
+// GetInMemoryGatewayParameters returns an in-memory GatewayParameters.
+// Priority order:
+// 1. Agentgateway controller name (highest priority)
+// 2. Waypoint class name (must check before envoy controller since waypoint uses the same controller)
+// 3. Envoy controller name, or no controller name -- either way, use default gateway parameters
+//
+// This allows users to define their own GatewayClass that acts very much like a
+// built-in class but is not an exact name match.
+func GetInMemoryGatewayParameters(cfg InMemoryGatewayParametersConfig) *v1alpha1.GatewayParameters {
+	if cfg.ControllerName == cfg.AgwControllerName {
+		return defaultAgentgatewayParameters(cfg.ImageInfo, cfg.OmitDefaultSecurityContext)
 	}
+	if cfg.ClassName == cfg.WaypointClassName {
+		return defaultWaypointGatewayParameters(cfg.ImageInfo, cfg.OmitDefaultSecurityContext)
+	}
+	return defaultGatewayParameters(cfg.ImageInfo, cfg.OmitDefaultSecurityContext)
 }
 
 // defaultAgentgatewayParameters returns an in-memory GatewayParameters with default values
@@ -277,15 +256,6 @@ func defaultGatewayParameters(imageInfo *ImageInfo, omitDefaultSecurityContext b
 						IstioDiscoveryAddress: ptr.To("istiod.istio-system.svc:15012"),
 						IstioMetaMeshId:       ptr.To("cluster.local"),
 						IstioMetaClusterId:    ptr.To("Kubernetes"),
-					},
-				},
-				AiExtension: &v1alpha1.AiExtension{
-					Enabled: ptr.To(false),
-					Image: &v1alpha1.Image{
-						Repository: ptr.To(KgatewayAIContainerName),
-						Registry:   ptr.To(imageInfo.Registry),
-						Tag:        ptr.To(imageInfo.Tag),
-						PullPolicy: (*corev1.PullPolicy)(ptr.To(imageInfo.PullPolicy)),
 					},
 				},
 				Agentgateway: &v1alpha1.Agentgateway{

@@ -2,10 +2,10 @@
 
 This syncer configures xds updates for the [agentgateway](https://agentgateway.dev/) data plane.
 
-To use the agentgateway control plane with kgateway, you need to enable the integration in the helm chart:
+To use the agentgateway control plane with kgateway, the kgateway helm chart must be installed with `agentgateway.enabled` set to `true` (which is the default):
 ```yaml
 agentgateway:
-  enabled: true # set this to true
+  enabled: true
 ```
 
 You can configure the agentgateway Gateway class to use a specific image by setting the image field on the
@@ -351,7 +351,7 @@ flowchart TD
     style E4 fill:#f1f8e9
 ```
 
-### Translator tests 
+### Translator tests
 
 The translator tests are unit tests that test the translation of the CRD input YAML resources to the agentgateway xDS API.
 
@@ -372,7 +372,7 @@ Setup the cluster:
 Retag and load the image to match the default image tag in the values file for agentgateway, then run:
 
 ```
-make run HELM_ADDITIONAL_VALUES=test/kubernetes/e2e/tests/manifests/agent-gateway-integration.yaml; CONFORMANCE_GATEWAY_CLASS=agentgateway make conformance
+make run HELM_ADDITIONAL_VALUES=test/e2e/tests/manifests/agent-gateway-integration.yaml; CONFORMANCE_GATEWAY_CLASS=agentgateway make conformance
 ```
 
 ## Examples
@@ -388,7 +388,7 @@ helm upgrade -i --namespace kgateway-system --version v2.2.0-main kgateway oci:/
 
 Apply the httpbin test app:
 ```shell
-kubectl apply -f  test/kubernetes/e2e/defaults/testdata/httpbin.yaml
+kubectl apply -f  test/e2e/defaults/testdata/httpbin.yaml
 ```
 
 Apply the following config to set up the HTTPRoute attached to the agentgateway Gateway:
@@ -692,6 +692,7 @@ kubectl create secret generic openai-secret \
 ```
 
 Apply the following config to set up the HTTPRoute pointing to the AI Backend:
+
 ```shell
 kubectl apply -f- <<EOF
 kind: Gateway
@@ -728,6 +729,7 @@ spec:
           group: gateway.kgateway.dev
           kind: Backend
 ---
+# TODO: Update this to use the agw based Backend API.
 apiVersion: gateway.kgateway.dev/v1alpha1
 kind: Backend
 metadata:
@@ -794,6 +796,7 @@ spec:
           kind: Backend
           name: bedrock
 ---
+# TODO: Update this to use the agw based Backend API.
 apiVersion: gateway.kgateway.dev/v1alpha1
 kind: Backend
 metadata:
@@ -883,6 +886,7 @@ spec:
           group: gateway.kgateway.dev
           kind: Backend
 ---
+# TODO: Update this to use the agw based Backend API.
 apiVersion: gateway.kgateway.dev/v1alpha1
 kind: Backend
 metadata:
@@ -1248,7 +1252,7 @@ config:
         gen_ai.response.model: "llm.response_model"
         gen_ai.usage.completion_tokens: "llm.output_tokens"
         gen_ai.usage.prompt_tokens: "llm.input_tokens"
-        
+
         # Custom business logic fields
         user.id: "request.headers['x-user-id']"
         request.path: "request.path"
@@ -1431,6 +1435,7 @@ spec:
       name: http
 ---
 # AI Backend and Route
+# TODO: Update this to use the agw based Backend API.
 apiVersion: gateway.kgateway.dev/v1alpha1
 kind: Backend
 metadata:
@@ -1566,7 +1571,7 @@ spec:
           cors:
             allowOrigins:
             - "http://localhost:3000"
-            - "http://localhost:8080" 
+            - "http://localhost:8080"
             - "http://localhost:15000"
             - "http://127.0.0.1:3000"
             - "http://127.0.0.1:8080"

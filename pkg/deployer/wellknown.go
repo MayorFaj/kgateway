@@ -4,8 +4,6 @@ package deployer
 const (
 	// KgatewayContainerName is the name of the container in the proxy deployment.
 	KgatewayContainerName = "kgateway-proxy"
-	// KgatewayAIContainerName is the name of the container in the proxy deployment for the AI extension.
-	KgatewayAIContainerName = "kgateway-ai-extension"
 	// IstioContainerName is the name of the container in the proxy deployment for the Istio integration.
 	IstioContainerName = "istio-proxy"
 	// IstioWaypointPort - Port 15008 is reserved for Istio. This port enables sidecars to include waypoint proxies
@@ -19,7 +17,7 @@ const (
 	AgentgatewayRegistry = "ghcr.io/agentgateway"
 	// AgentgatewayDefaultTag is the default agentgateway image tag
 	// Note: should be in sync with version in go.mod and test/deployer/testdata/*
-	AgentgatewayDefaultTag = "0.10.3"
+	AgentgatewayDefaultTag = "0.11.0-alpha.54763bfe02e1e0a023d3835a5fc2a46f7571d740"
 	// SdsImage is the image of the sds container.
 	SdsImage = "sds"
 	// SdsContainerName is the name of the container in the proxy deployment for the SDS integration.

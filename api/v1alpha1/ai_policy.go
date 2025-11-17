@@ -21,22 +21,9 @@ type AIPolicy struct {
 	// Provide defaults to merge with user input fields.
 	// Defaults do _not_ override the user input fields, unless you explicitly set `override` to `true`.
 	Defaults []FieldDefault `json:"defaults,omitempty"`
-
-	// The type of route to the LLM provider API. Currently, `CHAT` and `CHAT_STREAMING` are supported.
-	// Note: This field is not applicable when using agentgateway
-	// +kubebuilder:validation:Enum=CHAT;CHAT_STREAMING
-	// +kubebuilder:default=CHAT
-	RouteType *RouteType `json:"routeType,omitempty"`
-
-	// ModelAliases maps friendly model names to actual provider model names.
-	// Example: {"fast": "gpt-3.5-turbo", "smart": "gpt-4-turbo"}
-	// Note: This field is only applicable when using the agentgateway data plane.
-	// +optional
-	ModelAliases map[string]string `json:"modelAliases,omitempty"`
 }
 
 // AIPromptEnrichment defines the config to enrich requests sent to the LLM provider by appending and prepending system prompts.
-// This can be configured only for LLM providers that use the `CHAT` or `CHAT_STREAMING` API type.
 //
 // Prompt enrichment allows you to add additional context to the prompt before sending it to the model.
 // Unlike RAG or other dynamic context methods, prompt enrichment is static and is applied to every request.
@@ -75,17 +62,6 @@ type AIPromptEnrichment struct {
 	// A list of messages to be appended to the prompt sent by the client.
 	Append []Message `json:"append,omitempty"`
 }
-
-// RouteType is the type of route to the LLM provider API.
-type RouteType string
-
-const (
-	// The LLM generates the full response before responding to a client.
-	CHAT RouteType = "CHAT"
-
-	// Stream responses to a client, which allows the LLM to stream out tokens as they are generated.
-	CHAT_STREAMING RouteType = "CHAT_STREAMING"
-)
 
 // An entry for a message to prepend or append to each prompt.
 type Message struct {
@@ -324,4 +300,49 @@ type FieldDefault struct {
 	// +optional
 	// +kubebuilder:default=false
 	Override bool `json:"override,omitempty"`
+}
+
+// PromptCachingConfig configures automatic prompt caching for supported LLM providers.
+// Currently only AWS Bedrock supports this feature (Claude 3+ and Nova models).
+//
+// When enabled, the gateway automatically inserts cache points at strategic locations
+// to reduce API costs. Bedrock charges lower rates for cached tokens (90% discount).
+//
+// Example:
+//
+//	promptCaching:
+//	  cacheSystem: true       # Cache system prompts
+//	  cacheMessages: true     # Cache conversation history
+//	  cacheTools: false       # Don't cache tool definitions
+//	  minTokens: 1024         # Only cache if ≥1024 tokens
+//
+// Cost savings example:
+// - Without caching: 10,000 tokens × $3/MTok = $0.03
+// - With caching (90% cached): 1,000 × $3/MTok + 9,000 × $0.30/MTok = $0.0057 (81% savings)
+type PromptCachingConfig struct {
+	// CacheSystem enables caching for system prompts.
+	// Inserts a cache point after all system messages.
+	// +optional
+	// +kubebuilder:default=true
+	CacheSystem *bool `json:"cacheSystem,omitempty"`
+
+	// CacheMessages enables caching for conversation messages.
+	// Caches all messages in the conversation for cost savings.
+	// +optional
+	// +kubebuilder:default=true
+	CacheMessages *bool `json:"cacheMessages,omitempty"`
+
+	// CacheTools enables caching for tool definitions.
+	// Inserts a cache point after all tool specifications.
+	// +optional
+	// +kubebuilder:default=false
+	CacheTools *bool `json:"cacheTools,omitempty"`
+
+	// MinTokens specifies the minimum estimated token count
+	// before caching is enabled. Uses rough heuristic (word count × 1.3) to estimate tokens.
+	// Bedrock requires at least 1,024 tokens for caching to be effective.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:default=1024
+	MinTokens *int `json:"minTokens,omitempty"`
 }

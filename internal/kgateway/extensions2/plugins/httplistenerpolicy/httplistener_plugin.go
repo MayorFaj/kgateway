@@ -18,19 +18,14 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
-	skubeclient "istio.io/istio/pkg/config/schema/kubeclient"
 	"istio.io/istio/pkg/kube/kclient"
 	"istio.io/istio/pkg/kube/krt"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/utils/ptr"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/utils"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
-	"github.com/kgateway-dev/kgateway/v2/pkg/client/clientset/versioned"
 	"github.com/kgateway-dev/kgateway/v2/pkg/logging"
 	sdk "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/collections"
@@ -172,26 +167,13 @@ type httpListenerPolicyPluginGwPass struct {
 
 var _ ir.ProxyTranslationPass = &httpListenerPolicyPluginGwPass{}
 
-func registerTypes(ourCli versioned.Interface) {
-	skubeclient.Register[*v1alpha1.HTTPListenerPolicy](
-		wellknown.HTTPListenerPolicyGVR,
-		wellknown.HTTPListenerPolicyGVK,
-		func(c skubeclient.ClientGetter, namespace string, o metav1.ListOptions) (runtime.Object, error) {
-			return ourCli.GatewayV1alpha1().HTTPListenerPolicies(namespace).List(context.Background(), o)
-		},
-		func(c skubeclient.ClientGetter, namespace string, o metav1.ListOptions) (watch.Interface, error) {
-			return ourCli.GatewayV1alpha1().HTTPListenerPolicies(namespace).Watch(context.Background(), o)
-		},
-	)
-}
-
 func NewPlugin(ctx context.Context, commoncol *collections.CommonCollections) sdk.Plugin {
-	registerTypes(commoncol.OurClient)
-
-	col := krt.WrapClient(kclient.NewFiltered[*v1alpha1.HTTPListenerPolicy](
+	cli := kclient.NewFilteredDelayed[*v1alpha1.HTTPListenerPolicy](
 		commoncol.Client,
+		wellknown.HTTPListenerPolicyGVR,
 		kclient.Filter{ObjectFilter: commoncol.Client.ObjectFilter()},
-	), commoncol.KrtOpts.ToOptions("HTTPListenerPolicy")...)
+	)
+	col := krt.WrapClient(cli, commoncol.KrtOpts.ToOptions("HTTPListenerPolicy")...)
 	gk := wellknown.HTTPListenerPolicyGVK.GroupKind()
 	policyCol := krt.NewCollection(col, func(krtctx krt.HandlerContext, i *v1alpha1.HTTPListenerPolicy) *ir.PolicyWrapper {
 		objSrc := ir.ObjectSource{
@@ -202,13 +184,13 @@ func NewPlugin(ctx context.Context, commoncol *collections.CommonCollections) sd
 		}
 
 		errs := []error{}
-		accessLog, err := convertAccessLogConfig(ctx, i, commoncol, krtctx, objSrc)
+		accessLog, err := convertAccessLogConfig(i, commoncol, krtctx, objSrc)
 		if err != nil {
 			logger.Error("error translating access log", "error", err)
 			errs = append(errs, err)
 		}
 
-		tracingProvider, tracingConfig, err := convertTracingConfig(ctx, i, commoncol, krtctx, objSrc)
+		tracingProvider, tracingConfig, err := convertTracingConfig(i, commoncol, krtctx, objSrc)
 		if err != nil {
 			logger.Error("error translating tracing", "error", err)
 			errs = append(errs, err)
@@ -268,8 +250,8 @@ func NewPlugin(ctx context.Context, commoncol *collections.CommonCollections) sd
 			wellknown.HTTPListenerPolicyGVK.GroupKind(): {
 				NewGatewayTranslationPass: NewGatewayTranslationPass,
 				Policies:                  policyCol,
-				GetPolicyStatus:           getPolicyStatusFn(commoncol.CrudClient),
-				PatchPolicyStatus:         patchPolicyStatusFn(commoncol.CrudClient),
+				GetPolicyStatus:           getPolicyStatusFn(cli),
+				PatchPolicyStatus:         patchPolicyStatusFn(cli),
 				MergePolicies: func(pols []ir.PolicyAtt) ir.PolicyAtt {
 					return policy.MergePolicies(pols, mergePolicies, "" /*no merge settings*/)
 				},

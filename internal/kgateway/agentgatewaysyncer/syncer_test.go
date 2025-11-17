@@ -6,21 +6,18 @@ import (
 	"github.com/agentgateway/agentgateway/go/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	agwir "github.com/kgateway-dev/kgateway/v2/pkg/agentgateway/ir"
 	"github.com/kgateway-dev/kgateway/v2/pkg/agentgateway/translator"
 )
 
 func TestBuildAgwFilters(t *testing.T) {
 	testCases := []struct {
-		name            string
-		inputFilters    []gwv1.HTTPRouteFilter
-		expectedFilters []*api.RouteFilter
-		expectedError   bool
+		name                  string
+		inputFilters          []gwv1.HTTPRouteFilter
+		expectedTrafficPolicy []*api.TrafficPolicySpec
+		expectedError         bool
 	}{
 		{
 			name: "Request header modifier filter",
@@ -38,9 +35,9 @@ func TestBuildAgwFilters(t *testing.T) {
 					},
 				},
 			},
-			expectedFilters: []*api.RouteFilter{
+			expectedTrafficPolicy: []*api.TrafficPolicySpec{
 				{
-					Kind: &api.RouteFilter_RequestHeaderModifier{
+					Kind: &api.TrafficPolicySpec_RequestHeaderModifier{
 						RequestHeaderModifier: &api.HeaderModifier{
 							Set: []*api.Header{
 								{Name: "X-Custom-Header", Value: "custom-value"},
@@ -67,9 +64,9 @@ func TestBuildAgwFilters(t *testing.T) {
 					},
 				},
 			},
-			expectedFilters: []*api.RouteFilter{
+			expectedTrafficPolicy: []*api.TrafficPolicySpec{
 				{
-					Kind: &api.RouteFilter_ResponseHeaderModifier{
+					Kind: &api.TrafficPolicySpec_ResponseHeaderModifier{
 						ResponseHeaderModifier: &api.HeaderModifier{
 							Set: []*api.Header{
 								{Name: "X-Response-Header", Value: "response-value"},
@@ -92,9 +89,9 @@ func TestBuildAgwFilters(t *testing.T) {
 					},
 				},
 			},
-			expectedFilters: []*api.RouteFilter{
+			expectedTrafficPolicy: []*api.TrafficPolicySpec{
 				{
-					Kind: &api.RouteFilter_RequestRedirect{
+					Kind: &api.TrafficPolicySpec_RequestRedirect{
 						RequestRedirect: &api.RequestRedirect{
 							Scheme: "https",
 							Host:   "secure.example.com",
@@ -118,9 +115,9 @@ func TestBuildAgwFilters(t *testing.T) {
 					},
 				},
 			},
-			expectedFilters: []*api.RouteFilter{
+			expectedTrafficPolicy: []*api.TrafficPolicySpec{
 				{
-					Kind: &api.RouteFilter_UrlRewrite{
+					Kind: &api.TrafficPolicySpec_UrlRewrite{
 						UrlRewrite: &api.UrlRewrite{
 							Path: &api.UrlRewrite_Prefix{
 								Prefix: "/new-prefix",
@@ -142,7 +139,7 @@ func TestBuildAgwFilters(t *testing.T) {
 				},
 			}
 
-			result, err := translator.BuildAgwFilters(ctx, "default", tc.inputFilters)
+			result, err := translator.BuildAgwTrafficPolicyFilters(ctx, "default", tc.inputFilters)
 
 			if tc.expectedError {
 				assert.NotNil(t, err)
@@ -150,21 +147,21 @@ func TestBuildAgwFilters(t *testing.T) {
 			}
 
 			assert.Nil(t, err)
-			require.Equal(t, len(tc.expectedFilters), len(result))
+			require.Equal(t, len(tc.expectedTrafficPolicy), len(result))
 
-			for i, expectedFilter := range tc.expectedFilters {
+			for i, expectedFilter := range tc.expectedTrafficPolicy {
 				actualFilter := result[i]
 
 				// Compare filter types
 				switch expectedFilter.Kind.(type) {
-				case *api.RouteFilter_RequestHeaderModifier:
-					assert.IsType(t, &api.RouteFilter_RequestHeaderModifier{}, actualFilter.Kind)
-				case *api.RouteFilter_ResponseHeaderModifier:
-					assert.IsType(t, &api.RouteFilter_ResponseHeaderModifier{}, actualFilter.Kind)
-				case *api.RouteFilter_RequestRedirect:
-					assert.IsType(t, &api.RouteFilter_RequestRedirect{}, actualFilter.Kind)
-				case *api.RouteFilter_UrlRewrite:
-					assert.IsType(t, &api.RouteFilter_UrlRewrite{}, actualFilter.Kind)
+				case *api.TrafficPolicySpec_RequestHeaderModifier:
+					assert.IsType(t, &api.TrafficPolicySpec_RequestHeaderModifier{}, actualFilter.Kind)
+				case *api.TrafficPolicySpec_ResponseHeaderModifier:
+					assert.IsType(t, &api.TrafficPolicySpec_ResponseHeaderModifier{}, actualFilter.Kind)
+				case *api.TrafficPolicySpec_RequestRedirect:
+					assert.IsType(t, &api.TrafficPolicySpec_RequestRedirect{}, actualFilter.Kind)
+				case *api.TrafficPolicySpec_UrlRewrite:
+					assert.IsType(t, &api.TrafficPolicySpec_UrlRewrite{}, actualFilter.Kind)
 				}
 			}
 		})
@@ -257,7 +254,7 @@ func TestGetProtocolAndTLSConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			syncer := &Syncer{}
 
-			proto, tlsConfig, ok := syncer.getProtocolAndTLSConfig(tc.gateway)
+			proto, tlsConfig, ok := syncer.getProtocolAndTLSConfig(&tc.gateway)
 
 			assert.Equal(t, tc.expectedOk, ok)
 			if tc.expectedOk {
@@ -270,101 +267,6 @@ func TestGetProtocolAndTLSConfig(t *testing.T) {
 					assert.Nil(t, tlsConfig)
 				}
 			}
-		})
-	}
-}
-
-func TestAgwResourcesForGatewayEquals(t *testing.T) {
-	testCases := []struct {
-		name      string
-		resource1 agwir.AgwResourcesForGateway
-		resource2 agwir.AgwResourcesForGateway
-		expected  bool
-	}{
-		{
-			name: "Equal bind resources",
-			resource1: agwir.AgwResourcesForGateway{
-				Resources: []*api.Resource{{
-					Kind: &api.Resource_Bind{
-						Bind: &api.Bind{
-							Key:  "test-key",
-							Port: 8080,
-						},
-					},
-				}},
-				Gateway: types.NamespacedName{Name: "test", Namespace: "default"},
-			},
-			resource2: agwir.AgwResourcesForGateway{
-				Resources: []*api.Resource{{
-					Kind: &api.Resource_Bind{
-						Bind: &api.Bind{
-							Key:  "test-key",
-							Port: 8080,
-						},
-					},
-				}},
-				Gateway: types.NamespacedName{Name: "test", Namespace: "default"},
-			},
-			expected: true,
-		},
-		{
-			name: "Different gateway",
-			resource1: agwir.AgwResourcesForGateway{
-				Resources: []*api.Resource{{
-					Kind: &api.Resource_Bind{
-						Bind: &api.Bind{
-							Key:  "test-key",
-							Port: 8080,
-						},
-					},
-				}},
-				Gateway: types.NamespacedName{Name: "test", Namespace: "default"},
-			},
-			resource2: agwir.AgwResourcesForGateway{
-				Resources: []*api.Resource{{
-					Kind: &api.Resource_Bind{
-						Bind: &api.Bind{
-							Key:  "test-key",
-							Port: 8080,
-						},
-					},
-				}},
-				Gateway: types.NamespacedName{Name: "other", Namespace: "default"},
-			},
-			expected: false,
-		},
-		{
-			name: "Different resource port",
-			resource1: agwir.AgwResourcesForGateway{
-				Resources: []*api.Resource{{
-					Kind: &api.Resource_Bind{
-						Bind: &api.Bind{
-							Key:  "test-key",
-							Port: 8080,
-						},
-					},
-				}},
-				Gateway: types.NamespacedName{Name: "test", Namespace: "default"},
-			},
-			resource2: agwir.AgwResourcesForGateway{
-				Resources: []*api.Resource{{
-					Kind: &api.Resource_Bind{
-						Bind: &api.Bind{
-							Key:  "test-key",
-							Port: 9090,
-						},
-					},
-				}},
-				Gateway: types.NamespacedName{Name: "test", Namespace: "default"},
-			},
-			expected: false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			result := proto.Equal(tc.resource1.Resources[0], tc.resource2.Resources[0]) && tc.resource1.Gateway == tc.resource2.Gateway
-			assert.Equal(t, tc.expected, result)
 		})
 	}
 }

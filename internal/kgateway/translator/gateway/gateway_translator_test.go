@@ -26,6 +26,11 @@ func TestBasic(t *testing.T) {
 		defer cancel()
 		dir := fsutils.MustGetThisDir()
 
+		// Prepend setting EnableExperimentalGatewayAPIFeatures to true so it can be overwritten by settingOpts
+		settingOpts = append([]translatortest.SettingsOpts{
+			func(s *apisettings.Settings) {
+				s.EnableExperimentalGatewayAPIFeatures = true
+			}}, settingOpts...)
 		inputFiles := []string{filepath.Join(dir, "testutils/inputs/", in.inputFile)}
 		expectedProxyFile := filepath.Join(dir, "testutils/outputs/", in.outputFile)
 		translatortest.TestTranslation(t, ctx, inputFiles, expectedProxyFile, in.gwNN, settingOpts...)
@@ -250,6 +255,94 @@ func TestBasic(t *testing.T) {
 		test(t, translatorTestCase{
 			inputFile:  "traffic-policy/extauth-full-config.yaml",
 			outputFile: "traffic-policy/extauth-full-config.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "infra",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("TrafficPolicy with fail open rate limiting", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "traffic-policy/fail-open",
+			outputFile: "traffic-policy/fail-open.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "infra",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("TrafficPolicy with rate limiting for extension ref", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "traffic-policy/filter-extension-ref",
+			outputFile: "traffic-policy/filter-extension-ref.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "infra",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("TrafficPolicy with rate limiting on gateway section attachment", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "traffic-policy/gateway-section-attachment",
+			outputFile: "traffic-policy/gateway-section-attachment.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "infra",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("TrafficPolicy with local and global rate limiting combined", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "traffic-policy/local-and-global-combined",
+			outputFile: "traffic-policy/local-and-global-combined.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "infra",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("TrafficPolicy with multi-dimensional rate limiting descriptors", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "traffic-policy/multi-dimensional-descriptors",
+			outputFile: "traffic-policy/multi-dimensional-descriptors.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "infra",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("TrafficPolicy with multiple descriptors OR rate limiting", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "traffic-policy/multiple-descriptors-or",
+			outputFile: "traffic-policy/multiple-descriptors-or.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "infra",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("TrafficPolicy with multiple headers single descriptor rate limiting", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "traffic-policy/multiple-headers-single-descriptor",
+			outputFile: "traffic-policy/multiple-headers-single-descriptor.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "infra",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("TrafficPolicy with rate limiting on route section attachment", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "traffic-policy/route-section-attachment",
+			outputFile: "traffic-policy/route-section-attachment.yaml",
 			gwNN: types.NamespacedName{
 				Namespace: "infra",
 				Name:      "example-gateway",
@@ -1036,6 +1129,19 @@ func TestBasic(t *testing.T) {
 		})
 	})
 
+	t.Run("basic listener set with experimental features disabled", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "listener-sets/basic.yaml",
+			outputFile: "listener-sets/basic-experimental-disabled.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		}, func(s *apisettings.Settings) {
+			s.EnableExperimentalGatewayAPIFeatures = false
+		})
+	})
+
 	t.Run("basic listener set", func(t *testing.T) {
 		test(t, translatorTestCase{
 			inputFile:  "listener-sets/basic.yaml",
@@ -1483,6 +1589,7 @@ func TestValidation(t *testing.T) {
 
 		settingOpts := func(s *apisettings.Settings) {
 			s.ValidationMode = mode
+			s.EnableExperimentalGatewayAPIFeatures = true
 		}
 		translatortest.TestTranslation(t, ctx, []string{inputFile}, outputFile, gwNN, settingOpts)
 	}
@@ -1517,7 +1624,10 @@ func TestRouteDelegation(t *testing.T) {
 			Namespace: "infra",
 			Name:      "example-gateway",
 		}
-		translatortest.TestTranslation(t, ctx, inputFiles, outputFile, gwNN)
+		settingOpt := func(s *apisettings.Settings) {
+			s.EnableExperimentalGatewayAPIFeatures = true
+		}
+		translatortest.TestTranslation(t, ctx, inputFiles, outputFile, gwNN, settingOpt)
 	}
 	t.Run("Basic config", func(t *testing.T) {
 		test(t, "basic.yaml")
@@ -1637,7 +1747,7 @@ func TestRouteDelegation(t *testing.T) {
 }
 
 func TestDiscoveryNamespaceSelector(t *testing.T) {
-	test := func(t *testing.T, cfgJSON string, inputFile string, outputFile string, errdesc string) {
+	test := func(t *testing.T, cfgJSON string, inputFile string, outputFile string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		dir := fsutils.MustGetThisDir()
@@ -1653,6 +1763,7 @@ func TestDiscoveryNamespaceSelector(t *testing.T) {
 		settingOpts := []translatortest.SettingsOpts{
 			func(s *apisettings.Settings) {
 				s.DiscoveryNamespaceSelectors = cfgJSON
+				s.EnableExperimentalGatewayAPIFeatures = true
 			},
 		}
 
@@ -1676,7 +1787,7 @@ func TestDiscoveryNamespaceSelector(t *testing.T) {
 			"app": "a"
 		}
 	}
-]`, "base.yaml", "base_select_all.yaml", "")
+]`, "base.yaml", "base_select_all.yaml")
 	})
 
 	t.Run("Select all resources; AND matchExpressions and matchLabels", func(t *testing.T) {
@@ -1706,7 +1817,7 @@ func TestDiscoveryNamespaceSelector(t *testing.T) {
 			"app": "a"
 		}
 	}
-]`, "base.yaml", "base_select_all.yaml", "")
+]`, "base.yaml", "base_select_all.yaml")
 	})
 
 	t.Run("Select only namespace infra", func(t *testing.T) {
@@ -1722,6 +1833,6 @@ func TestDiscoveryNamespaceSelector(t *testing.T) {
       }
     ]
   }
-]`, "base.yaml", "base_select_infra.yaml", "condition error for httproute: infra/example-route")
+]`, "base.yaml", "base_select_infra.yaml")
 	})
 }
