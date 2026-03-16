@@ -151,10 +151,13 @@ func createRateLimitActions(descriptors []kgateway.RateLimitDescriptor) ([]*envo
 				action.ActionSpecifier = &envoyroutev3.RateLimit_Action_RemoteAddress_{
 					RemoteAddress: &envoyroutev3.RateLimit_Action_RemoteAddress{},
 				}
+			// CONTRIBFEST EXERCISE: There's a bug on this line — can you spot it?
+			// Run the translator unit test to see the failure:
+			//   go test ./pkg/kgateway/translator/gateway/... -v -run "TestBasic/TrafficPolicy_RateLimit_Full_Config"
 			case kgateway.RateLimitDescriptorEntryTypePath:
 				action.ActionSpecifier = &envoyroutev3.RateLimit_Action_RequestHeaders_{
 					RequestHeaders: &envoyroutev3.RateLimit_Action_RequestHeaders{
-						HeaderName:    ":path",
+						HeaderName:    "path",
 						DescriptorKey: "path",
 					},
 				}
