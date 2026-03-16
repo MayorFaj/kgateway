@@ -1,14 +1,24 @@
 {
   "name": "kgateway build-tools",
-  "build": {
-    "dockerfile": "../tools/build-tools/Dockerfile",
-    "context": ".."
-  },
+  // Official kgateway-dev container image
+  // "image": "ghcr.io/kgateway-dev/devcontainer:kubeconeu-2026",
+  // npolshakova's branch testing image 
+  "image": "ghcr.io/npolshakova/devcontainer:kubeconeu-2026",
+  // Use this for building before the image is published to GHCR
+  // "build": {
+  //   "dockerfile": "../tools/build-tools/Dockerfile",
+  //   "context": ".."
+  //  },
   "remoteEnv": {
     "USE_GKE_GCLOUD_AUTH_PLUGIN": "True",
     "BUILD_WITH_CONTAINER": "0",
     "CARGO_HOME": "/home/.cargo",
-    "RUSTUP_HOME": "/home/.rustup"
+    "RUSTUP_HOME": "/home/.rustup",
+    "DOCKER_API_VERSION": "1.43",
+    "IMAGE_REGISTRY": "ghcr.io/npolshakova",
+    "VERSION": "v1.0.0-ci1",
+    "DEVCONTAINER_IMAGE_REGISTRY": "ghcr.io/npolshakova",
+    "DEVCONTAINER_VERSION": "v1.0.0-ci1"
   },
   "features": {
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
@@ -17,6 +27,9 @@
     },
     "ghcr.io/mpriscella/features/kind:1": {}
   },
+  // TODO: change this to use ghcr.io/kgateway-dev once images are published
+  "onCreateCommand": ".devcontainer/on-create.sh",
+  "postCreateCommand": ".devcontainer/post-create.sh",
   "customizations": {
     "vscode": {
       "extensions": [

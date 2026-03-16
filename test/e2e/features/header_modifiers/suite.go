@@ -19,12 +19,36 @@ import (
 	testmatchers "github.com/kgateway-dev/kgateway/v2/test/gomega/matchers"
 )
 
+/*
+How to test this suite?
+
+First let's see what our codespace environment has setup locally. If you are not running in the codespace run `make setup` before this step.
+
+1. kubectl get pods -A
+2. kubectl get crds
+
+# Run a specific e2e test
+IMAGE_REGISTRY=ghcr.io/npolshakova GO_TEST_USER_ARGS='-run "^TestKgateway$$/^HeaderModifiers$$"' TEST_PKG=./test/e2e/tests TEST_TAG=e2e GO_TEST_ARGS="-vet=off" make go-test
+
+# Keep setup locally
+PERSIST_INSTALL=true IMAGE_REGISTRY=ghcr.io/npolshakova GO_TEST_USER_ARGS='-run "^TestKgateway$$/^HeaderModifiers$$"' TEST_PKG=./test/e2e/tests TEST_TAG=e2e GO_TEST_ARGS="-vet=off" make go-test
+*/
 var _ e2e.NewSuiteFunc = NewTestingSuite
 
 type testingSuite struct {
 	*base.BaseTestingSuite
 }
 
+// Mwahaha: This test is broken!
+// Run the e2e test to see the failure:
+//
+// export IMAGE_REGISTRY=ghcr.io/npolshakova PERSIST_INSTALL=true TEST_PKG=./test/e2e/tests TEST_TAG=e2e GO_TEST_ARGS="-vet=off"
+// GO_TEST_USER_ARGS='-run "^TestKgateway$$/^HeaderModifiers$$"' make go-test
+//
+// Manually test (returns 404 -- broken):
+//
+// EXTERNAL_IP=$(kubectl get svc gw -n default -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+// curl -s -o /dev/null -w "%{http_code}" http://${EXTERNAL_IP}:8080/headers -H "Host: example.com" -v
 func NewTestingSuite(ctx context.Context, testInst *e2e.TestInstallation) suite.TestingSuite {
 	// Define versioned setups - the system will select the appropriate one based on Gateway API version and channel
 	return &testingSuite{
