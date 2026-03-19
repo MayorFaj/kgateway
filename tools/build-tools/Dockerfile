@@ -75,13 +75,17 @@ RUN --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
 
 # go.mod is the single source of truth for Go, Helm, and Kind versions.
 # Tool install steps below extract their version from it at build time.
-COPY go.mod /tmp/go.mod
+# go.sum is also copied so that `go mod download` can pre-fetch modules.
+COPY go.mod go.sum /go-mod-cache/
 
 # Go toolchain (version from go.mod)
 RUN set -eux; \
-    GO_VERSION=$(grep '^go ' /tmp/go.mod | awk '{print $2}'); \
+    GO_VERSION=$(grep '^go ' /go-mod-cache/go.mod | awk '{print $2}'); \
     test -n "$GO_VERSION" || { echo "Failed to extract Go version from go.mod"; exit 1; }; \
     curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" | tar -C /usr/local -xz
+
+# Pre-fetch Go module dependencies into the module cache
+RUN cd /go-mod-cache && go mod download
 
 # Install protoc
 RUN set -eux; \
@@ -107,7 +111,7 @@ RUN chmod 555 /usr/local/bin/kind
 
 # helm (version from go.mod helm.sh/helm/v3)
 RUN set -eux; \
-    HELM_VERSION=$(grep 'helm.sh/helm/v3' /tmp/go.mod | awk '{print $2}'); \
+    HELM_VERSION=$(grep 'helm.sh/helm/v3' /go-mod-cache/go.mod | awk '{print $2}'); \
     test -n "$HELM_VERSION" || { echo "Failed to extract Helm version from go.mod"; exit 1; }; \
     curl -fsSL -o /tmp/helm.tgz "https://get.helm.sh/helm-${HELM_VERSION}-linux-${TARGETARCH}.tar.gz"; \
     mkdir -p /tmp/helm; \

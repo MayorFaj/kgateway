@@ -212,6 +212,12 @@ func (i *TestInstallation) InstallKgatewayCoreFromLocalChart(ctx context.Context
 	// and then install the main chart
 	chartUri, err := helper.GetLocalChartPath(helmutils.ChartName, "")
 	i.AssertionsT(t).Require.NoError(err)
+
+	extraArgs := i.Metadata.ExtraHelmArgs
+	if reg := os.Getenv("IMAGE_REGISTRY"); reg != "" {
+		extraArgs = append(extraArgs, "--set", "image.registry="+reg)
+	}
+
 	err = i.Actions.Helm().WithReceiver(os.Stdout).Upgrade(
 		ctx,
 		helmutils.InstallOpts{
@@ -220,7 +226,7 @@ func (i *TestInstallation) InstallKgatewayCoreFromLocalChart(ctx context.Context
 			ValuesFiles:     []string{i.Metadata.ProfileValuesManifestFile, i.Metadata.ValuesManifestFile},
 			ReleaseName:     helmutils.ChartName,
 			ChartUri:        chartUri,
-			ExtraArgs:       i.Metadata.ExtraHelmArgs,
+			ExtraArgs:       extraArgs,
 		})
 	i.AssertionsT(t).Require.NoError(err)
 	i.AssertionsT(t).EventuallyGatewayInstallSucceeded(ctx)
