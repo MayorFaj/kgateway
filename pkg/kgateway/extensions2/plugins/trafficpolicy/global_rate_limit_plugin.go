@@ -154,6 +154,9 @@ func createRateLimitActions(descriptors []kgateway.RateLimitDescriptor) ([]*envo
 			// CONTRIBFEST EXERCISE: There's a bug on this line — can you spot it?
 			// Run the translator unit test to see the failure:
 			//   go test ./pkg/kgateway/translator/gateway/... -v -run "TestBasic/TrafficPolicy_RateLimit_Full_Config"
+			// Hint: compare Envoy's request_headers rate limit action docs and header handling docs:
+			//   https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/route/v3/route_components.proto#envoy-v3-api-msg-config-route-v3-ratelimit-action-requestheaders
+			//   https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_conn_man/headers
 			case kgateway.RateLimitDescriptorEntryTypePath:
 				action.ActionSpecifier = &envoyroutev3.RateLimit_Action_RequestHeaders_{
 					RequestHeaders: &envoyroutev3.RateLimit_Action_RequestHeaders{
