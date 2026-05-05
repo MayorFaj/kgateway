@@ -1,6 +1,10 @@
 package downward_test
 
 import (
+	"bytes"
+	"os"
+	"strings"
+
 	envoybootstrapv3 "github.com/envoyproxy/go-control-plane/envoy/config/bootstrap/v3"
 	envoyclusterv3 "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	envoycorev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
@@ -11,6 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	. "github.com/kgateway-dev/kgateway/v2/internal/envoyinit/pkg/downward"
+	"github.com/kgateway-dev/kgateway/v2/pkg/utils/protoutils"
 )
 
 var _ = Describe("Transform", func() {
@@ -56,6 +61,89 @@ var _ = Describe("Transform", func() {
 			err := TransformConfigTemplatesWithApi(bootstrapConfig, api)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(bootstrapConfig.Node.Metadata.Fields["foo"].Kind.(*structpb.Value_StringValue).StringValue).To(Equal("Test"))
+		})
+
+		It("should set node locality", func() {
+			api.nodeRegion = "us-east1"
+			api.nodeZone = "us-east1-b"
+			api.nodeSubzone = "rack-a"
+
+			err := TransformConfigTemplatesWithApi(bootstrapConfig, api)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(bootstrapConfig.Node.Locality).To(Equal(&envoycorev3.Locality{
+				Region:  "us-east1",
+				Zone:    "us-east1-b",
+				SubZone: "rack-a",
+			}))
+		})
+
+		It("should initialize node when setting node locality", func() {
+			bootstrapConfig.Node = nil
+			api.nodeZone = "us-east1-b"
+
+			err := TransformConfigTemplatesWithApi(bootstrapConfig, api)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(bootstrapConfig.Node).NotTo(BeNil())
+			Expect(bootstrapConfig.Node.Locality).To(Equal(&envoycorev3.Locality{
+				Zone: "us-east1-b",
+			}))
+		})
+
+		It("should set node locality through the public IO transform", func() {
+			Expect(os.Setenv("KGATEWAY_NODE_REGION", "us-east1")).To(Succeed())
+			DeferCleanup(os.Unsetenv, "KGATEWAY_NODE_REGION")
+			Expect(os.Setenv("KGATEWAY_NODE_ZONE", "us-east1-b")).To(Succeed())
+			DeferCleanup(os.Unsetenv, "KGATEWAY_NODE_ZONE")
+
+			input := strings.NewReader(`
+node:
+  id: static
+  cluster: static
+`)
+			var output bytes.Buffer
+
+			err := Transform(input, &output)
+			Expect(err).NotTo(HaveOccurred())
+
+			var transformed envoybootstrapv3.Bootstrap
+			Expect(protoutils.UnmarshalBytes(output.Bytes(), &transformed)).To(Succeed())
+			Expect(transformed.Node.Locality).NotTo(BeNil())
+			Expect(transformed.Node.Locality.Region).To(Equal("us-east1"))
+			Expect(transformed.Node.Locality.Zone).To(Equal("us-east1-b"))
+		})
+
+		It("should preserve typed configs through the public IO transform", func() {
+			input := strings.NewReader(
+				"static_resources:\n" +
+					"  listeners:\n" +
+					"  - name: listener-0\n" +
+					"    address:\n" +
+					"      socket_address:\n" +
+					"        address: 0.0.0.0\n" +
+					"        port_value: 8080\n" +
+					"    filter_chains:\n" +
+					"    - filters:\n" +
+					"      - name: envoy.filters.network.http_connection_manager\n" +
+					"        typed_config:\n" +
+					"          '@type': type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager\n" +
+					"          stat_prefix: ingress_http\n" +
+					"          route_config:\n" +
+					"            name: local_route\n" +
+					"          http_filters:\n" +
+					"          - name: envoy.filters.http.router\n" +
+					"            typed_config:\n" +
+					"              '@type': type.googleapis.com/envoy.extensions.filters.http.router.v3.Router\n",
+			)
+			var output bytes.Buffer
+
+			err := Transform(input, &output)
+			Expect(err).NotTo(HaveOccurred())
+
+			var transformed envoybootstrapv3.Bootstrap
+			Expect(protoutils.UnmarshalBytes(output.Bytes(), &transformed)).To(Succeed())
+			filters := transformed.GetStaticResources().GetListeners()[0].GetFilterChains()[0].GetFilters()
+			Expect(filters).To(HaveLen(1))
+			Expect(filters[0].GetTypedConfig().GetTypeUrl()).To(Equal("type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager"))
 		})
 
 		It("should transform static resources", func() {

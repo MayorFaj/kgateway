@@ -545,6 +545,119 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 				}
 			}(),
 		},
+		{
+			name: "ZoneAware: PreferLocal with defaults",
+			config: &kgateway.LoadBalancer{
+				RoundRobin: &kgateway.LoadBalancerRoundRobinConfig{},
+				ZoneAware: &kgateway.ZoneAwareLoadBalancer{
+					PreferLocal: &kgateway.ZoneAwarePreferLocal{},
+				},
+			},
+			expected: func() *envoyclusterv3.Cluster {
+				msg, _ := utils.MessageToAny(&roundrobinv3.RoundRobin{
+					LocalityLbConfig: &envoycommonv3.LocalityLbConfig{
+						LocalityConfigSpecifier: &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig_{
+							ZoneAwareLbConfig: &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig{
+								RoutingEnabled: &typev3.Percent{Value: 100},
+								MinClusterSize: &wrapperspb.UInt64Value{Value: 6},
+							},
+						},
+					},
+				})
+				return &envoyclusterv3.Cluster{
+					Name: "test",
+					LoadBalancingPolicy: &envoyclusterv3.LoadBalancingPolicy{
+						Policies: []*envoyclusterv3.LoadBalancingPolicy_Policy{{
+							TypedExtensionConfig: &envoycorev3.TypedExtensionConfig{
+								Name:        "envoy.load_balancing_policies.round_robin",
+								TypedConfig: msg,
+							},
+						}},
+					},
+					CommonLbConfig: &envoyclusterv3.Cluster_CommonLbConfig{},
+				}
+			}(),
+		},
+		{
+			name: "ZoneAware: PreferLocal with custom values",
+			config: &kgateway.LoadBalancer{
+				LeastRequest: &kgateway.LoadBalancerLeastRequestConfig{
+					ChoiceCount: 5,
+				},
+				ZoneAware: &kgateway.ZoneAwareLoadBalancer{
+					PreferLocal: &kgateway.ZoneAwarePreferLocal{
+						MinEndpointsThreshold: new(uint64(10)),
+						FailTrafficOnPanic:    new(true),
+					},
+				},
+			},
+			expected: func() *envoyclusterv3.Cluster {
+				msg, _ := utils.MessageToAny(&leastrequestv3.LeastRequest{
+					ChoiceCount: &wrapperspb.UInt32Value{Value: 5},
+					LocalityLbConfig: &envoycommonv3.LocalityLbConfig{
+						LocalityConfigSpecifier: &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig_{
+							ZoneAwareLbConfig: &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig{
+								RoutingEnabled:     &typev3.Percent{Value: 100},
+								MinClusterSize:     &wrapperspb.UInt64Value{Value: 10},
+								FailTrafficOnPanic: true,
+							},
+						},
+					},
+				})
+				return &envoyclusterv3.Cluster{
+					Name: "test",
+					LoadBalancingPolicy: &envoyclusterv3.LoadBalancingPolicy{
+						Policies: []*envoyclusterv3.LoadBalancingPolicy_Policy{{
+							TypedExtensionConfig: &envoycorev3.TypedExtensionConfig{
+								Name:        "envoy.load_balancing_policies.least_request",
+								TypedConfig: msg,
+							},
+						}},
+					},
+					CommonLbConfig: &envoyclusterv3.Cluster_CommonLbConfig{},
+				}
+			}(),
+		},
+		{
+			name: "ZoneAware: PreferLocal force configures typed ForceLocalZone",
+			config: &kgateway.LoadBalancer{
+				Random: &kgateway.LoadBalancerRandomConfig{},
+				ZoneAware: &kgateway.ZoneAwareLoadBalancer{
+					PreferLocal: &kgateway.ZoneAwarePreferLocal{
+						Force: &kgateway.ZoneAwareForce{
+							MinEndpointsInZoneThreshold: new(uint32(3)),
+						},
+					},
+				},
+			},
+			expected: func() *envoyclusterv3.Cluster {
+				msg, _ := utils.MessageToAny(&randomv3.Random{
+					LocalityLbConfig: &envoycommonv3.LocalityLbConfig{
+						LocalityConfigSpecifier: &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig_{
+							ZoneAwareLbConfig: &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig{
+								RoutingEnabled: &typev3.Percent{Value: 100},
+								MinClusterSize: &wrapperspb.UInt64Value{Value: 6},
+								ForceLocalZone: &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig_ForceLocalZone{
+									MinSize: &wrapperspb.UInt32Value{Value: 3},
+								},
+							},
+						},
+					},
+				})
+				return &envoyclusterv3.Cluster{
+					Name: "test",
+					LoadBalancingPolicy: &envoyclusterv3.LoadBalancingPolicy{
+						Policies: []*envoyclusterv3.LoadBalancingPolicy_Policy{{
+							TypedExtensionConfig: &envoycorev3.TypedExtensionConfig{
+								Name:        "envoy.load_balancing_policies.random",
+								TypedConfig: msg,
+							},
+						}},
+					},
+					CommonLbConfig: &envoyclusterv3.Cluster_CommonLbConfig{},
+				}
+			}(),
+		},
 	}
 
 	for _, test := range tests {
@@ -778,4 +891,130 @@ func TestConstructHashPolicy(t *testing.T) {
 			assert.Equal(t, tt.expected, actual)
 		})
 	}
+}
+
+func TestTranslateZoneAwareForceIR(t *testing.T) {
+	t.Run("prefer local force mode stores threshold in IR", func(t *testing.T) {
+		config := &kgateway.LoadBalancer{
+			RoundRobin: &kgateway.LoadBalancerRoundRobinConfig{},
+			ZoneAware: &kgateway.ZoneAwareLoadBalancer{
+				PreferLocal: &kgateway.ZoneAwarePreferLocal{
+					Force: &kgateway.ZoneAwareForce{
+						MinEndpointsInZoneThreshold: new(uint32(5)),
+					},
+				},
+			},
+		}
+		ir, err := translateLoadBalancerConfig(config, "test-policy", "default")
+		assert.NoError(t, err)
+		assert.True(t, ir.hasZoneAware)
+		assert.NotNil(t, ir.zoneAwareForce)
+		assert.Equal(t, uint32(5), ir.zoneAwareForce.minEndpointsInZoneThreshold)
+	})
+
+	t.Run("prefer local force mode default threshold is 1", func(t *testing.T) {
+		config := &kgateway.LoadBalancer{
+			RoundRobin: &kgateway.LoadBalancerRoundRobinConfig{},
+			ZoneAware: &kgateway.ZoneAwareLoadBalancer{
+				PreferLocal: &kgateway.ZoneAwarePreferLocal{
+					Force: &kgateway.ZoneAwareForce{},
+				},
+			},
+		}
+		ir, err := translateLoadBalancerConfig(config, "test-policy", "default")
+		assert.NoError(t, err)
+		assert.True(t, ir.hasZoneAware)
+		assert.NotNil(t, ir.zoneAwareForce)
+		assert.Equal(t, uint32(1), ir.zoneAwareForce.minEndpointsInZoneThreshold)
+	})
+
+	t.Run("prefer local mode does not set zoneAwareForce", func(t *testing.T) {
+		config := &kgateway.LoadBalancer{
+			RoundRobin: &kgateway.LoadBalancerRoundRobinConfig{},
+			ZoneAware: &kgateway.ZoneAwareLoadBalancer{
+				PreferLocal: &kgateway.ZoneAwarePreferLocal{},
+			},
+		}
+		ir, err := translateLoadBalancerConfig(config, "test-policy", "default")
+		assert.NoError(t, err)
+		assert.True(t, ir.hasZoneAware)
+		assert.Nil(t, ir.zoneAwareForce)
+	})
+}
+
+func TestZoneAwareForceIREquals(t *testing.T) {
+	tests := []struct {
+		name     string
+		a        *ZoneAwareForceIR
+		b        *ZoneAwareForceIR
+		expected bool
+	}{
+		{
+			name:     "both nil",
+			a:        nil,
+			b:        nil,
+			expected: true,
+		},
+		{
+			name:     "a nil b non-nil",
+			a:        nil,
+			b:        &ZoneAwareForceIR{minEndpointsInZoneThreshold: 1},
+			expected: false,
+		},
+		{
+			name:     "equal values",
+			a:        &ZoneAwareForceIR{minEndpointsInZoneThreshold: 5},
+			b:        &ZoneAwareForceIR{minEndpointsInZoneThreshold: 5},
+			expected: true,
+		},
+		{
+			name:     "different values",
+			a:        &ZoneAwareForceIR{minEndpointsInZoneThreshold: 3},
+			b:        &ZoneAwareForceIR{minEndpointsInZoneThreshold: 7},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.a.Equals(tt.b))
+		})
+	}
+}
+
+func TestLoadBalancerConfigIREqualsWithZoneAware(t *testing.T) {
+	t.Run("both with same zoneAwareForce are equal", func(t *testing.T) {
+		a := &LoadBalancerConfigIR{
+			commonLbConfig: &envoyclusterv3.Cluster_CommonLbConfig{},
+			zoneAwareForce: &ZoneAwareForceIR{minEndpointsInZoneThreshold: 3},
+		}
+		b := &LoadBalancerConfigIR{
+			commonLbConfig: &envoyclusterv3.Cluster_CommonLbConfig{},
+			zoneAwareForce: &ZoneAwareForceIR{minEndpointsInZoneThreshold: 3},
+		}
+		assert.True(t, a.Equals(b))
+	})
+
+	t.Run("different zoneAwareForce are not equal", func(t *testing.T) {
+		a := &LoadBalancerConfigIR{
+			commonLbConfig: &envoyclusterv3.Cluster_CommonLbConfig{},
+			zoneAwareForce: &ZoneAwareForceIR{minEndpointsInZoneThreshold: 3},
+		}
+		b := &LoadBalancerConfigIR{
+			commonLbConfig: &envoyclusterv3.Cluster_CommonLbConfig{},
+			zoneAwareForce: nil,
+		}
+		assert.False(t, a.Equals(b))
+	})
+
+	t.Run("different zoneAware presence is not equal", func(t *testing.T) {
+		a := &LoadBalancerConfigIR{
+			commonLbConfig: &envoyclusterv3.Cluster_CommonLbConfig{},
+			hasZoneAware:   true,
+		}
+		b := &LoadBalancerConfigIR{
+			commonLbConfig: &envoyclusterv3.Cluster_CommonLbConfig{},
+		}
+		assert.False(t, a.Equals(b))
+	})
 }

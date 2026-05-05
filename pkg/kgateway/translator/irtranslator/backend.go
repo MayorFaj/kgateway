@@ -40,6 +40,7 @@ const (
 type BackendTranslator struct {
 	ContributedBackends map[schema.GroupKind]ir.BackendInit
 	ContributedPolicies map[schema.GroupKind]sdk.PolicyPlugin
+	EndpointPlugins     []sdk.EndpointPlugin
 	CommonCols          *collections.CommonCollections
 	Validator           validator.Validator
 	Mode                apisettings.ValidationMode
@@ -114,6 +115,7 @@ func (t *BackendTranslator) runPolicies(
 		endpointInputs = &endpoints.EndpointsInputs{
 			EndpointsForBackend: *inlineEps,
 		}
+		endpointInputs.EndpointsForBackend.AttachedPolicies = backend.AttachedPolicies
 	}
 
 	var errs []error
@@ -125,10 +127,6 @@ func (t *BackendTranslator) runPolicies(
 		// like.
 		if policyPlugin.PerClientProcessBackend != nil {
 			policyPlugin.PerClientProcessBackend(kctx, ctx, ucc, *backend, out)
-		}
-		// run endpoint plugins if we have endpoints to process
-		if endpointInputs != nil && policyPlugin.PerClientProcessEndpoints != nil {
-			policyPlugin.PerClientProcessEndpoints(kctx, ctx, ucc, endpointInputs)
 		}
 		// if the policy plugin has no ProcessBackend function, skip it
 		if policyPlugin.ProcessBackend == nil {
@@ -150,6 +148,12 @@ func (t *BackendTranslator) runPolicies(
 		}
 	}
 
+	if endpointInputs != nil {
+		for _, processEndpoints := range t.orderedEndpointPlugins() {
+			processEndpoints(kctx, ctx, ucc, endpointInputs)
+		}
+	}
+
 	// for clusters that want a CLA _and_ initialized with inlineEps, build the CLA.
 	// never overwrite the CLA that was already initialized (potentially within a plugin).
 	if out.GetLoadAssignment() == nil && endpointInputs != nil && clusterSupportsInlineCLA(out) {
@@ -161,6 +165,13 @@ func (t *BackendTranslator) runPolicies(
 	}
 
 	return errors.Join(errs...)
+}
+
+func (t *BackendTranslator) orderedEndpointPlugins() []sdk.EndpointPlugin {
+	if t.EndpointPlugins != nil {
+		return t.EndpointPlugins
+	}
+	return OrderedEndpointPlugins(t.ContributedPolicies)
 }
 
 // validateClusterConfig validates an individual cluster configuration using Envoy's

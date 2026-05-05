@@ -1,21 +1,48 @@
 package downward
 
 import (
+	"bytes"
 	"io"
 
 	envoybootstrapv3 "github.com/envoyproxy/go-control-plane/envoy/config/bootstrap/v3"
+	envoycorev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	// register all top level types used in the bootstrap config
-	_ "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
+	// Register Envoy types used in bootstrap typed_config attributes before unmarshalling.
+	_ "github.com/kgateway-dev/kgateway/v2/pkg/utils/filter_types"
+	"github.com/kgateway-dev/kgateway/v2/pkg/utils/protoutils"
 )
 
 func Transform(in io.Reader, out io.Writer) error {
-	return NewInterpolator().InterpolateIO(in, out, RetrieveDownwardAPI())
+	api := RetrieveDownwardAPI()
+	interpolator := NewInterpolator()
+
+	var interpolated bytes.Buffer
+	if err := interpolator.InterpolateIO(in, &interpolated, api); err != nil {
+		return err
+	}
+
+	var bootstrap envoybootstrapv3.Bootstrap
+	if err := protoutils.UnmarshalYaml(interpolated.Bytes(), &bootstrap); err != nil {
+		return err
+	}
+	if err := TransformConfigTemplatesWithApi(&bootstrap, api); err != nil {
+		return err
+	}
+
+	bootstrapBytes, err := protoutils.MarshalBytes(&bootstrap)
+	if err != nil {
+		return err
+	}
+	_, err = out.Write(bootstrapBytes)
+	return err
 }
 
 func TransformConfigTemplatesWithApi(bootstrap *envoybootstrapv3.Bootstrap, api DownwardAPI) error {
 	interpolator := NewInterpolator()
+	if bootstrap.Node == nil {
+		bootstrap.Node = &envoycorev3.Node{}
+	}
 
 	var err error
 
@@ -33,6 +60,18 @@ func TransformConfigTemplatesWithApi(bootstrap *envoybootstrapv3.Bootstrap, api 
 
 	if err := transformStruct(interpolate, bootstrap.GetNode().GetMetadata()); err != nil {
 		return err
+	}
+
+	// Set node locality from environment variables if available.
+	// These are typically set via KGATEWAY_NODE_ZONE, KGATEWAY_NODE_REGION, KGATEWAY_NODE_SUBZONE
+	// environment variables on the Envoy proxy pod, populated from the node's topology labels.
+	// This is required for Envoy's zone-aware routing (ZoneAwareLbConfig) to function.
+	if zone, region, subzone := api.NodeZone(), api.NodeRegion(), api.NodeSubzone(); zone != "" || region != "" || subzone != "" {
+		bootstrap.Node.Locality = &envoycorev3.Locality{
+			Region:  region,
+			Zone:    zone,
+			SubZone: subzone,
+		}
 	}
 
 	// Interpolate Static Resources
