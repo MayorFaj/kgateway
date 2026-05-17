@@ -619,7 +619,7 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 			}(),
 		},
 		{
-			name: "ZoneAware: PreferLocal force configures typed ForceLocalZone",
+			name: "ZoneAware: PreferLocal force keeps typed zone-aware config",
 			config: &kgateway.LoadBalancer{
 				Random: &kgateway.LoadBalancerRandomConfig{},
 				ZoneAware: &kgateway.ZoneAwareLoadBalancer{
@@ -637,9 +637,6 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 							ZoneAwareLbConfig: &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig{
 								RoutingEnabled: &typev3.Percent{Value: 100},
 								MinClusterSize: &wrapperspb.UInt64Value{Value: 6},
-								ForceLocalZone: &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig_ForceLocalZone{
-									MinSize: &wrapperspb.UInt32Value{Value: 3},
-								},
 							},
 						},
 					},

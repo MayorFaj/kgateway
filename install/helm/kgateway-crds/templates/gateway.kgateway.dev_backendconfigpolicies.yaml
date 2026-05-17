@@ -707,10 +707,10 @@ spec:
                             type: boolean
                           force:
                             description: |-
-                              Force enables forced zone-local routing. kgateway emits Envoy forceLocalZone
-                              configuration and prioritizes same-zone endpoints while the local endpoint
-                              threshold is met. If there are not enough local endpoints, traffic falls
-                              back to standard zone-aware routing behavior.
+                              Force enables forced zone-local routing. kgateway prioritizes same-zone
+                              endpoints while the local endpoint threshold is met. If there are not
+                              enough local endpoints, traffic falls back to standard zone-aware routing
+                              behavior.
                             properties:
                               minEndpointsInZoneThreshold:
                                 default: 1

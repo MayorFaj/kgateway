@@ -566,10 +566,10 @@ type ZoneAwareLoadBalancer struct {
 // Envoy will prefer sending traffic to endpoints in the same zone as the proxy,
 // while still maintaining rough request balance across all upstream hosts.
 type ZoneAwarePreferLocal struct {
-	// Force enables forced zone-local routing. kgateway emits Envoy forceLocalZone
-	// configuration and prioritizes same-zone endpoints while the local endpoint
-	// threshold is met. If there are not enough local endpoints, traffic falls
-	// back to standard zone-aware routing behavior.
+	// Force enables forced zone-local routing. kgateway prioritizes same-zone
+	// endpoints while the local endpoint threshold is met. If there are not
+	// enough local endpoints, traffic falls back to standard zone-aware routing
+	// behavior.
 	// +optional
 	Force *ZoneAwareForce `json:"force,omitempty"`
 
@@ -592,8 +592,7 @@ type ZoneAwarePreferLocal struct {
 	FailTrafficOnPanic *bool `json:"failTrafficOnPanic,omitempty"`
 }
 
-// ZoneAwareForce configures forced zone-local routing.
-// kgateway emits Envoy's native forceLocalZone setting and prioritizes same-zone
+// ZoneAwareForce configures forced zone-local routing by prioritizing same-zone
 // endpoints while the configured local endpoint threshold is met.
 type ZoneAwareForce struct {
 	// MinEndpointsInZoneThreshold is the minimum number of endpoints that must

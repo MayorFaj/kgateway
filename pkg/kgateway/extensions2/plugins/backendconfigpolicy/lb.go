@@ -143,12 +143,6 @@ func buildTypedZoneAwareLbConfig(zoneAware *kgateway.ZoneAwareLoadBalancer) *env
 	if preferLocal.FailTrafficOnPanic != nil {
 		zoneAwareConfig.FailTrafficOnPanic = *preferLocal.FailTrafficOnPanic
 	}
-	if force := zoneAwareForceIR(zoneAware); force != nil {
-		zoneAwareConfig.ForceLocalZone = &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig_ForceLocalZone{
-			MinSize: &wrapperspb.UInt32Value{Value: force.minEndpointsInZoneThreshold},
-		}
-	}
-
 	return &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig_{
 		ZoneAwareLbConfig: zoneAwareConfig,
 	}
