@@ -98,10 +98,6 @@ func BuildServiceBackendObjectIR(svc *corev1.Service, svcPort int32, svcProtocol
 	} else if val, ok := svc.Annotations[annotation.NetworkingTrafficDistribution.Name]; ok {
 		// We support specifying the Istio traffic distribution annotation in older k8s versions
 		backend.TrafficDistribution = wellknown.ParseTrafficDistribution(val)
-	} else if svc.Annotations[corev1.AnnotationTopologyMode] == "Auto" {
-		// Support Kubernetes Topology Aware Routing via the service.kubernetes.io/topology-mode annotation.
-		// When set to "Auto", prefer routing to endpoints in the same zone.
-		backend.TrafficDistribution = wellknown.TrafficDistributionPreferSameZone
 	}
 
 	// Parse common annotations

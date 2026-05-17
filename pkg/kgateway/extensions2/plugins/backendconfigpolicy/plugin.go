@@ -508,7 +508,7 @@ func (p *backendConfigEndpointPlugin) processEndpoints(
 		return 0
 	}
 	// BackendConfigPolicy zoneAware settings take precedence over Service trafficDistribution
-	// or topology-mode settings for the same backend.
+	// settings for the same backend.
 	out.EndpointsForBackend.TrafficDistribution = wellknown.TrafficDistributionAny
 
 	force := bcpIR.loadBalancerConfig.zoneAwareForce
