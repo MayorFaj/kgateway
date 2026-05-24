@@ -77,6 +77,18 @@ func TransformConfigTemplatesWithApi(bootstrap *envoybootstrapv3.Bootstrap, api 
 	// Interpolate Static Resources
 	for _, cluster := range bootstrap.GetStaticResources().GetClusters() {
 		for _, endpoint := range cluster.GetLoadAssignment().GetEndpoints() {
+			locality := endpoint.GetLocality()
+			if locality != nil {
+				if err = interpolate(&locality.Region); err != nil {
+					return err
+				}
+				if err = interpolate(&locality.Zone); err != nil {
+					return err
+				}
+				if err = interpolate(&locality.SubZone); err != nil {
+					return err
+				}
+			}
 			for _, lbEndpoint := range endpoint.GetLbEndpoints() {
 				socketAddress := lbEndpoint.GetEndpoint().GetAddress().GetSocketAddress()
 				if socketAddress != nil {

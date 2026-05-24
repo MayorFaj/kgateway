@@ -41,7 +41,7 @@ spec:
     zoneAware:
       preferLocal:
         minEndpointsThreshold: 3
-        failTrafficOnPanic: true
+        routingEnabled: 75
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

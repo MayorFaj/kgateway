@@ -5863,9 +5863,9 @@ func (in *ZoneAwarePreferLocal) DeepCopyInto(out *ZoneAwarePreferLocal) {
 		*out = new(uint64)
 		**out = **in
 	}
-	if in.FailTrafficOnPanic != nil {
-		in, out := &in.FailTrafficOnPanic, &out.FailTrafficOnPanic
-		*out = new(bool)
+	if in.RoutingEnabled != nil {
+		in, out := &in.RoutingEnabled, &out.RoutingEnabled
+		*out = new(int32)
 		**out = **in
 	}
 }

@@ -90,30 +90,56 @@ var _ = Describe("Transform", func() {
 		})
 
 		It("should set node locality through the public IO transform", func() {
-			Expect(os.Setenv("KGATEWAY_NODE_REGION", "us-east1")).To(Succeed())
-			DeferCleanup(os.Unsetenv, "KGATEWAY_NODE_REGION")
-			Expect(os.Setenv("KGATEWAY_NODE_ZONE", "us-east1-b")).To(Succeed())
-			DeferCleanup(os.Unsetenv, "KGATEWAY_NODE_ZONE")
+			setLocalityEnv("us-east1", "us-east1-b", "")
 
-			input := strings.NewReader(`
+			transformed := transformBootstrapYaml(`
 node:
   id: static
   cluster: static
 `)
-			var output bytes.Buffer
-
-			err := Transform(input, &output)
-			Expect(err).NotTo(HaveOccurred())
-
-			var transformed envoybootstrapv3.Bootstrap
-			Expect(protoutils.UnmarshalBytes(output.Bytes(), &transformed)).To(Succeed())
 			Expect(transformed.Node.Locality).NotTo(BeNil())
 			Expect(transformed.Node.Locality.Region).To(Equal("us-east1"))
 			Expect(transformed.Node.Locality.Zone).To(Equal("us-east1-b"))
 		})
 
+		It("should preserve local cluster name and set static endpoint locality through the public IO transform", func() {
+			setLocalityEnv("us-east1", "us-east1-b", "rack-a")
+
+			transformed := transformBootstrapYaml(`
+node:
+  id: static
+  cluster: local-proxy
+cluster_manager:
+  local_cluster_name: local-proxy
+static_resources:
+  clusters:
+  - name: local-proxy
+    connect_timeout: 0.250s
+    type: STATIC
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: local-proxy
+      endpoints:
+      - locality:
+          region: "{{.NodeRegion}}"
+          zone: "{{.NodeZone}}"
+          sub_zone: "{{.NodeSubzone}}"
+        lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: 127.0.0.1
+                port_value: 19000
+`)
+			Expect(transformed.GetClusterManager().GetLocalClusterName()).To(Equal("local-proxy"))
+			locality := transformed.GetStaticResources().GetClusters()[0].GetLoadAssignment().GetEndpoints()[0].GetLocality()
+			Expect(locality.GetRegion()).To(Equal("us-east1"))
+			Expect(locality.GetZone()).To(Equal("us-east1-b"))
+			Expect(locality.GetSubZone()).To(Equal("rack-a"))
+		})
+
 		It("should preserve typed configs through the public IO transform", func() {
-			input := strings.NewReader(
+			transformed := transformBootstrapYaml(
 				"static_resources:\n" +
 					"  listeners:\n" +
 					"  - name: listener-0\n" +
@@ -134,23 +160,24 @@ node:
 					"            typed_config:\n" +
 					"              '@type': type.googleapis.com/envoy.extensions.filters.http.router.v3.Router\n",
 			)
-			var output bytes.Buffer
-
-			err := Transform(input, &output)
-			Expect(err).NotTo(HaveOccurred())
-
-			var transformed envoybootstrapv3.Bootstrap
-			Expect(protoutils.UnmarshalBytes(output.Bytes(), &transformed)).To(Succeed())
 			filters := transformed.GetStaticResources().GetListeners()[0].GetFilterChains()[0].GetFilters()
 			Expect(filters).To(HaveLen(1))
 			Expect(filters[0].GetTypedConfig().GetTypeUrl()).To(Equal("type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager"))
 		})
 
 		It("should transform static resources", func() {
+			api.nodeRegion = "us-east1"
+			api.nodeZone = "us-east1-b"
+			api.nodeSubzone = "rack-a"
 			bootstrapConfig.StaticResources = &envoybootstrapv3.Bootstrap_StaticResources{
 				Clusters: []*envoyclusterv3.Cluster{{
 					LoadAssignment: &envoyendpointv3.ClusterLoadAssignment{
 						Endpoints: []*envoyendpointv3.LocalityLbEndpoints{{
+							Locality: &envoycorev3.Locality{
+								Region:  "{{.NodeRegion}}",
+								Zone:    "{{.NodeZone}}",
+								SubZone: "{{.NodeSubzone}}",
+							},
 							LbEndpoints: []*envoyendpointv3.LbEndpoint{{
 								HostIdentifier: &envoyendpointv3.LbEndpoint_Endpoint{
 									Endpoint: &envoyendpointv3.Endpoint{
@@ -174,6 +201,39 @@ node:
 
 			expectedAddress := bootstrapConfig.GetStaticResources().GetClusters()[0].GetLoadAssignment().GetEndpoints()[0].GetLbEndpoints()[0].GetEndpoint().GetAddress().GetSocketAddress().GetAddress()
 			Expect(expectedAddress).To(Equal("5.5.5.5"))
+			locality := bootstrapConfig.GetStaticResources().GetClusters()[0].GetLoadAssignment().GetEndpoints()[0].GetLocality()
+			Expect(locality).To(Equal(&envoycorev3.Locality{
+				Region:  "us-east1",
+				Zone:    "us-east1-b",
+				SubZone: "rack-a",
+			}))
 		})
 	})
 })
+
+func setLocalityEnv(region, zone, subzone string) {
+	GinkgoHelper()
+	setEnvIfNotEmpty("KGATEWAY_NODE_REGION", region)
+	setEnvIfNotEmpty("KGATEWAY_NODE_ZONE", zone)
+	setEnvIfNotEmpty("KGATEWAY_NODE_SUBZONE", subzone)
+}
+
+func setEnvIfNotEmpty(name, value string) {
+	GinkgoHelper()
+	if value == "" {
+		return
+	}
+	Expect(os.Setenv(name, value)).To(Succeed())
+	DeferCleanup(os.Unsetenv, name)
+}
+
+func transformBootstrapYaml(input string) *envoybootstrapv3.Bootstrap {
+	GinkgoHelper()
+
+	var output bytes.Buffer
+	Expect(Transform(strings.NewReader(input), &output)).To(Succeed())
+
+	transformed := &envoybootstrapv3.Bootstrap{}
+	Expect(protoutils.UnmarshalBytes(output.Bytes(), transformed)).To(Succeed())
+	return transformed
+}

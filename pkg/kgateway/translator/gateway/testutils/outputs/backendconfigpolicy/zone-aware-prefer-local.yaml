@@ -14,10 +14,9 @@ Clusters:
           '@type': type.googleapis.com/envoy.extensions.load_balancing_policies.round_robin.v3.RoundRobin
           localityLbConfig:
             zoneAwareLbConfig:
-              failTrafficOnPanic: true
               minClusterSize: "3"
               routingEnabled:
-                value: 100
+                value: 75
   metadata: {}
   name: kube_default_httpbin_8080
   type: EDS

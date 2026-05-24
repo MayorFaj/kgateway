@@ -558,8 +558,8 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 					LocalityLbConfig: &envoycommonv3.LocalityLbConfig{
 						LocalityConfigSpecifier: &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig_{
 							ZoneAwareLbConfig: &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig{
-								RoutingEnabled: &typev3.Percent{Value: 100},
-								MinClusterSize: &wrapperspb.UInt64Value{Value: 6},
+								RoutingEnabled: &typev3.Percent{Value: defaultZoneAwareRoutingEnabledPercent},
+								MinClusterSize: &wrapperspb.UInt64Value{Value: defaultZoneAwareMinClusterSize},
 							},
 						},
 					},
@@ -587,7 +587,7 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 				ZoneAware: &kgateway.ZoneAwareLoadBalancer{
 					PreferLocal: &kgateway.ZoneAwarePreferLocal{
 						MinEndpointsThreshold: new(uint64(10)),
-						FailTrafficOnPanic:    new(true),
+						RoutingEnabled:        new(int32(75)),
 					},
 				},
 			},
@@ -597,9 +597,8 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 					LocalityLbConfig: &envoycommonv3.LocalityLbConfig{
 						LocalityConfigSpecifier: &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig_{
 							ZoneAwareLbConfig: &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig{
-								RoutingEnabled:     &typev3.Percent{Value: 100},
-								MinClusterSize:     &wrapperspb.UInt64Value{Value: 10},
-								FailTrafficOnPanic: true,
+								RoutingEnabled: &typev3.Percent{Value: 75},
+								MinClusterSize: &wrapperspb.UInt64Value{Value: 10},
 							},
 						},
 					},
@@ -619,7 +618,7 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 			}(),
 		},
 		{
-			name: "ZoneAware: PreferLocal force keeps typed zone-aware config",
+			name: "ZoneAware: PreferLocal force emits native Envoy forceLocalZone",
 			config: &kgateway.LoadBalancer{
 				Random: &kgateway.LoadBalancerRandomConfig{},
 				ZoneAware: &kgateway.ZoneAwareLoadBalancer{
@@ -635,8 +634,11 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 					LocalityLbConfig: &envoycommonv3.LocalityLbConfig{
 						LocalityConfigSpecifier: &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig_{
 							ZoneAwareLbConfig: &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig{
-								RoutingEnabled: &typev3.Percent{Value: 100},
-								MinClusterSize: &wrapperspb.UInt64Value{Value: 6},
+								RoutingEnabled: &typev3.Percent{Value: defaultZoneAwareRoutingEnabledPercent},
+								MinClusterSize: &wrapperspb.UInt64Value{Value: defaultZoneAwareMinClusterSize},
+								ForceLocalZone: &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig_ForceLocalZone{
+									MinSize: &wrapperspb.UInt32Value{Value: 3},
+								},
 							},
 						},
 					},

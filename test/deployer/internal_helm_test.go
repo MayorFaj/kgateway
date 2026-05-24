@@ -147,6 +147,17 @@ wIDAQABMA0GCSqGSIb3DQEBCwUAA4IBAQBtestcertdata
 		{
 			Name:      "basic gateway with default gatewayclass and no gwparams",
 			InputFile: "base-gateway",
+			Validate: func(t *testing.T, outputYaml string) {
+				t.Helper()
+				assert.Contains(t, outputYaml, "cluster_manager:",
+					"envoy bootstrap should configure cluster_manager")
+				assert.Contains(t, outputYaml, "local_cluster_name:",
+					"envoy bootstrap should set local_cluster_name for zone-aware routing")
+				assert.Contains(t, outputYaml, "region: \"{{.NodeRegion}}\"",
+					"local cluster endpoint locality should be populated by envoyinit")
+				assert.Contains(t, outputYaml, "zone: \"{{.NodeZone}}\"",
+					"local cluster endpoint locality should be populated by envoyinit")
+			},
 		},
 		{
 			// Pinning the envoy image by digest without specifying a tag must

@@ -566,10 +566,9 @@ type ZoneAwareLoadBalancer struct {
 // Envoy will prefer sending traffic to endpoints in the same zone as the proxy,
 // while still maintaining rough request balance across all upstream hosts.
 type ZoneAwarePreferLocal struct {
-	// Force enables forced zone-local routing. kgateway prioritizes same-zone
-	// endpoints while the local endpoint threshold is met. If there are not
-	// enough local endpoints, traffic falls back to standard zone-aware routing
-	// behavior.
+	// Force enables Envoy forced zone-local routing. Envoy routes to same-zone
+	// endpoints while the local endpoint threshold is met. If there are not enough
+	// local endpoints, traffic falls back to standard zone-aware routing behavior.
 	// +optional
 	Force *ZoneAwareForce `json:"force,omitempty"`
 
@@ -583,17 +582,17 @@ type ZoneAwarePreferLocal struct {
 	// +kubebuilder:default=6
 	MinEndpointsThreshold *uint64 `json:"minEndpointsThreshold,omitempty"`
 
-	// FailTrafficOnPanic controls whether to fail traffic (return 503) when not enough
-	// healthy endpoints exist in the local zone (panic mode). If false, traffic will
-	// be distributed to all endpoints regardless of health status during panic.
-	// Defaults to false.
+	// RoutingEnabled is the percentage of requests for which Envoy applies
+	// zone-aware routing once the minEndpointsThreshold is met.
+	// Defaults to 100.
 	// +optional
-	// +kubebuilder:default=false
-	FailTrafficOnPanic *bool `json:"failTrafficOnPanic,omitempty"`
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:default=100
+	RoutingEnabled *int32 `json:"routingEnabled,omitempty"`
 }
 
-// ZoneAwareForce configures forced zone-local routing by prioritizing same-zone
-// endpoints while the configured local endpoint threshold is met.
+// ZoneAwareForce configures Envoy forceLocalZone behavior.
 type ZoneAwareForce struct {
 	// MinEndpointsInZoneThreshold is the minimum number of endpoints that must
 	// exist in the local zone for forced zone-local routing to be active.

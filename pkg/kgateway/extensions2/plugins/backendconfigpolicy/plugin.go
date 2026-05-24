@@ -19,7 +19,6 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 	"istio.io/istio/pkg/kube/kclient"
 	"istio.io/istio/pkg/kube/krt"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1/kgateway"
@@ -495,8 +494,6 @@ type backendConfigEndpointPlugin struct{}
 
 // processEndpoints implements sdk.EndpointPlugin for zone-aware routing.
 // BackendConfigPolicy takes precedence over Kubernetes Service traffic distribution.
-// When zoneAware.preferLocal.force is configured, same-zone endpoints are assigned
-// priority 0 and all others priority 1 after any other endpoint plugin has run.
 func (p *backendConfigEndpointPlugin) processEndpoints(
 	kctx krt.HandlerContext,
 	ctx context.Context,
@@ -511,21 +508,9 @@ func (p *backendConfigEndpointPlugin) processEndpoints(
 	// settings for the same backend.
 	out.EndpointsForBackend.TrafficDistribution = wellknown.TrafficDistributionAny
 
-	force := bcpIR.loadBalancerConfig.zoneAwareForce
-	forceApplied := false
-	if force != nil {
-		out.PriorityInfo = nil
-		forceApplied = applyZoneAwareForceEndpointPriority(ucc, out, force)
-	}
-
 	hasher := fnv.New64()
 	hasher.Write([]byte(ir.PolicyRefString(pol.PolicyRef)))
 	hasher.Write(fmt.Appendf(nil, "%v", pol.Generation))
-	if force != nil {
-		hasher.Write(fmt.Appendf(nil, "%v", force.minEndpointsInZoneThreshold))
-		hasher.Write(fmt.Appendf(nil, "%v", forceApplied))
-		hasher.Write([]byte(ucc.Locality.Zone))
-	}
 	return hasher.Sum64()
 }
 
@@ -539,41 +524,4 @@ func selectZoneAwareBackendConfigPolicy(attachedPolicies ir.AttachedPolicies) (i
 		return pol, bcpIR
 	}
 	return ir.PolicyAtt{}, nil
-}
-
-func applyZoneAwareForceEndpointPriority(
-	ucc ir.UniqlyConnectedClient,
-	out *endpoints.EndpointsInputs,
-	force *ZoneAwareForceIR,
-) bool {
-	if force == nil || ucc.Locality.Zone == "" {
-		return false
-	}
-
-	localCount := uint32(0)
-	thresholdMet := false
-	for locality, eps := range out.EndpointsForBackend.LbEps {
-		if locality.Zone == ucc.Locality.Zone {
-			for range eps {
-				localCount++
-				if localCount >= force.minEndpointsInZoneThreshold {
-					thresholdMet = true
-					break
-				}
-			}
-			if thresholdMet {
-				break
-			}
-		}
-	}
-	if !thresholdMet {
-		return false
-	}
-
-	out.PriorityInfo = &endpoints.PriorityInfo{
-		FailoverPriority: endpoints.NewPriorities([]string{
-			fmt.Sprintf("%s=%s", corev1.LabelTopologyZone, ucc.Locality.Zone),
-		}),
-	}
-	return true
 }

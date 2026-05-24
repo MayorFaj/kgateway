@@ -29,6 +29,10 @@ const (
 	cookieAttributeSameSite = "SameSite"
 	cookieValueTrue         = "true"
 	dnsClusterExtensionName = "envoy.clusters.dns"
+
+	defaultZoneAwareForceLocalZoneMinSize uint32  = 1
+	defaultZoneAwareMinClusterSize        uint64  = 6
+	defaultZoneAwareRoutingEnabledPercent float64 = 100
 )
 
 type LoadBalancerConfigIR struct {
@@ -40,8 +44,6 @@ type LoadBalancerConfigIR struct {
 }
 
 // ZoneAwareForceIR stores configuration for forced zone-local routing.
-// This is used during per-client endpoint processing to resolve precedence
-// with other endpoint-locality mechanisms.
 type ZoneAwareForceIR struct {
 	minEndpointsInZoneThreshold uint32
 }
@@ -99,7 +101,7 @@ func zoneAwareForceIR(zoneAware *kgateway.ZoneAwareLoadBalancer) *ZoneAwareForce
 		return nil
 	}
 
-	threshold := uint32(1) // Envoy default.
+	threshold := defaultZoneAwareForceLocalZoneMinSize
 	if zoneAware.PreferLocal.Force.MinEndpointsInZoneThreshold != nil {
 		threshold = *zoneAware.PreferLocal.Force.MinEndpointsInZoneThreshold
 	}
@@ -131,17 +133,23 @@ func buildTypedZoneAwareLbConfig(zoneAware *kgateway.ZoneAwareLoadBalancer) *env
 	}
 
 	preferLocal := zoneAware.PreferLocal
-	minClusterSize := uint64(6) // Envoy default.
+	minClusterSize := defaultZoneAwareMinClusterSize
 	if preferLocal.MinEndpointsThreshold != nil {
 		minClusterSize = *preferLocal.MinEndpointsThreshold
 	}
+	routingEnabled := defaultZoneAwareRoutingEnabledPercent
+	if preferLocal.RoutingEnabled != nil {
+		routingEnabled = float64(*preferLocal.RoutingEnabled)
+	}
 
 	zoneAwareConfig := &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig{
-		RoutingEnabled: &typev3.Percent{Value: 100},
+		RoutingEnabled: &typev3.Percent{Value: routingEnabled},
 		MinClusterSize: &wrapperspb.UInt64Value{Value: minClusterSize},
 	}
-	if preferLocal.FailTrafficOnPanic != nil {
-		zoneAwareConfig.FailTrafficOnPanic = *preferLocal.FailTrafficOnPanic
+	if force := zoneAwareForceIR(zoneAware); force != nil {
+		zoneAwareConfig.ForceLocalZone = &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig_ForceLocalZone{
+			MinSize: &wrapperspb.UInt32Value{Value: force.minEndpointsInZoneThreshold},
+		}
 	}
 	return &envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig_{
 		ZoneAwareLbConfig: zoneAwareConfig,

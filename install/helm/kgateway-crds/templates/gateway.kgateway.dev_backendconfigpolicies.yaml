@@ -697,20 +697,11 @@ spec:
                           via the KGATEWAY_NODE_ZONE environment variable on the proxy pod.
                           See https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/zone_aware
                         properties:
-                          failTrafficOnPanic:
-                            default: false
-                            description: |-
-                              FailTrafficOnPanic controls whether to fail traffic (return 503) when not enough
-                              healthy endpoints exist in the local zone (panic mode). If false, traffic will
-                              be distributed to all endpoints regardless of health status during panic.
-                              Defaults to false.
-                            type: boolean
                           force:
                             description: |-
-                              Force enables forced zone-local routing. kgateway prioritizes same-zone
-                              endpoints while the local endpoint threshold is met. If there are not
-                              enough local endpoints, traffic falls back to standard zone-aware routing
-                              behavior.
+                              Force enables Envoy forced zone-local routing. Envoy routes to same-zone
+                              endpoints while the local endpoint threshold is met. If there are not enough
+                              local endpoints, traffic falls back to standard zone-aware routing behavior.
                             properties:
                               minEndpointsInZoneThreshold:
                                 default: 1
@@ -734,6 +725,16 @@ spec:
                               Defaults to 6.
                             format: int64
                             minimum: 1
+                            type: integer
+                          routingEnabled:
+                            default: 100
+                            description: |-
+                              RoutingEnabled is the percentage of requests for which Envoy applies
+                              zone-aware routing once the minEndpointsThreshold is met.
+                              Defaults to 100.
+                            format: int32
+                            maximum: 100
+                            minimum: 0
                             type: integer
                         type: object
                     type: object

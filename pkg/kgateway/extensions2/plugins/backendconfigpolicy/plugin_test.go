@@ -553,54 +553,6 @@ func TestBackendConfigPolicyDnsClusterConfig(t *testing.T) {
 	})
 }
 
-func TestApplyZoneAwareForceEndpointPriority(t *testing.T) {
-	localLabels := map[string]string{corev1.LabelTopologyZone: "zone-a"}
-	remoteLabels := map[string]string{corev1.LabelTopologyZone: "zone-b"}
-	baseInputs := func() *endpoints.EndpointsInputs {
-		return &endpoints.EndpointsInputs{
-			EndpointsForBackend: ir.EndpointsForBackend{
-				LbEps: ir.LocalityLbMap{
-					{Zone: "zone-a"}: {{EndpointMd: ir.EndpointMetadata{Labels: localLabels}}},
-					{Zone: "zone-b"}: {{EndpointMd: ir.EndpointMetadata{Labels: remoteLabels}}},
-				},
-			},
-		}
-	}
-
-	t.Run("sets binary zone priority when threshold is met", func(t *testing.T) {
-		inputs := baseInputs()
-		ucc := ir.UniqlyConnectedClient{Locality: ir.PodLocality{Zone: "zone-a"}, Labels: map[string]string{}}
-
-		applied := applyZoneAwareForceEndpointPriority(ucc, inputs, &ZoneAwareForceIR{minEndpointsInZoneThreshold: 1})
-
-		assert.True(t, applied)
-		require.NotNil(t, inputs.PriorityInfo)
-		require.NotNil(t, inputs.PriorityInfo.FailoverPriority)
-		assert.Equal(t, 0, inputs.PriorityInfo.FailoverPriority.GetPriority(nil, localLabels))
-		assert.Equal(t, 1, inputs.PriorityInfo.FailoverPriority.GetPriority(nil, remoteLabels))
-	})
-
-	t.Run("skips when proxy zone is unknown", func(t *testing.T) {
-		inputs := baseInputs()
-		ucc := ir.UniqlyConnectedClient{Locality: ir.PodLocality{}, Labels: map[string]string{}}
-
-		applied := applyZoneAwareForceEndpointPriority(ucc, inputs, &ZoneAwareForceIR{minEndpointsInZoneThreshold: 1})
-
-		assert.False(t, applied)
-		assert.Nil(t, inputs.PriorityInfo)
-	})
-
-	t.Run("skips when local endpoint threshold is not met", func(t *testing.T) {
-		inputs := baseInputs()
-		ucc := ir.UniqlyConnectedClient{Locality: ir.PodLocality{Zone: "zone-a"}, Labels: map[string]string{}}
-
-		applied := applyZoneAwareForceEndpointPriority(ucc, inputs, &ZoneAwareForceIR{minEndpointsInZoneThreshold: 2})
-
-		assert.False(t, applied)
-		assert.Nil(t, inputs.PriorityInfo)
-	})
-}
-
 func TestProcessEndpointsZoneAwarePolicy(t *testing.T) {
 	localLabels := map[string]string{corev1.LabelTopologyZone: "zone-a"}
 	remoteLabels := map[string]string{corev1.LabelTopologyZone: "zone-b"}
@@ -679,21 +631,21 @@ func TestProcessEndpointsZoneAwarePolicy(t *testing.T) {
 		assert.Nil(t, inputs.PriorityInfo)
 	})
 
-	t.Run("force threshold met overrides existing endpoint priority", func(t *testing.T) {
+	t.Run("force mode preserves existing endpoint priority", func(t *testing.T) {
 		inputs := withPolicies(newInputs(), newPolicy(true, &ZoneAwareForceIR{minEndpointsInZoneThreshold: 1}, servicePolicyRef))
-		inputs.PriorityInfo = &endpoints.PriorityInfo{
+		priorityInfo := &endpoints.PriorityInfo{
 			FailoverPriority: endpoints.NewPriorities([]string{corev1.LabelTopologyZone}),
 		}
+		inputs.PriorityInfo = priorityInfo
 		plugin := backendConfigEndpointPlugin{}
 
 		hash := plugin.processEndpoints(krt.TestingDummyContext{}, context.Background(), ir.UniqlyConnectedClient{Locality: ir.PodLocality{Zone: "zone-a"}}, inputs)
 
 		assert.NotZero(t, hash)
 		assert.Equal(t, wellknown.TrafficDistributionAny, inputs.EndpointsForBackend.TrafficDistribution)
-		require.NotNil(t, inputs.PriorityInfo)
-		require.NotNil(t, inputs.PriorityInfo.FailoverPriority)
-		assert.Equal(t, 0, inputs.PriorityInfo.FailoverPriority.GetPriority(nil, localLabels))
-		assert.Equal(t, 1, inputs.PriorityInfo.FailoverPriority.GetPriority(nil, remoteLabels))
+		assert.Same(t, priorityInfo, inputs.PriorityInfo)
+		assert.Equal(t, 0, inputs.PriorityInfo.FailoverPriority.GetPriority(localLabels, localLabels))
+		assert.Equal(t, 1, inputs.PriorityInfo.FailoverPriority.GetPriority(localLabels, remoteLabels))
 	})
 
 	t.Run("hostname alias attachment applies to serviceentry endpoints", func(t *testing.T) {
@@ -712,10 +664,7 @@ func TestProcessEndpointsZoneAwarePolicy(t *testing.T) {
 
 		assert.NotZero(t, hash)
 		assert.Equal(t, wellknown.TrafficDistributionAny, inputs.EndpointsForBackend.TrafficDistribution)
-		require.NotNil(t, inputs.PriorityInfo)
-		require.NotNil(t, inputs.PriorityInfo.FailoverPriority)
-		assert.Equal(t, 0, inputs.PriorityInfo.FailoverPriority.GetPriority(nil, localLabels))
-		assert.Equal(t, 1, inputs.PriorityInfo.FailoverPriority.GetPriority(nil, remoteLabels))
+		assert.Nil(t, inputs.PriorityInfo)
 	})
 }
 
