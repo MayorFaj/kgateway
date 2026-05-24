@@ -497,7 +497,7 @@ type backendConfigEndpointPlugin struct{}
 func (p *backendConfigEndpointPlugin) processEndpoints(
 	kctx krt.HandlerContext,
 	ctx context.Context,
-	ucc ir.UniqlyConnectedClient,
+	ucc ir.UniquelyConnectedClient,
 	out *endpoints.EndpointsInputs,
 ) uint64 {
 	pol, bcpIR := selectZoneAwareBackendConfigPolicy(out.EndpointsForBackend.AttachedPolicies)

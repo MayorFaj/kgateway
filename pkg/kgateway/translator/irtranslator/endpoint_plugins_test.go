@@ -42,7 +42,7 @@ func TestOrderedEndpointPluginsBackendConfigPolicyLast(t *testing.T) {
 
 	require.Len(t, plugins, 3)
 	for _, plugin := range plugins {
-		plugin(krt.TestingDummyContext{}, context.Background(), ir.UniqlyConnectedClient{}, &endpoints.EndpointsInputs{})
+		plugin(krt.TestingDummyContext{}, context.Background(), ir.UniquelyConnectedClient{}, &endpoints.EndpointsInputs{})
 	}
 
 	assert.Equal(t, []string{"example", "destrule", "backendconfigpolicy"}, calls)
@@ -72,7 +72,7 @@ func TestBackendTranslatorRunsOrderedEndpointPluginsForInlineEndpoints(t *testin
 		ContributedPolicies: sdk.ContributesPolicies{
 			kgwellknown.BackendConfigPolicyGVK.GroupKind(): {
 				Name: "BackendConfigPolicy",
-				PerClientProcessEndpoints: func(kctx krt.HandlerContext, ctx context.Context, ucc ir.UniqlyConnectedClient, out *endpoints.EndpointsInputs) uint64 {
+				PerClientProcessEndpoints: func(kctx krt.HandlerContext, ctx context.Context, ucc ir.UniquelyConnectedClient, out *endpoints.EndpointsInputs) uint64 {
 					calls = append(calls, "backendconfigpolicy")
 					out.PriorityInfo = &endpoints.PriorityInfo{
 						FailoverPriority: endpoints.NewPriorities([]string{corev1.LabelTopologyZone + "=zone-a"}),
@@ -82,7 +82,7 @@ func TestBackendTranslatorRunsOrderedEndpointPluginsForInlineEndpoints(t *testin
 			},
 			{Group: "networking.istio.io", Kind: "DestinationRule"}: {
 				Name: "destrule",
-				PerClientProcessEndpoints: func(kctx krt.HandlerContext, ctx context.Context, ucc ir.UniqlyConnectedClient, out *endpoints.EndpointsInputs) uint64 {
+				PerClientProcessEndpoints: func(kctx krt.HandlerContext, ctx context.Context, ucc ir.UniquelyConnectedClient, out *endpoints.EndpointsInputs) uint64 {
 					calls = append(calls, "destrule")
 					out.PriorityInfo = &endpoints.PriorityInfo{
 						FailoverPriority: endpoints.NewPriorities([]string{corev1.LabelTopologyRegion}),
@@ -101,7 +101,7 @@ func TestBackendTranslatorRunsOrderedEndpointPluginsForInlineEndpoints(t *testin
 		},
 		Port: 80,
 	}
-	ucc := ir.UniqlyConnectedClient{
+	ucc := ir.UniquelyConnectedClient{
 		Locality: ir.PodLocality{Region: "region-1", Zone: "zone-a"},
 		Labels: map[string]string{
 			corev1.LabelTopologyRegion: "region-1",
@@ -126,7 +126,7 @@ func recordingEndpointPlugin(name string, calls *[]string) sdk.EndpointPlugin {
 	return func(
 		kctx krt.HandlerContext,
 		ctx context.Context,
-		ucc ir.UniqlyConnectedClient,
+		ucc ir.UniquelyConnectedClient,
 		out *endpoints.EndpointsInputs,
 	) uint64 {
 		*calls = append(*calls, name)

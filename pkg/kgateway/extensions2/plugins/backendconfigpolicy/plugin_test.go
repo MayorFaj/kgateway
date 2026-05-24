@@ -602,7 +602,7 @@ func TestProcessEndpointsZoneAwarePolicy(t *testing.T) {
 		inputs := withPolicies(newInputs(), newPolicy(false, nil, servicePolicyRef))
 		plugin := backendConfigEndpointPlugin{}
 
-		hash := plugin.processEndpoints(krt.TestingDummyContext{}, context.Background(), ir.UniqlyConnectedClient{}, inputs)
+		hash := plugin.processEndpoints(krt.TestingDummyContext{}, context.Background(), ir.UniquelyConnectedClient{}, inputs)
 
 		assert.Zero(t, hash)
 		assert.Equal(t, wellknown.TrafficDistributionPreferSameZone, inputs.EndpointsForBackend.TrafficDistribution)
@@ -613,7 +613,7 @@ func TestProcessEndpointsZoneAwarePolicy(t *testing.T) {
 		inputs := withPolicies(newInputs(), newPolicy(true, nil, servicePolicyRef))
 		plugin := backendConfigEndpointPlugin{}
 
-		hash := plugin.processEndpoints(krt.TestingDummyContext{}, context.Background(), ir.UniqlyConnectedClient{}, inputs)
+		hash := plugin.processEndpoints(krt.TestingDummyContext{}, context.Background(), ir.UniquelyConnectedClient{}, inputs)
 
 		assert.NotZero(t, hash)
 		assert.Equal(t, wellknown.TrafficDistributionAny, inputs.EndpointsForBackend.TrafficDistribution)
@@ -624,7 +624,7 @@ func TestProcessEndpointsZoneAwarePolicy(t *testing.T) {
 		inputs := withPolicies(newInputs(), newPolicy(true, &ZoneAwareForceIR{minEndpointsInZoneThreshold: 2}, servicePolicyRef))
 		plugin := backendConfigEndpointPlugin{}
 
-		hash := plugin.processEndpoints(krt.TestingDummyContext{}, context.Background(), ir.UniqlyConnectedClient{Locality: ir.PodLocality{Zone: "zone-a"}}, inputs)
+		hash := plugin.processEndpoints(krt.TestingDummyContext{}, context.Background(), ir.UniquelyConnectedClient{Locality: ir.PodLocality{Zone: "zone-a"}}, inputs)
 
 		assert.NotZero(t, hash)
 		assert.Equal(t, wellknown.TrafficDistributionAny, inputs.EndpointsForBackend.TrafficDistribution)
@@ -639,7 +639,7 @@ func TestProcessEndpointsZoneAwarePolicy(t *testing.T) {
 		inputs.PriorityInfo = priorityInfo
 		plugin := backendConfigEndpointPlugin{}
 
-		hash := plugin.processEndpoints(krt.TestingDummyContext{}, context.Background(), ir.UniqlyConnectedClient{Locality: ir.PodLocality{Zone: "zone-a"}}, inputs)
+		hash := plugin.processEndpoints(krt.TestingDummyContext{}, context.Background(), ir.UniquelyConnectedClient{Locality: ir.PodLocality{Zone: "zone-a"}}, inputs)
 
 		assert.NotZero(t, hash)
 		assert.Equal(t, wellknown.TrafficDistributionAny, inputs.EndpointsForBackend.TrafficDistribution)
@@ -660,7 +660,7 @@ func TestProcessEndpointsZoneAwarePolicy(t *testing.T) {
 		inputs = withPolicies(inputs, newPolicy(true, &ZoneAwareForceIR{minEndpointsInZoneThreshold: 1}, hostnamePolicyRef))
 		plugin := backendConfigEndpointPlugin{}
 
-		hash := plugin.processEndpoints(krt.TestingDummyContext{}, context.Background(), ir.UniqlyConnectedClient{Locality: ir.PodLocality{Zone: "zone-a"}}, inputs)
+		hash := plugin.processEndpoints(krt.TestingDummyContext{}, context.Background(), ir.UniquelyConnectedClient{Locality: ir.PodLocality{Zone: "zone-a"}}, inputs)
 
 		assert.NotZero(t, hash)
 		assert.Equal(t, wellknown.TrafficDistributionAny, inputs.EndpointsForBackend.TrafficDistribution)
