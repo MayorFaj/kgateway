@@ -102,40 +102,33 @@ node:
 			Expect(transformed.Node.Locality.Zone).To(Equal("us-east1-b"))
 		})
 
-		It("should preserve local cluster name and set static endpoint locality through the public IO transform", func() {
+		It("should preserve local cluster EDS wiring through the public IO transform", func() {
 			setLocalityEnv("us-east1", "us-east1-b", "rack-a")
 
-			transformed := transformBootstrapYaml(`
-node:
-  id: static
-  cluster: local-proxy
-cluster_manager:
-  local_cluster_name: local-proxy
-static_resources:
-  clusters:
-  - name: local-proxy
-    connect_timeout: 0.250s
-    type: STATIC
-    lb_policy: ROUND_ROBIN
-    load_assignment:
-      cluster_name: local-proxy
-      endpoints:
-      - locality:
-          region: "{{.NodeRegion}}"
-          zone: "{{.NodeZone}}"
-          sub_zone: "{{.NodeSubzone}}"
-        lb_endpoints:
-        - endpoint:
-            address:
-              socket_address:
-                address: 127.0.0.1
-                port_value: 19000
-`)
+			transformed := transformBootstrapYaml(
+				"node:\n" +
+					"  id: static\n" +
+					"  cluster: local-proxy\n" +
+					"cluster_manager:\n" +
+					"  local_cluster_name: local-proxy\n" +
+					"static_resources:\n" +
+					"  clusters:\n" +
+					"  - name: local-proxy\n" +
+					"    connect_timeout: 0.250s\n" +
+					"    type: EDS\n" +
+					"    lb_policy: ROUND_ROBIN\n" +
+					"    eds_cluster_config:\n" +
+					"      eds_config:\n" +
+					"        ads: {}\n" +
+					"        resource_api_version: V3\n",
+			)
 			Expect(transformed.GetClusterManager().GetLocalClusterName()).To(Equal("local-proxy"))
-			locality := transformed.GetStaticResources().GetClusters()[0].GetLoadAssignment().GetEndpoints()[0].GetLocality()
-			Expect(locality.GetRegion()).To(Equal("us-east1"))
-			Expect(locality.GetZone()).To(Equal("us-east1-b"))
-			Expect(locality.GetSubZone()).To(Equal("rack-a"))
+			Expect(transformed.GetNode().GetLocality().GetRegion()).To(Equal("us-east1"))
+			Expect(transformed.GetNode().GetLocality().GetZone()).To(Equal("us-east1-b"))
+			Expect(transformed.GetNode().GetLocality().GetSubZone()).To(Equal("rack-a"))
+			localCluster := transformed.GetStaticResources().GetClusters()[0]
+			Expect(localCluster.GetType()).To(Equal(envoyclusterv3.Cluster_EDS))
+			Expect(localCluster.GetEdsClusterConfig().GetEdsConfig().GetAds()).ToNot(BeNil())
 		})
 
 		It("should preserve typed configs through the public IO transform", func() {

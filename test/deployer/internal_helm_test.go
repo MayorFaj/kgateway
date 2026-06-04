@@ -153,10 +153,10 @@ wIDAQABMA0GCSqGSIb3DQEBCwUAA4IBAQBtestcertdata
 					"envoy bootstrap should configure cluster_manager")
 				assert.Contains(t, outputYaml, "local_cluster_name:",
 					"envoy bootstrap should set local_cluster_name for zone-aware routing")
-				assert.Contains(t, outputYaml, "region: \"{{.NodeRegion}}\"",
-					"local cluster endpoint locality should be populated by envoyinit")
-				assert.Contains(t, outputYaml, "zone: \"{{.NodeZone}}\"",
-					"local cluster endpoint locality should be populated by envoyinit")
+				assert.Contains(t, outputYaml, "type: EDS",
+					"envoy bootstrap local cluster should use EDS for multi-zone locality distribution")
+				assert.Contains(t, outputYaml, "eds_cluster_config:",
+					"envoy bootstrap local cluster should request endpoints over ADS")
 			},
 		},
 		{

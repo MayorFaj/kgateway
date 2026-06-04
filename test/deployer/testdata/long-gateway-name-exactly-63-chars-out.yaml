@@ -126,21 +126,12 @@ data:
       clusters:
         - name: "very-long-gateway-name-that-is-exactly-sixty-three-characterslo.default"
           connect_timeout: 0.250s
-          type: STATIC
+          type: EDS
           lb_policy: ROUND_ROBIN
-          load_assignment:
-            cluster_name: "very-long-gateway-name-that-is-exactly-sixty-three-characterslo.default"
-            endpoints:
-            - locality:
-                region: "{{.NodeRegion}}"
-                zone: "{{.NodeZone}}"
-                sub_zone: "{{.NodeSubzone}}"
-              lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address:
-                      address: 127.0.0.1
-                      port_value: 19000
+          eds_cluster_config:
+            eds_config:
+              ads: {}
+              resource_api_version: V3
         - name: xds_cluster
           alt_stat_name: xds_cluster
           connect_timeout: 5.000s

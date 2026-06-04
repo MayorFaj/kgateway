@@ -5,7 +5,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/kgateway-dev/kgateway/v2/pkg/kgateway/wellknown"
 	sdk "github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk"
 )
 
@@ -29,11 +28,6 @@ func OrderedEndpointPlugins(policies sdk.ContributesPolicies) []sdk.EndpointPlug
 	}
 
 	sort.SliceStable(entries, func(i, j int) bool {
-		leftOrder := endpointPluginOrder(entries[i])
-		rightOrder := endpointPluginOrder(entries[j])
-		if leftOrder != rightOrder {
-			return leftOrder < rightOrder
-		}
 		if entries[i].groupKind.Group != entries[j].groupKind.Group {
 			return entries[i].groupKind.Group < entries[j].groupKind.Group
 		}
@@ -48,11 +42,4 @@ func OrderedEndpointPlugins(policies sdk.ContributesPolicies) []sdk.EndpointPlug
 		endpointPlugins = append(endpointPlugins, entry.plugin)
 	}
 	return endpointPlugins
-}
-
-func endpointPluginOrder(entry endpointPluginEntry) int {
-	if entry.groupKind == wellknown.BackendConfigPolicyGVK.GroupKind() {
-		return 100
-	}
-	return 0
 }

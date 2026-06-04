@@ -20,7 +20,7 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/ir"
 )
 
-func TestOrderedEndpointPluginsBackendConfigPolicyLast(t *testing.T) {
+func TestOrderedEndpointPluginsUsesStablePolicyOrder(t *testing.T) {
 	var calls []string
 	plugins := irtranslator.OrderedEndpointPlugins(sdk.ContributesPolicies{
 		{Group: "gateway.kgateway.dev", Kind: "BackendConfigPolicy"}: {
@@ -45,7 +45,7 @@ func TestOrderedEndpointPluginsBackendConfigPolicyLast(t *testing.T) {
 		plugin(krt.TestingDummyContext{}, context.Background(), ir.UniquelyConnectedClient{}, &endpoints.EndpointsInputs{})
 	}
 
-	assert.Equal(t, []string{"example", "destrule", "backendconfigpolicy"}, calls)
+	assert.Equal(t, []string{"example", "backendconfigpolicy", "destrule"}, calls)
 }
 
 func TestBackendTranslatorRunsOrderedEndpointPluginsForInlineEndpoints(t *testing.T) {
@@ -92,15 +92,13 @@ func TestBackendTranslatorRunsOrderedEndpointPluginsForInlineEndpoints(t *testin
 			},
 		},
 	}
-	backend := &ir.BackendObjectIR{
-		ObjectSource: ir.ObjectSource{
-			Group:     backendGK.Group,
-			Kind:      backendGK.Kind,
-			Namespace: "default",
-			Name:      "inline",
-		},
-		Port: 80,
-	}
+	backend := ir.NewBackendObjectIR(ir.ObjectSource{
+		Group:     backendGK.Group,
+		Kind:      backendGK.Kind,
+		Namespace: "default",
+		Name:      "inline",
+	}, 80, "", "")
+	backendPtr := &backend
 	ucc := ir.UniquelyConnectedClient{
 		Locality: ir.PodLocality{Region: "region-1", Zone: "zone-a"},
 		Labels: map[string]string{
@@ -109,9 +107,9 @@ func TestBackendTranslatorRunsOrderedEndpointPluginsForInlineEndpoints(t *testin
 		},
 	}
 
-	cluster, err := translator.TranslateBackend(context.Background(), krt.TestingDummyContext{}, ucc, backend)
+	cluster, err := translator.TranslateBackend(context.Background(), krt.TestingDummyContext{}, ucc, backendPtr)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"destrule", "backendconfigpolicy"}, calls)
+	assert.Equal(t, []string{"backendconfigpolicy", "destrule"}, calls)
 
 	assignment := cluster.GetLoadAssignment()
 	require.NotNil(t, assignment)
@@ -119,7 +117,7 @@ func TestBackendTranslatorRunsOrderedEndpointPluginsForInlineEndpoints(t *testin
 	for _, localityEndpoints := range assignment.GetEndpoints() {
 		prioritiesByZone[localityEndpoints.GetLocality().GetZone()] = localityEndpoints.GetPriority()
 	}
-	assert.Equal(t, map[string]uint32{"zone-a": 0, "zone-b": 1}, prioritiesByZone)
+	assert.Equal(t, map[string]uint32{"zone-a": 0, "zone-b": 0}, prioritiesByZone)
 }
 
 func recordingEndpointPlugin(name string, calls *[]string) sdk.EndpointPlugin {

@@ -198,21 +198,12 @@ data:
       clusters:
         - name: {{ $localClusterName | quote }}
           connect_timeout: 0.250s
-          type: STATIC
+          type: EDS
           lb_policy: ROUND_ROBIN
-          load_assignment:
-            cluster_name: {{ $localClusterName | quote }}
-            endpoints:
-            - locality:
-                region: {{ "{{.NodeRegion}}" | quote }}
-                zone: {{ "{{.NodeZone}}" | quote }}
-                sub_zone: {{ "{{.NodeSubzone}}" | quote }}
-              lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address:
-                      address: 127.0.0.1
-                      port_value: 19000
+          eds_cluster_config:
+            eds_config:
+              ads: {}
+              resource_api_version: V3
         - name: xds_cluster
           alt_stat_name: xds_cluster
           connect_timeout: 5.000s
