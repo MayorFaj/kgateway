@@ -75,7 +75,15 @@ func localClusterInfo(ucc ir.UniquelyConnectedClient) (clusterName, gatewayName,
 	if gatewayName == "" || gatewayNamespace == "" {
 		return "", gatewayName, gatewayNamespace
 	}
-	return fmt.Sprintf("%s.%s", kubeutils.SafeGatewayLabelValue(gatewayName), gatewayNamespace), gatewayName, gatewayNamespace
+	return LocalClusterName(gatewayName, gatewayNamespace), gatewayName, gatewayNamespace
+}
+
+// LocalClusterName returns the name of the per-gateway "local cluster" EDS resource that
+// kgateway programs for native zone-aware routing. It is the single source of truth for this
+// name and must stay in sync with the bootstrap config produced by the Helm template
+// (see kgateway.gateway.fullname in pkg/kgateway/helm/envoy/templates/_helpers.tpl).
+func LocalClusterName(gatewayName, gatewayNamespace string) string {
+	return fmt.Sprintf("%s.%s", kubeutils.SafeGatewayLabelValue(gatewayName), gatewayNamespace)
 }
 
 func buildLocalClusterLoadAssignment(
