@@ -7,10 +7,10 @@ import (
 
 	envoybootstrapv3 "github.com/envoyproxy/go-control-plane/envoy/config/bootstrap/v3"
 	envoyclusterv3 "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
+	"sigs.k8s.io/yaml"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"sigs.k8s.io/yaml"
 
 	. "github.com/kgateway-dev/kgateway/v2/internal/envoyinit/pkg/downward"
 	// Register Envoy types used in bootstrap typed_config attributes before test unmarshalling.
