@@ -7,86 +7,25 @@ import (
 
 	envoybootstrapv3 "github.com/envoyproxy/go-control-plane/envoy/config/bootstrap/v3"
 	envoyclusterv3 "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
-	envoycorev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	envoyendpointv3 "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
-	"google.golang.org/protobuf/types/known/structpb"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/yaml"
 
 	. "github.com/kgateway-dev/kgateway/v2/internal/envoyinit/pkg/downward"
+	// Register Envoy types used in bootstrap typed_config attributes before test unmarshalling.
+	_ "github.com/kgateway-dev/kgateway/v2/pkg/utils/filter_types"
 	"github.com/kgateway-dev/kgateway/v2/pkg/utils/protoutils"
 )
 
 var _ = Describe("Transform", func() {
 	Context("bootstrap transforms", func() {
-		var (
-			api             *mockDownward
-			bootstrapConfig *envoybootstrapv3.Bootstrap
-		)
+		var api *mockDownward
 		BeforeEach(func() {
 			api = &mockDownward{
 				podName: "Test",
 				nodeIp:  "5.5.5.5",
 			}
-			bootstrapConfig = new(envoybootstrapv3.Bootstrap)
-			bootstrapConfig.Node = &envoycorev3.Node{}
-		})
-
-		It("should transform node id", func() {
-			bootstrapConfig.Node.Id = "{{.PodName}}"
-			err := TransformConfigTemplatesWithApi(bootstrapConfig, api)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(bootstrapConfig.Node.Id).To(Equal("Test"))
-		})
-
-		It("should transform cluster", func() {
-			bootstrapConfig.Node.Cluster = "{{.PodName}}"
-			err := TransformConfigTemplatesWithApi(bootstrapConfig, api)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(bootstrapConfig.Node.Cluster).To(Equal("Test"))
-		})
-
-		It("should transform metadata", func() {
-			bootstrapConfig.Node.Metadata = &structpb.Struct{
-				Fields: map[string]*structpb.Value{
-					"foo": {
-						Kind: &structpb.Value_StringValue{
-							StringValue: "{{.PodName}}",
-						},
-					},
-				},
-			}
-
-			err := TransformConfigTemplatesWithApi(bootstrapConfig, api)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(bootstrapConfig.Node.Metadata.Fields["foo"].Kind.(*structpb.Value_StringValue).StringValue).To(Equal("Test"))
-		})
-
-		It("should set node locality", func() {
-			api.nodeRegion = "us-east1"
-			api.nodeZone = "us-east1-b"
-			api.nodeSubzone = "rack-a"
-
-			err := TransformConfigTemplatesWithApi(bootstrapConfig, api)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(bootstrapConfig.Node.Locality).To(Equal(&envoycorev3.Locality{
-				Region:  "us-east1",
-				Zone:    "us-east1-b",
-				SubZone: "rack-a",
-			}))
-		})
-
-		It("should initialize node when setting node locality", func() {
-			bootstrapConfig.Node = nil
-			api.nodeZone = "us-east1-b"
-
-			err := TransformConfigTemplatesWithApi(bootstrapConfig, api)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(bootstrapConfig.Node).NotTo(BeNil())
-			Expect(bootstrapConfig.Node.Locality).To(Equal(&envoycorev3.Locality{
-				Zone: "us-east1-b",
-			}))
 		})
 
 		It("should set node locality through the public IO transform", func() {
@@ -100,6 +39,22 @@ node:
 			Expect(transformed.Node.Locality).NotTo(BeNil())
 			Expect(transformed.Node.Locality.Region).To(Equal("us-east1"))
 			Expect(transformed.Node.Locality.Zone).To(Equal("us-east1-b"))
+		})
+
+		It("should interpolate node id, cluster and metadata through the public IO transform", func() {
+			Expect(os.Setenv("POD_NAME", "test-pod")).To(Succeed())
+			DeferCleanup(os.Unsetenv, "POD_NAME")
+
+			transformed := transformBootstrapYaml(
+				"node:\n" +
+					"  id: '{{.PodName}}'\n" +
+					"  cluster: '{{.PodName}}'\n" +
+					"  metadata:\n" +
+					"    role: '{{.PodName}}'\n",
+			)
+			Expect(transformed.GetNode().GetId()).To(Equal("test-pod"))
+			Expect(transformed.GetNode().GetCluster()).To(Equal("test-pod"))
+			Expect(transformed.GetNode().GetMetadata().GetFields()["role"].GetStringValue()).To(Equal("test-pod"))
 		})
 
 		It("should preserve local cluster EDS wiring through the public IO transform", func() {
@@ -158,48 +113,79 @@ node:
 			Expect(filters[0].GetTypedConfig().GetTypeUrl()).To(Equal("type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager"))
 		})
 
-		It("should transform static resources", func() {
-			api.nodeRegion = "us-east1"
-			api.nodeZone = "us-east1-b"
-			api.nodeSubzone = "rack-a"
-			bootstrapConfig.StaticResources = &envoybootstrapv3.Bootstrap_StaticResources{
-				Clusters: []*envoyclusterv3.Cluster{{
-					LoadAssignment: &envoyendpointv3.ClusterLoadAssignment{
-						Endpoints: []*envoyendpointv3.LocalityLbEndpoints{{
-							Locality: &envoycorev3.Locality{
-								Region:  "{{.NodeRegion}}",
-								Zone:    "{{.NodeZone}}",
-								SubZone: "{{.NodeSubzone}}",
-							},
-							LbEndpoints: []*envoyendpointv3.LbEndpoint{{
-								HostIdentifier: &envoyendpointv3.LbEndpoint_Endpoint{
-									Endpoint: &envoyendpointv3.Endpoint{
-										Address: &envoycorev3.Address{
-											Address: &envoycorev3.Address_SocketAddress{
-												SocketAddress: &envoycorev3.SocketAddress{
-													Address: "{{.NodeIp}}",
-												},
-											},
-										},
-									},
-								},
-							}},
-						}},
-					},
-				}},
-			}
+		It("should transform static resources through the public IO transform", func() {
+			Expect(os.Setenv("NODE_IP", "5.5.5.5")).To(Succeed())
+			DeferCleanup(os.Unsetenv, "NODE_IP")
 
-			err := TransformConfigTemplatesWithApi(bootstrapConfig, api)
+			transformed := transformBootstrapYaml(
+				"static_resources:\n" +
+					"  clusters:\n" +
+					"  - name: static\n" +
+					"    connect_timeout: 0.250s\n" +
+					"    type: STATIC\n" +
+					"    load_assignment:\n" +
+					"      cluster_name: static\n" +
+					"      endpoints:\n" +
+					"      - lb_endpoints:\n" +
+					"        - endpoint:\n" +
+					"            address:\n" +
+					"              socket_address:\n" +
+					"                address: '{{.NodeIp}}'\n" +
+					"                port_value: 8080\n",
+			)
+			address := transformed.GetStaticResources().GetClusters()[0].GetLoadAssignment().GetEndpoints()[0].GetLbEndpoints()[0].GetEndpoint().GetAddress().GetSocketAddress().GetAddress()
+			Expect(address).To(Equal("5.5.5.5"))
+		})
+
+		It("should preserve unknown yaml fields when adding node locality", func() {
+			api.nodeZone = "us-east1-b"
+
+			output, err := AddNodeLocalityToBootstrapYaml([]byte(`
+node:
+  id: static
+  unknown_node_field: keep-me
+unknown_top_level:
+  nested: true
+`), api)
 			Expect(err).NotTo(HaveOccurred())
 
-			expectedAddress := bootstrapConfig.GetStaticResources().GetClusters()[0].GetLoadAssignment().GetEndpoints()[0].GetLbEndpoints()[0].GetEndpoint().GetAddress().GetSocketAddress().GetAddress()
-			Expect(expectedAddress).To(Equal("5.5.5.5"))
-			locality := bootstrapConfig.GetStaticResources().GetClusters()[0].GetLoadAssignment().GetEndpoints()[0].GetLocality()
-			Expect(locality).To(Equal(&envoycorev3.Locality{
-				Region:  "us-east1",
-				Zone:    "us-east1-b",
-				SubZone: "rack-a",
-			}))
+			var decoded map[string]any
+			Expect(yaml.Unmarshal(output, &decoded)).To(Succeed())
+			Expect(decoded).To(HaveKey("unknown_top_level"))
+
+			node, ok := decoded["node"].(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(node).To(HaveKeyWithValue("unknown_node_field", "keep-me"))
+
+			locality, ok := node["locality"].(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(locality).To(HaveKeyWithValue("zone", "us-east1-b"))
+		})
+
+		It("should merge node locality fields when adding partial node locality", func() {
+			api.nodeZone = "us-east1-b"
+
+			output, err := AddNodeLocalityToBootstrapYaml([]byte(`
+node:
+  locality:
+    region: us-east1
+    zone: old-zone
+    sub_zone: rack-a
+    custom_field: keep-me
+`), api)
+			Expect(err).NotTo(HaveOccurred())
+
+			var decoded map[string]any
+			Expect(yaml.Unmarshal(output, &decoded)).To(Succeed())
+			node, ok := decoded["node"].(map[string]any)
+			Expect(ok).To(BeTrue())
+			locality, ok := node["locality"].(map[string]any)
+			Expect(ok).To(BeTrue())
+
+			Expect(locality).To(HaveKeyWithValue("region", "us-east1"))
+			Expect(locality).To(HaveKeyWithValue("zone", "us-east1-b"))
+			Expect(locality).To(HaveKeyWithValue("sub_zone", "rack-a"))
+			Expect(locality).To(HaveKeyWithValue("custom_field", "keep-me"))
 		})
 	})
 })
@@ -227,6 +213,6 @@ func transformBootstrapYaml(input string) *envoybootstrapv3.Bootstrap {
 	Expect(Transform(strings.NewReader(input), &output)).To(Succeed())
 
 	transformed := &envoybootstrapv3.Bootstrap{}
-	Expect(protoutils.UnmarshalBytes(output.Bytes(), transformed)).To(Succeed())
+	Expect(protoutils.UnmarshalYaml(output.Bytes(), transformed)).To(Succeed())
 	return transformed
 }

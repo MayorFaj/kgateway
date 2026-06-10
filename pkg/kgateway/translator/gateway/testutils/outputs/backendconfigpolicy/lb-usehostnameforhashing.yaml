@@ -4,7 +4,8 @@ Clusters:
     typedConfig:
       '@type': type.googleapis.com/envoy.extensions.clusters.dns.v3.DnsCluster
       dnsLookupFamily: V4_PREFERRED
-  commonLbConfig: {}
+  commonLbConfig:
+    localityWeightedLbConfig: {}
   connectTimeout: 5s
   loadAssignment:
     clusterName: backend_default_example-backend_0
@@ -29,7 +30,8 @@ Clusters:
           maximumRingSize: "2048"
           minimumRingSize: "1024"
   name: backend_default_example-backend_0
-- commonLbConfig: {}
+- commonLbConfig:
+    localityWeightedLbConfig: {}
   connectTimeout: 5s
   edsClusterConfig:
     edsConfig:

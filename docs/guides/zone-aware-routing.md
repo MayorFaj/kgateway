@@ -107,6 +107,7 @@ spec:
 
 - The `KGATEWAY_NODE_*` values must match the actual node locality of the proxy.
 - If you hardcode locality values, pin the proxy to the matching zone.
+- If you source the values from the Kubernetes Downward API, put the locality values on the proxy pod as labels or annotations first. Envoy cannot read Kubernetes node labels directly.
 - If the proxy moves to another zone without the env vars changing, Envoy will advertise the wrong locality.
 - Zone-aware routing also depends on upstream endpoint locality metadata being present.
 
@@ -114,6 +115,4 @@ spec:
 
 kgateway does not currently auto-populate `KGATEWAY_NODE_REGION`, `KGATEWAY_NODE_ZONE`, or `KGATEWAY_NODE_SUBZONE` from Kubernetes node labels in the default deployment template.
 
-Until that is automated, operators must configure those values explicitly on the Envoy pod when using zone-aware routing.# Zone-Aware Routing
-
-Zone-aware routing keeps traffic as close as possible to the zone where it originates, while still allowing failover to other zones when needed. In practice, that means a gateway proxy running in `zone-a` prefers endpoints that also run in `zone-a` before sending requests to endpoints in `zone-b` or `zone-c`.
+Until that is automated, operators must configure those values explicitly on the Envoy pod when using zone-aware routing.

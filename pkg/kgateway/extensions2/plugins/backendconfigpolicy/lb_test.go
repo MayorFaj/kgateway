@@ -33,6 +33,11 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 		expected *envoyclusterv3.Cluster
 	}{
 		{
+			name:     "NilConfig",
+			config:   nil,
+			expected: &envoyclusterv3.Cluster{Name: "test"},
+		},
+		{
 			name: "HealthyPanicThreshold",
 			config: &kgateway.LoadBalancer{
 				HealthyPanicThreshold: new(int32(100)),
@@ -666,16 +671,36 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 				cluster = &envoyclusterv3.Cluster{}
 			}
 			cluster.Name = "test"
+			expected := proto.Clone(test.expected).(*envoyclusterv3.Cluster)
+			addExpectedDefaultCommonLbConfig(test.config, expected)
 			lbConfig, err := translateLoadBalancerConfig(test.config, "policy", "default")
 			if err != nil {
 				t.Fatalf("failed to translate load balancer config: %v", err)
 			}
 			applyLoadBalancerConfig(lbConfig, cluster)
-			if !proto.Equal(cluster, test.expected) {
-				t.Errorf("expected %v, got %v", test.expected, cluster)
+			if !proto.Equal(cluster, expected) {
+				t.Errorf("expected %v, got %v", expected, cluster)
 			}
 		})
 	}
+}
+
+func addExpectedDefaultCommonLbConfig(config *kgateway.LoadBalancer, cluster *envoyclusterv3.Cluster) {
+	if config != nil && config.ZoneAware != nil && config.ZoneAware.PreferLocal != nil {
+		return
+	}
+	// Construct the expected specifier explicitly rather than calling the production
+	// buildCommonLbConfig, so a regression in the production default is caught here.
+	localityWeighted := &envoyclusterv3.Cluster_CommonLbConfig_LocalityWeightedLbConfig_{
+		LocalityWeightedLbConfig: &envoyclusterv3.Cluster_CommonLbConfig_LocalityWeightedLbConfig{},
+	}
+	if cluster.CommonLbConfig == nil {
+		cluster.CommonLbConfig = &envoyclusterv3.Cluster_CommonLbConfig{
+			LocalityConfigSpecifier: localityWeighted,
+		}
+		return
+	}
+	cluster.CommonLbConfig.LocalityConfigSpecifier = localityWeighted
 }
 
 func TestConstructHashPolicy(t *testing.T) {

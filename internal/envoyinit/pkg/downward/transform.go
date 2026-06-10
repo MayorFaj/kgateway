@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"io"
 
-	envoybootstrapv3 "github.com/envoyproxy/go-control-plane/envoy/config/bootstrap/v3"
 	envoycorev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	"google.golang.org/protobuf/types/known/structpb"
-
-	// Register Envoy types used in bootstrap typed_config attributes before unmarshalling.
-	_ "github.com/kgateway-dev/kgateway/v2/pkg/utils/filter_types"
-	"github.com/kgateway-dev/kgateway/v2/pkg/utils/protoutils"
+	"sigs.k8s.io/yaml"
 )
 
+// Transform reads an Envoy bootstrap config from in, interpolates any Kubernetes
+// Downward API templates (e.g. {{.PodName}}) found anywhere in the document, injects
+// the node locality derived from the KGATEWAY_NODE_* env vars, and writes the result
+// to out as YAML. The output is consumed by Envoy via --config-yaml.
+//
+// Note: when node locality is injected the bootstrap is round-tripped through a generic
+// YAML decode/encode, so key ordering and scalar formatting in the output may differ
+// from the input. This is safe because the only consumer (Envoy) re-parses the YAML.
 func Transform(in io.Reader, out io.Writer) error {
 	api := RetrieveDownwardAPI()
 	interpolator := NewInterpolator()
@@ -22,15 +25,7 @@ func Transform(in io.Reader, out io.Writer) error {
 		return err
 	}
 
-	var bootstrap envoybootstrapv3.Bootstrap
-	if err := protoutils.UnmarshalYaml(interpolated.Bytes(), &bootstrap); err != nil {
-		return err
-	}
-	if err := TransformConfigTemplatesWithApi(&bootstrap, api); err != nil {
-		return err
-	}
-
-	bootstrapBytes, err := protoutils.MarshalBytes(&bootstrap)
+	bootstrapBytes, err := AddNodeLocalityToBootstrapYaml(interpolated.Bytes(), api)
 	if err != nil {
 		return err
 	}
@@ -38,96 +33,54 @@ func Transform(in io.Reader, out io.Writer) error {
 	return err
 }
 
-func TransformConfigTemplatesWithApi(bootstrap *envoybootstrapv3.Bootstrap, api DownwardAPI) error {
-	interpolator := NewInterpolator()
-	if bootstrap.Node == nil {
-		bootstrap.Node = &envoycorev3.Node{}
+// AddNodeLocalityToBootstrapYaml merges the node locality derived from the Downward API
+// into the bootstrap's node.locality. When no locality is configured the input bytes are
+// returned unchanged. When locality is present the bootstrap is decoded into a generic map,
+// merged (preserving unknown fields and any existing locality keys), and re-encoded as YAML;
+// this re-encoding may reorder keys and normalize scalar formatting.
+func AddNodeLocalityToBootstrapYaml(bootstrapBytes []byte, api DownwardAPI) ([]byte, error) {
+	locality := nodeLocalityFromApi(api)
+	if locality == nil {
+		return bootstrapBytes, nil
 	}
 
-	var err error
-
-	interpolate := func(s *string) error { return interpolator.InterpolateString(s, api) }
-	// interpolate the ID templates:
-	err = interpolate(&bootstrap.GetNode().Cluster)
-	if err != nil {
-		return err
+	bootstrap := map[string]any{}
+	if err := yaml.Unmarshal(bootstrapBytes, &bootstrap); err != nil {
+		return nil, err
 	}
 
-	err = interpolate(&bootstrap.GetNode().Id)
-	if err != nil {
-		return err
+	node, ok := bootstrap["node"].(map[string]any)
+	if !ok || node == nil {
+		node = map[string]any{}
+		bootstrap["node"] = node
 	}
 
-	if err := transformStruct(interpolate, bootstrap.GetNode().GetMetadata()); err != nil {
-		return err
+	localityMap, ok := node["locality"].(map[string]any)
+	if !ok || localityMap == nil {
+		localityMap = map[string]any{}
 	}
-
-	// Set node locality from environment variables if available.
-	// These are typically set via KGATEWAY_NODE_ZONE, KGATEWAY_NODE_REGION, KGATEWAY_NODE_SUBZONE
-	// environment variables on the Envoy proxy pod, populated from the node's topology labels.
-	// This is required for Envoy's zone-aware routing (ZoneAwareLbConfig) to function.
-	if zone, region, subzone := api.NodeZone(), api.NodeRegion(), api.NodeSubzone(); zone != "" || region != "" || subzone != "" {
-		bootstrap.Node.Locality = &envoycorev3.Locality{
-			Region:  region,
-			Zone:    zone,
-			SubZone: subzone,
-		}
+	if locality.Region != "" {
+		localityMap["region"] = locality.Region
 	}
-
-	// Interpolate Static Resources
-	for _, cluster := range bootstrap.GetStaticResources().GetClusters() {
-		for _, endpoint := range cluster.GetLoadAssignment().GetEndpoints() {
-			locality := endpoint.GetLocality()
-			if locality != nil {
-				if err = interpolate(&locality.Region); err != nil {
-					return err
-				}
-				if err = interpolate(&locality.Zone); err != nil {
-					return err
-				}
-				if err = interpolate(&locality.SubZone); err != nil {
-					return err
-				}
-			}
-			for _, lbEndpoint := range endpoint.GetLbEndpoints() {
-				socketAddress := lbEndpoint.GetEndpoint().GetAddress().GetSocketAddress()
-				if socketAddress != nil {
-					if err = interpolate(&socketAddress.Address); err != nil {
-						return err
-					}
-				}
-			}
-		}
+	if locality.Zone != "" {
+		localityMap["zone"] = locality.Zone
 	}
+	if locality.SubZone != "" {
+		localityMap["sub_zone"] = locality.SubZone
+	}
+	node["locality"] = localityMap
 
-	return nil
+	return yaml.Marshal(bootstrap)
 }
 
-func transformValue(interpolate func(*string) error, v *structpb.Value) error {
-	switch v := v.GetKind().(type) {
-	case *structpb.Value_StringValue:
-		return interpolate(&v.StringValue)
-	case *structpb.Value_StructValue:
-		return transformStruct(interpolate, v.StructValue)
-	case *structpb.Value_ListValue:
-		for _, val := range v.ListValue.GetValues() {
-			if err := transformValue(interpolate, val); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func transformStruct(interpolate func(*string) error, s *structpb.Struct) error {
-	if s == nil {
+func nodeLocalityFromApi(api DownwardAPI) *envoycorev3.Locality {
+	zone, region, subzone := api.NodeZone(), api.NodeRegion(), api.NodeSubzone()
+	if zone == "" && region == "" && subzone == "" {
 		return nil
 	}
-
-	for _, v := range s.GetFields() {
-		if err := transformValue(interpolate, v); err != nil {
-			return err
-		}
+	return &envoycorev3.Locality{
+		Region:  region,
+		Zone:    zone,
+		SubZone: subzone,
 	}
-	return nil
 }

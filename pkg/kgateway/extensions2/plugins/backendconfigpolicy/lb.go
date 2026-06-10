@@ -50,8 +50,17 @@ type ZoneAwareForceIR struct {
 
 func translateLoadBalancerConfig(config *kgateway.LoadBalancer, policyName, policyNamespace string) (*LoadBalancerConfigIR, error) {
 	out := &LoadBalancerConfigIR{}
+	if config == nil {
+		config = &kgateway.LoadBalancer{}
+	}
 
-	out.commonLbConfig = &envoyclusterv3.Cluster_CommonLbConfig{}
+	// Default to locality-weighted LB unless zone-aware routing is explicitly configured.
+	// Envoy implicitly enables zone-aware routing for EDS clusters that have a local cluster
+	// once the minimum-endpoints threshold is met, so defaulting LocalityWeightedLbConfig
+	// suppresses that behavior for users who never opted into zone-aware routing. When zone-aware
+	// is configured we omit it so the native ZoneAwareLbConfig on the load_balancing_policy applies.
+	zoneAwareConfigured := config.ZoneAware != nil && config.ZoneAware.PreferLocal != nil
+	out.commonLbConfig = buildCommonLbConfig(!zoneAwareConfigured)
 
 	if config.HealthyPanicThreshold != nil {
 		out.commonLbConfig.HealthyPanicThreshold = &typev3.Percent{
@@ -67,12 +76,9 @@ func translateLoadBalancerConfig(config *kgateway.LoadBalancer, policyName, poli
 		out.commonLbConfig.CloseConnectionsOnHostSetChange = *config.CloseConnectionsOnHostSetChange
 	}
 
-	if config.ZoneAware != nil {
-		switch {
-		case config.ZoneAware.PreferLocal != nil:
-			out.hasZoneAware = true
-			out.zoneAwareForce = zoneAwareForceIR(config.ZoneAware)
-		}
+	if zoneAwareConfigured {
+		out.hasZoneAware = true
+		out.zoneAwareForce = zoneAwareForceIR(config.ZoneAware)
 	}
 
 	var err error
@@ -94,6 +100,16 @@ func translateLoadBalancerConfig(config *kgateway.LoadBalancer, policyName, poli
 	}
 
 	return out, nil
+}
+
+func buildCommonLbConfig(useLocalityWeighted bool) *envoyclusterv3.Cluster_CommonLbConfig {
+	commonLbConfig := &envoyclusterv3.Cluster_CommonLbConfig{}
+	if useLocalityWeighted {
+		commonLbConfig.LocalityConfigSpecifier = &envoyclusterv3.Cluster_CommonLbConfig_LocalityWeightedLbConfig_{
+			LocalityWeightedLbConfig: &envoyclusterv3.Cluster_CommonLbConfig_LocalityWeightedLbConfig{},
+		}
+	}
+	return commonLbConfig
 }
 
 func zoneAwareForceIR(zoneAware *kgateway.ZoneAwareLoadBalancer) *ZoneAwareForceIR {
