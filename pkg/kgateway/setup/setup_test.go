@@ -1047,9 +1047,49 @@ func sortResource[T fmt.Stringer](resources []T) []T {
 	return resources
 }
 
+// sortLocalityLbEndpoints sorts locality endpoints by locality (region, zone,
+// sub-zone), then priority, then endpoint addresses. The endpoints are received
+// over xDS in a non-deterministic order, so sorting them gives stable golden
+// output. The comparison logic (equalset) is order-independent, so this only
+// affects serialization, not correctness.
+func sortLocalityLbEndpoints(eps []*envoyendpointv3.LocalityLbEndpoints) {
+	sort.SliceStable(eps, func(i, j int) bool {
+		li, lj := eps[i].GetLocality(), eps[j].GetLocality()
+		if li.GetRegion() != lj.GetRegion() {
+			return li.GetRegion() < lj.GetRegion()
+		}
+		if li.GetZone() != lj.GetZone() {
+			return li.GetZone() < lj.GetZone()
+		}
+		if li.GetSubZone() != lj.GetSubZone() {
+			return li.GetSubZone() < lj.GetSubZone()
+		}
+		if eps[i].GetPriority() != eps[j].GetPriority() {
+			return eps[i].GetPriority() < eps[j].GetPriority()
+		}
+		return localityLbEndpointAddrs(eps[i]) < localityLbEndpointAddrs(eps[j])
+	})
+}
+
+// localityLbEndpointAddrs returns a deterministic, sorted, comma-joined string
+// of the socket addresses within a locality, used as a sort tie-breaker.
+func localityLbEndpointAddrs(e *envoyendpointv3.LocalityLbEndpoints) string {
+	var addrs []string
+	for _, lb := range e.GetLbEndpoints() {
+		addrs = append(addrs, lb.GetEndpoint().GetAddress().GetSocketAddress().GetAddress())
+	}
+	sort.Strings(addrs)
+	return strings.Join(addrs, ",")
+}
+
 func (x *xdsDump) ToYaml() ([]byte, error) {
 	jsonM := map[string][]any{}
 	for _, c := range sortResource(x.Clusters) {
+		// Clone before sorting inline endpoints so the dump is not mutated.
+		c = proto.Clone(c).(*envoyclusterv3.Cluster)
+		if c.LoadAssignment != nil {
+			sortLocalityLbEndpoints(c.LoadAssignment.Endpoints)
+		}
 		roundtrip, err := protoJsonRoundTrip(c)
 		if err != nil {
 			return nil, err
@@ -1064,6 +1104,9 @@ func (x *xdsDump) ToYaml() ([]byte, error) {
 		jsonM["listeners"] = append(jsonM["listeners"], roundtrip)
 	}
 	for _, c := range sortResource(x.Endpoints) {
+		// Clone + sort localities for deterministic output (see clusters above).
+		c = proto.Clone(c).(*envoyendpointv3.ClusterLoadAssignment)
+		sortLocalityLbEndpoints(c.Endpoints)
 		roundtrip, err := protoJsonRoundTrip(c)
 		if err != nil {
 			return nil, err

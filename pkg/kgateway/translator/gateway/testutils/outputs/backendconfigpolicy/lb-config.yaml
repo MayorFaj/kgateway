@@ -1,6 +1,5 @@
 Clusters:
-- commonLbConfig:
-    localityWeightedLbConfig: {}
+- commonLbConfig: {}
   connectTimeout: 5s
   edsClusterConfig:
     edsConfig:
@@ -14,10 +13,11 @@ Clusters:
         typedConfig:
           '@type': type.googleapis.com/envoy.extensions.load_balancing_policies.least_request.v3.LeastRequest
           choiceCount: 3
+          localityLbConfig:
+            localityWeightedLbConfig: {}
   name: kube_default_httpbin-lr_8080
   type: EDS
-- commonLbConfig:
-    localityWeightedLbConfig: {}
+- commonLbConfig: {}
   connectTimeout: 5s
   edsClusterConfig:
     edsConfig:
@@ -32,8 +32,7 @@ Clusters:
           '@type': type.googleapis.com/envoy.extensions.load_balancing_policies.maglev.v3.Maglev
   name: kube_default_httpbin-maglev_8080
   type: EDS
-- commonLbConfig:
-    localityWeightedLbConfig: {}
+- commonLbConfig: {}
   connectTimeout: 5s
   edsClusterConfig:
     edsConfig:
@@ -46,10 +45,11 @@ Clusters:
         name: envoy.load_balancing_policies.random
         typedConfig:
           '@type': type.googleapis.com/envoy.extensions.load_balancing_policies.random.v3.Random
+          localityLbConfig:
+            localityWeightedLbConfig: {}
   name: kube_default_httpbin-random_8080
   type: EDS
-- commonLbConfig:
-    localityWeightedLbConfig: {}
+- commonLbConfig: {}
   connectTimeout: 5s
   edsClusterConfig:
     edsConfig:
@@ -65,8 +65,7 @@ Clusters:
           minimumRingSize: "1024"
   name: kube_default_httpbin-rh_8080
   type: EDS
-- commonLbConfig:
-    localityWeightedLbConfig: {}
+- commonLbConfig: {}
   connectTimeout: 5s
   edsClusterConfig:
     edsConfig:
@@ -79,6 +78,8 @@ Clusters:
         name: envoy.load_balancing_policies.round_robin
         typedConfig:
           '@type': type.googleapis.com/envoy.extensions.load_balancing_policies.round_robin.v3.RoundRobin
+          localityLbConfig:
+            localityWeightedLbConfig: {}
           slowStartConfig:
             aggression:
               defaultValue: 1.5
@@ -88,8 +89,7 @@ Clusters:
             slowStartWindow: 10s
   name: kube_default_httpbin-rr_8080
   type: EDS
-- commonLbConfig:
-    localityWeightedLbConfig: {}
+- commonLbConfig: {}
   connectTimeout: 5s
   edsClusterConfig:
     edsConfig:
@@ -108,7 +108,6 @@ Clusters:
   type: EDS
 - commonLbConfig:
     closeConnectionsOnHostSetChange: true
-    localityWeightedLbConfig: {}
   connectTimeout: 5s
   edsClusterConfig:
     edsConfig:

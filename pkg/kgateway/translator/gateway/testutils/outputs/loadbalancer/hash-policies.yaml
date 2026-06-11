@@ -1,6 +1,5 @@
 Clusters:
-- commonLbConfig:
-    localityWeightedLbConfig: {}
+- commonLbConfig: {}
   connectTimeout: 5s
   edsClusterConfig:
     edsConfig:
@@ -33,7 +32,6 @@ Clusters:
   type: EDS
 - commonLbConfig:
     closeConnectionsOnHostSetChange: true
-    localityWeightedLbConfig: {}
   connectTimeout: 5s
   edsClusterConfig:
     edsConfig:

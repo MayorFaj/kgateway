@@ -84,6 +84,7 @@ func (t *BackendTranslator) TranslateBackend(
 		logger.Error("failed to apply policies to cluster", "cluster", out.GetName(), "error", err)
 		return buildBlackholeCluster(backend), err
 	}
+	defaultLocalityConfig(out)
 	if err := applyGatewayBackendClientCertificate(out, backend); err != nil {
 		logger.Error("failed to apply gateway backend client certificate", "cluster", out.GetName(), "error", err)
 		return buildBlackholeCluster(backend), err
@@ -98,6 +99,36 @@ func (t *BackendTranslator) TranslateBackend(
 	}
 
 	return out, nil
+}
+
+// defaultLocalityConfig keeps traffic evenly distributed across zones for clusters
+// that did not opt into a locality-aware LB mode. The proxy bootstrap always sets
+// cluster_manager.local_cluster_name, and once the gateway fleet spans multiple
+// zones Envoy's implicit zone-aware defaults (routing_enabled 100%,
+// min_cluster_size 6) would otherwise engage with no policy configured.
+func defaultLocalityConfig(c *envoyclusterv3.Cluster) {
+	if c.GetLoadBalancingPolicy() != nil {
+		// Typed load balancing policies carry their own locality_lb_config and
+		// ignore common_lb_config.locality_config_specifier (see the
+		// backendconfigpolicy plugin's buildTypedLocalityLbConfig).
+		return
+	}
+	if c.GetCommonLbConfig().GetLocalityConfigSpecifier() != nil {
+		// A policy plugin already chose a locality mode.
+		return
+	}
+	if c.GetEdsClusterConfig() == nil {
+		// Only kgateway-managed EDS clusters are guaranteed to carry locality
+		// load-balancing weights on their CLAs; leave plugin-provided inline
+		// clusters untouched.
+		return
+	}
+	if c.CommonLbConfig == nil {
+		c.CommonLbConfig = &envoyclusterv3.Cluster_CommonLbConfig{}
+	}
+	c.CommonLbConfig.LocalityConfigSpecifier = &envoyclusterv3.Cluster_CommonLbConfig_LocalityWeightedLbConfig_{
+		LocalityWeightedLbConfig: &envoyclusterv3.Cluster_CommonLbConfig_LocalityWeightedLbConfig{},
+	}
 }
 
 func (t *BackendTranslator) runPolicies(

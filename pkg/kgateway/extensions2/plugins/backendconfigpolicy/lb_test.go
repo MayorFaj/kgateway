@@ -35,7 +35,7 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 		{
 			name:     "NilConfig",
 			config:   nil,
-			expected: &envoyclusterv3.Cluster{Name: "test"},
+			expected: &envoyclusterv3.Cluster{Name: "test", CommonLbConfig: &envoyclusterv3.Cluster_CommonLbConfig{}},
 		},
 		{
 			name: "HealthyPanicThreshold",
@@ -71,7 +71,9 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 				Random: &kgateway.LoadBalancerRandomConfig{},
 			},
 			expected: func() *envoyclusterv3.Cluster {
-				msg, _ := utils.MessageToAny(&randomv3.Random{})
+				msg, _ := utils.MessageToAny(&randomv3.Random{
+					LocalityLbConfig: localityWeightedLbConfig(),
+				})
 				return &envoyclusterv3.Cluster{
 					Name: "test",
 					LoadBalancingPolicy: &envoyclusterv3.LoadBalancingPolicy{
@@ -92,7 +94,9 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 				RoundRobin: &kgateway.LoadBalancerRoundRobinConfig{},
 			},
 			expected: func() *envoyclusterv3.Cluster {
-				msg, _ := utils.MessageToAny(&roundrobinv3.RoundRobin{})
+				msg, _ := utils.MessageToAny(&roundrobinv3.RoundRobin{
+					LocalityLbConfig: localityWeightedLbConfig(),
+				})
 				return &envoyclusterv3.Cluster{
 					Name: "test",
 					LoadBalancingPolicy: &envoyclusterv3.LoadBalancingPolicy{
@@ -130,6 +134,7 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 						},
 						MinWeightPercent: &typev3.Percent{Value: 10},
 					},
+					LocalityLbConfig: localityWeightedLbConfig(),
 				}
 				msg, _ := utils.MessageToAny(rr)
 				return &envoyclusterv3.Cluster{
@@ -155,7 +160,8 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 			},
 			expected: func() *envoyclusterv3.Cluster {
 				lr := &leastrequestv3.LeastRequest{
-					ChoiceCount: &wrapperspb.UInt32Value{Value: 3},
+					ChoiceCount:      &wrapperspb.UInt32Value{Value: 3},
+					LocalityLbConfig: localityWeightedLbConfig(),
 				}
 				msg, _ := utils.MessageToAny(lr)
 				return &envoyclusterv3.Cluster{
@@ -194,6 +200,7 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 						Aggression:       &envoycorev3.RuntimeDouble{DefaultValue: 1.1, RuntimeKey: "policy.default.slowStart.aggression"},
 						MinWeightPercent: &typev3.Percent{Value: 10},
 					},
+					LocalityLbConfig: localityWeightedLbConfig(),
 				}
 				msg, _ := utils.MessageToAny(lr)
 				return &envoyclusterv3.Cluster{
@@ -672,7 +679,6 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 			}
 			cluster.Name = "test"
 			expected := proto.Clone(test.expected).(*envoyclusterv3.Cluster)
-			addExpectedDefaultCommonLbConfig(test.config, expected)
 			lbConfig, err := translateLoadBalancerConfig(test.config, "policy", "default")
 			if err != nil {
 				t.Fatalf("failed to translate load balancer config: %v", err)
@@ -685,22 +691,15 @@ func TestApplyLoadBalancerConfig(t *testing.T) {
 	}
 }
 
-func addExpectedDefaultCommonLbConfig(config *kgateway.LoadBalancer, cluster *envoyclusterv3.Cluster) {
-	if config != nil && config.ZoneAware != nil && config.ZoneAware.PreferLocal != nil {
-		return
+// localityWeightedLbConfig returns the locality-weighted LocalityLbConfig that
+// translateLoadBalancerConfig attaches to typed round_robin/least_request/random
+// policies by default, suppressing Envoy's implicit zone-aware routing.
+func localityWeightedLbConfig() *envoycommonv3.LocalityLbConfig {
+	return &envoycommonv3.LocalityLbConfig{
+		LocalityConfigSpecifier: &envoycommonv3.LocalityLbConfig_LocalityWeightedLbConfig_{
+			LocalityWeightedLbConfig: &envoycommonv3.LocalityLbConfig_LocalityWeightedLbConfig{},
+		},
 	}
-	// Construct the expected specifier explicitly rather than calling the production
-	// buildCommonLbConfig, so a regression in the production default is caught here.
-	localityWeighted := &envoyclusterv3.Cluster_CommonLbConfig_LocalityWeightedLbConfig_{
-		LocalityWeightedLbConfig: &envoyclusterv3.Cluster_CommonLbConfig_LocalityWeightedLbConfig{},
-	}
-	if cluster.CommonLbConfig == nil {
-		cluster.CommonLbConfig = &envoyclusterv3.Cluster_CommonLbConfig{
-			LocalityConfigSpecifier: localityWeighted,
-		}
-		return
-	}
-	cluster.CommonLbConfig.LocalityConfigSpecifier = localityWeighted
 }
 
 func TestConstructHashPolicy(t *testing.T) {

@@ -49,18 +49,12 @@ type ZoneAwareForceIR struct {
 }
 
 func translateLoadBalancerConfig(config *kgateway.LoadBalancer, policyName, policyNamespace string) (*LoadBalancerConfigIR, error) {
-	out := &LoadBalancerConfigIR{}
-	if config == nil {
-		config = &kgateway.LoadBalancer{}
+	out := &LoadBalancerConfigIR{
+		commonLbConfig: &envoyclusterv3.Cluster_CommonLbConfig{},
 	}
-
-	// Default to locality-weighted LB unless zone-aware routing is explicitly configured.
-	// Envoy implicitly enables zone-aware routing for EDS clusters that have a local cluster
-	// once the minimum-endpoints threshold is met, so defaulting LocalityWeightedLbConfig
-	// suppresses that behavior for users who never opted into zone-aware routing. When zone-aware
-	// is configured we omit it so the native ZoneAwareLbConfig on the load_balancing_policy applies.
-	zoneAwareConfigured := config.ZoneAware != nil && config.ZoneAware.PreferLocal != nil
-	out.commonLbConfig = buildCommonLbConfig(!zoneAwareConfigured)
+	if config == nil {
+		return out, nil
+	}
 
 	if config.HealthyPanicThreshold != nil {
 		out.commonLbConfig.HealthyPanicThreshold = &typev3.Percent{
@@ -76,7 +70,7 @@ func translateLoadBalancerConfig(config *kgateway.LoadBalancer, policyName, poli
 		out.commonLbConfig.CloseConnectionsOnHostSetChange = *config.CloseConnectionsOnHostSetChange
 	}
 
-	if zoneAwareConfigured {
+	if config.ZoneAware != nil && config.ZoneAware.PreferLocal != nil {
 		out.hasZoneAware = true
 		out.zoneAwareForce = zoneAwareForceIR(config.ZoneAware)
 	}
@@ -102,16 +96,6 @@ func translateLoadBalancerConfig(config *kgateway.LoadBalancer, policyName, poli
 	return out, nil
 }
 
-func buildCommonLbConfig(useLocalityWeighted bool) *envoyclusterv3.Cluster_CommonLbConfig {
-	commonLbConfig := &envoyclusterv3.Cluster_CommonLbConfig{}
-	if useLocalityWeighted {
-		commonLbConfig.LocalityConfigSpecifier = &envoyclusterv3.Cluster_CommonLbConfig_LocalityWeightedLbConfig_{
-			LocalityWeightedLbConfig: &envoyclusterv3.Cluster_CommonLbConfig_LocalityWeightedLbConfig{},
-		}
-	}
-	return commonLbConfig
-}
-
 func zoneAwareForceIR(zoneAware *kgateway.ZoneAwareLoadBalancer) *ZoneAwareForceIR {
 	if zoneAware == nil || zoneAware.PreferLocal == nil || zoneAware.PreferLocal.Force == nil {
 		return nil
@@ -133,14 +117,18 @@ func buildTypedLocalityLbConfig(config *kgateway.LoadBalancer) *envoycommonv3.Lo
 			LocalityConfigSpecifier: zoneAware,
 		}
 	}
-	if config.LocalityType != nil {
-		return &envoycommonv3.LocalityLbConfig{
-			LocalityConfigSpecifier: &envoycommonv3.LocalityLbConfig_LocalityWeightedLbConfig_{
-				LocalityWeightedLbConfig: &envoycommonv3.LocalityLbConfig_LocalityWeightedLbConfig{},
-			},
-		}
+	// Default to locality-weighted LB. A cluster with a typed load_balancing_policy
+	// ignores common_lb_config.locality_config_specifier, and a typed policy without
+	// locality_lb_config falls back to Envoy's implicit zone-aware defaults
+	// (routing_enabled 100%, min_cluster_size 6) once the proxy fleet spans multiple
+	// zones. Locality-weighted keeps traffic evenly distributed unless zoneAware is
+	// explicitly configured. This also covers config.LocalityType, which maps to the
+	// same locality-weighted config.
+	return &envoycommonv3.LocalityLbConfig{
+		LocalityConfigSpecifier: &envoycommonv3.LocalityLbConfig_LocalityWeightedLbConfig_{
+			LocalityWeightedLbConfig: &envoycommonv3.LocalityLbConfig_LocalityWeightedLbConfig{},
+		},
 	}
-	return nil
 }
 
 func buildTypedZoneAwareLbConfig(zoneAware *kgateway.ZoneAwareLoadBalancer) *envoycommonv3.LocalityLbConfig_ZoneAwareLbConfig_ {
