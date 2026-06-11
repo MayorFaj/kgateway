@@ -174,7 +174,7 @@ Routes:
       filterConfig:
         '@type': type.googleapis.com/google.protobuf.StringValue
         value: '{"request":{"body":{"parseAs":"None"},"dynamicMetadata":[{"namespace":"dev.kgateway.auth_policy","key":"auth_succeeded","value":{"stringValue":"true"}}]},"response":{"body":{"parseAs":"None"}}}'
-      perRouteConfigName: rustformation
+      filterName: rustformation
   virtualHosts:
   - domains:
     - allowed.example.com
@@ -202,7 +202,7 @@ Routes:
           filterConfig:
             '@type': type.googleapis.com/google.protobuf.StringValue
             value: '{"request":{"body":{"parseAs":"None"},"dynamicMetadata":[{"namespace":"dev.kgateway.auth_policy","key":"auth_succeeded","value":{"stringValue":"true"}}]},"response":{"body":{"parseAs":"None"}}}'
-          perRouteConfigName: rustformation
+          filterName: rustformation
   - domains:
     - denied.example.com
     name: listener~80~denied_example_com
@@ -243,7 +243,7 @@ Routes:
       filterConfig:
         '@type': type.googleapis.com/google.protobuf.StringValue
         value: '{"request":{"body":{"parseAs":"None"},"dynamicMetadata":[{"namespace":"dev.kgateway.auth_policy","key":"auth_succeeded","value":{"stringValue":"true"}}]},"response":{"body":{"parseAs":"None"}}}'
-      perRouteConfigName: rustformation
+      filterName: rustformation
   virtualHosts:
   - domains:
     - listener.example.com
@@ -271,7 +271,7 @@ Routes:
         filterConfig:
           '@type': type.googleapis.com/google.protobuf.StringValue
           value: '{"request":{"body":{"parseAs":"None"},"dynamicMetadata":[{"namespace":"dev.kgateway.auth_policy","key":"auth_succeeded","value":{"stringValue":"true"}}]},"response":{"body":{"parseAs":"None"}}}'
-        perRouteConfigName: rustformation
+        filterName: rustformation
 Statuses:
   gateways:
     default/example-gateway:

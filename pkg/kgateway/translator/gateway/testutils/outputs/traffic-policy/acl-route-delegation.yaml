@@ -75,7 +75,7 @@ Routes:
           filterConfig:
             '@type': type.googleapis.com/google.protobuf.StringValue
             value: '{"defaultAction":"deny","rules":[{"action":"allow","cidrs":["192.168.0.0/16"]},{"action":"allow","cidrs":["10.0.0.0/8"]}]}'
-          perRouteConfigName: http-acl
+          filterName: http-acl
   - domains:
     - dpp.test.com
     name: listener~8080~dpp_test_com
@@ -100,7 +100,7 @@ Routes:
           filterConfig:
             '@type': type.googleapis.com/google.protobuf.StringValue
             value: '{"defaultAction":"deny","rules":[{"action":"allow","cidrs":["10.0.0.0/8"]},{"action":"allow","cidrs":["192.168.0.0/16"]}]}'
-          perRouteConfigName: http-acl
+          filterName: http-acl
   - domains:
     - spc.test.com
     name: listener~8080~spc_test_com
@@ -124,7 +124,7 @@ Routes:
           filterConfig:
             '@type': type.googleapis.com/google.protobuf.StringValue
             value: '{"defaultAction":"allow","rules":[{"action":"deny","cidrs":["192.168.0.0/16"]}]}'
-          perRouteConfigName: http-acl
+          filterName: http-acl
   - domains:
     - spp.test.com
     name: listener~8080~spp_test_com
@@ -148,7 +148,7 @@ Routes:
           filterConfig:
             '@type': type.googleapis.com/google.protobuf.StringValue
             value: '{"defaultAction":"deny","rules":[{"action":"allow","cidrs":["10.0.0.0/8"]}]}'
-          perRouteConfigName: http-acl
+          filterName: http-acl
 Statuses:
   gateways:
     default/test:
